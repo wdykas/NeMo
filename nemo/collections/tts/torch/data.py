@@ -130,6 +130,7 @@ class TTSDataset(Dataset):
             pitch_mean (Optional[float]): The mean that we use to normalize the pitch.
             pitch_std (Optional[float]): The std that we use to normalize the pitch.
             pitch_norm (Optional[bool]): Whether to normalize pitch (via pitch_mean and pitch_std) or not.
+            pitch_dict_path (Optional[Union[Path, str]]): The path to dictionary of pitch statistics for each speaker.
         """
         super().__init__()
 
@@ -264,6 +265,13 @@ class TTSDataset(Dataset):
 
             getattr(self, f"add_{data_type.name}")(**kwargs)
 
+        self.speaker_embeddings = None
+        speaker_embedding_dict_path = kwargs.pop("speaker_embedding_dict_path", None)
+        if speaker_embedding_dict_path is not None:
+            logging.info(f"Using {speaker_embedding_dict_path} to get speaker embeddings.")
+            with open(Path(speaker_embedding_dict_path).expanduser(), "rb") as f:
+                self.speaker_embeddings = dict(pickle.load(f))
+
     @staticmethod
     def filter_files(data, ignore_file, min_duration, max_duration, total_duration):
         if ignore_file:
@@ -360,6 +368,12 @@ class TTSDataset(Dataset):
         self.pitch_mean = kwargs.pop("pitch_mean", None)
         self.pitch_std = kwargs.pop("pitch_std", None)
         self.pitch_norm = kwargs.pop("pitch_norm", False)
+        self.pitch_dict = None
+        pitch_dict_path = kwargs.pop("pitch_dict_path", None)
+        if pitch_dict_path is not None:
+            logging.info(f"Using {pitch_dict_path} to normalize pitch.")
+            with open(Path(pitch_dict_path).expanduser(), "rb") as f:
+                self.pitch_dict = dict(pickle.load(f))
 
     def add_energy(self, **kwargs):
         self.energy_folder = kwargs.pop('energy_folder', None)
@@ -448,10 +462,24 @@ class TTSDataset(Dataset):
                     align_prior_matrix = torch.from_numpy(align_prior_matrix)
                     torch.save(align_prior_matrix, prior_path)
 
+        # Load speaker id if needed
+        speaker_id = None
+        speaker_embedding = None
+        if SpeakerID in self.sup_data_types_set:
+            speaker_id = torch.tensor(sample["speaker_id"]).long()
+            if self.speaker_embeddings is not None:
+                speaker_embedding = torch.Tensor(self.speaker_embeddings[str(sample["speaker_id"])])
+
         # Load pitch if needed
         pitch, pitch_length = None, None
         if Pitch in self.sup_data_types_set:
             pitch_path = self.pitch_folder / f"{rel_audio_path_as_text_id}.pt"
+
+            if self.pitch_dict is not None:
+                self.pitch_fmax = self.pitch_dict[speaker_id.item()]['pitch_max']
+                self.pitch_fmin = self.pitch_dict[speaker_id.item()]['pitch_min']
+                self.pitch_mean = self.pitch_dict[speaker_id.item()]['pitch_mean']
+                self.pitch_std = self.pitch_dict[speaker_id.item()]['pitch_std']
 
             if pitch_path.exists():
                 pitch = torch.load(pitch_path).float()
@@ -487,11 +515,6 @@ class TTSDataset(Dataset):
                 torch.save(energy, energy_path)
 
             energy_length = torch.tensor(len(energy)).long()
-
-        # Load speaker id if needed
-        speaker_id = None
-        if SpeakerID in self.sup_data_types_set:
-            speaker_id = torch.tensor(sample["speaker_id"]).long()
 
         return (
             audio,
