@@ -4,11 +4,11 @@
 
 name: FastPitch_hybrid
 
-train_dataset: "/data/speech/LibriTTS2/LibriTTS/train_clean_100.json"
-validation_datasets: "/data/speech/LibriTTS2/LibriTTS/dev_clean.json"
+train_dataset: "../datasets/LibriTTS/train_clean_100.json"
+validation_datasets: "../datasets/LibriTTS/dev_clean.json"
 
 sup_data_types: [align_prior_matrix, pitch, speaker_id]
-sup_data_path: "/data/speech/LibriTTS2/sup_data_path"
+sup_data_path: "../datasets/sup_data_path"
 
 # Default values from librosa.pyin
 pitch_fmin: 65.4063949
@@ -160,7 +160,6 @@ model:
     pad_value: 0
     sample_rate: ${model.sample_rate}
     window: ${model.window}
-    normalize: null
     preemph: null
     dither: 0.00001
     frame_splicing: 1
@@ -227,7 +226,7 @@ model:
       d_model: 1  # Disable scaling based on model dim
 
 trainer:
-  num_nodes: 2
+  num_nodes: 1
   devices: 1
   accelerator: gpu
   strategy: ddp
@@ -243,11 +242,11 @@ trainer:
 exp_manager:
   exp_dir: 'fastpitch/'
   name: ${name}
-  create_tensorboard_logger: false
+  create_tensorboard_logger: true
   create_checkpoint_callback: true
   checkpoint_callback_params:
     monitor: v_loss
-  create_wandb_logger: true
+  create_wandb_logger: false
   wandb_logger_kwargs:
     name: fastpitch_hybrid
     project: ${name}
