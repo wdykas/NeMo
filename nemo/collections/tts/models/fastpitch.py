@@ -350,6 +350,7 @@ class FastPitchModel(SpectrogramGenerator, Exportable):
                 specs = []
                 alignments = []
 
+
                 specs += [
                     wandb.Image(
                         plot_spectrogram_to_numpy(mels_pred[0].data.cpu().float().numpy()), 
@@ -450,7 +451,7 @@ class FastPitchModel(SpectrogramGenerator, Exportable):
             )
             self.log_train_images = True
         elif isinstance(self.logger, WandbLogger):
-            fastpitch_log_to_wandb_func(self.logger, outputs[0].values(), self.global_step, tag="val", )
+            fastpitch_log_to_wandb_func(self.logger.experiment, outputs[0].values(), self.global_step, tag="val", )
             self.log_train_images = True
 
     def __setup_dataloader_from_config(self, cfg, shuffle_should_be: bool = True, name: str = "train"):

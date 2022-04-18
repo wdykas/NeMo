@@ -320,7 +320,7 @@ def fastpitch_log_to_wandb_func(
     tensors,
     step,
     tag="train",
-    log_images=False,
+    log_images=True,
     log_images_freq=1,
     griffin_lim_mag_scale=1024,
     griffin_lim_power=1.2,
