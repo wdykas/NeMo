@@ -33,7 +33,7 @@ try:
     from nemo.collections.tts.models.univnet import UnivNetModel
     from nemo.collections.tts.models.waveglow import WaveGlowModel
     from nemo.collections.tts.models.mixer_tts import MixerTTSModel
-    from nemo.collections.tts.models.g2p_ctc import CTCG2PModel
+    from nemo.collections.tts.models.G2P.g2p_ctc import CTCG2PModel
 except ModuleNotFoundError:
     pass
 

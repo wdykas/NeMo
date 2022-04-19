@@ -18,7 +18,7 @@ import pytorch_lightning as pl
 import torch
 from omegaconf import DictConfig
 
-from nemo.collections.tts.models.g2p_ctc import CTCG2PModel
+from nemo.collections.tts.models.G2P.g2p_ctc import CTCG2PModel
 from nemo.core.config import hydra_runner
 from nemo.utils import logging
 

@@ -17,6 +17,7 @@ import os
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Union
 from nemo.collections.asr.parts.mixins import ASRBPEMixin
+from abc import ABC, abstractmethod
 
 import torch
 from hydra.utils import instantiate
@@ -27,6 +28,7 @@ from tqdm import tqdm
 from transformers import AutoConfig, AutoModel, AutoTokenizer
 
 from nemo.collections.asr.losses.ctc import CTCLoss
+from nemo.collections.common.losses.cross_entropy import CrossEntropyLoss
 from nemo.collections.asr.metrics.wer import word_error_rate
 from nemo.collections.asr.models import EncDecCTCModel
 from nemo.collections.asr.models.asr_model import ASRModel, ExportableEncDecModel
@@ -36,8 +38,9 @@ from nemo.core.classes.common import PretrainedModelInfo, typecheck
 from nemo.core.classes.modelPT import ModelPT
 from nemo.core.neural_types import LabelsType, LossType, MaskType, NeuralType, TokenIndex
 from nemo.utils import logging
+from nemo.collections.nlp.models.nlp_model import NLPModel
 
-__all__ = ['CTCG2PModel']
+__all__ = ['G2PModel']
 
 
 @dataclass
@@ -46,7 +49,7 @@ class CTCG2PConfig:
     validation_ds: Optional[Dict[Any, Any]] = None
 
 
-class CTCG2PModel(ModelPT, ASRBPEMixin):  # TODO: Check parent class NLP?
+class G2PModel(ModelPT, ABC):
     """
     CTC-based grapheme-to-phoneme model.
     """
@@ -68,14 +71,12 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):  # TODO: Check parent class NLP?
         if trainer is not None:
             self.world_size = trainer.num_nodes * trainer.num_gpus
 
-        if "t5" in cfg.model_name.lower():
-            self.mode = "t5"
-        elif "conformer" in cfg.model_name.lower():
-            self.mode = "conformer"
-        else:
-            raise ValueError(f"'T5' or 'Conformer' name must be added to 'model.model_name'")
+        self.mode = cfg.model_name.lower()
+        supported_modes = ["byt5_ctc", "bert_ce", "conformer", "conformer_bpe"]
+        if self.mode not in supported_modes:
+            raise ValueError(f"{self.mode} is not supported, choose from {supported_modes}")
 
-        if self.mode == "t5":
+        if self.mode == "byt5_ctc":
             ### T5
             # Load appropriate tokenizer from HuggingFace
             print(f"----------> Using model: {cfg.model_name}")
@@ -83,7 +84,7 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):  # TODO: Check parent class NLP?
 
             self.max_source_len = cfg.get("max_source_len", self.tokenizer.model_max_length)
             self.max_target_len = cfg.get("max_target_len", self.tokenizer.model_max_length)
-        else:
+        elif "conformer" in self.mode:
             self.max_source_len = cfg.get("max_source_len", 512)
             self.max_target_len = cfg.get("max_target_len", 512)
             # set up grapheme tokenizer
@@ -130,18 +131,23 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):  # TODO: Check parent class NLP?
                 vocabulary = self.tokenizer.tokenizer.get_vocab()
                 cfg.decoder.vocabulary = ListConfig(list(vocabulary.keys()))
 
-        # Ensure passed cfg is compliant with schema
-        schema = OmegaConf.structured(CTCG2PConfig)
-        # ModelPT ensures that cfg is a DictConfig, but do this second check in case ModelPT changes
-        if isinstance(cfg, dict):
-            cfg = OmegaConf.create(cfg)
-        elif not isinstance(cfg, DictConfig):
-            raise ValueError(f"cfg was type: {type(cfg)}. Expected either a dict or a DictConfig")
-        OmegaConf.merge(cfg, schema)
+        if "_ce" not in self.mode:
+            pass
+        else:
+            # FOR CTC MODELS
+            # Ensure passed cfg is compliant with schema
+            schema = OmegaConf.structured(CTCG2PConfig)
+            # ModelPT ensures that cfg is a DictConfig, but do this second check in case ModelPT changes
+            if isinstance(cfg, dict):
+                cfg = OmegaConf.create(cfg)
+            elif not isinstance(cfg, DictConfig):
+                raise ValueError(f"cfg was type: {type(cfg)}. Expected either a dict or a DictConfig")
+            OmegaConf.merge(cfg, schema)
 
-        self.vocabulary = cfg.decoder.vocabulary
-        self.labels_tkn2id = {l: i for i, l in enumerate(cfg.decoder.vocabulary)}
-        self.labels_id2tkn = {i: l for i, l in enumerate(cfg.decoder.vocabulary)}
+            self.vocabulary = cfg.decoder.vocabulary
+            self.labels_tkn2id = {l: i for i, l in enumerate(cfg.decoder.vocabulary)}
+            self.labels_id2tkn = {i: l for i, l in enumerate(cfg.decoder.vocabulary)}
+
         super().__init__(cfg, trainer)
 
         if self.mode == "t5":
@@ -168,11 +174,17 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):  # TODO: Check parent class NLP?
                     raise ValueError("param feat_in of the decoder's config is not set!")
 
         self.decoder = EncDecCTCModel.from_config_dict(self._cfg.decoder)
-        self.loss = CTCLoss(
-            num_classes=self.decoder.num_classes_with_blank - 1,
-            zero_infinity=True,
-            reduction=self._cfg.get("ctc_reduction", "mean_batch"),
-        )
+
+        if cfg.loss == "ctc":
+            self.loss = CTCLoss(
+                num_classes=self.decoder.num_classes_with_blank - 1,
+                zero_infinity=True,
+                reduction=self._cfg.get("ctc_reduction", "mean_batch"),
+            )
+        elif cfg.loss == "ce":
+            loss = CrossEntropyLoss(logits_ndim=3)
+        else:
+            raise ValueError(f"{cfg.loss} is not supported, select from ['ctc', 'ce']")
 
     # @typecheck()
     def forward(self, input_ids, attention_mask, input_len):
