@@ -39,7 +39,8 @@ Args:
         you may not need this for test set, Defaults to False
 """
 
-MIN_DURATIONS = [1.5, 2, 3]
+# MIN_DURATIONS = [1.5, 2, 3]
+MIN_DURATIONS = [4, 5, 6]
 
 
 def filter_manifest_line(manifest_line, signal, sr=16000):
@@ -56,7 +57,7 @@ def filter_manifest_line(manifest_line, signal, sr=16000):
         remaining_dur = remaining_dur - temp_dur
         while remaining_dur >= 0:
             segment_audio = signal[int(start * sr) : int(start * sr + temp_dur * sr)]
-            if l.feature.rms(segment_audio).mean() > 0.01:
+            if l.feature.rms(y=segment_audio).mean() > 0.01:
                 meta = {'audio_filepath': audio_path, 'offset': start, 'duration': temp_dur, 'label': SPKR}
                 split_manifest.append(meta)
                 speakers.append(SPKR)
@@ -77,7 +78,8 @@ def write_file(name, lines, idx):
     logging.info("wrote", name)
 
 
-def main(scp, id, out, split=False, create_chunks=False):
+# def main(scp, id, out, split=False, create_chunks=False):
+def main(scp, out, split=False, create_chunks=False):
     if os.path.exists(out):
         os.remove(out)
     scp_file = open(scp, 'r').readlines()
@@ -87,13 +89,19 @@ def main(scp, id, out, split=False, create_chunks=False):
     speakers = []
     for line in tqdm(scp_file):
         line = line.strip()
-        y, sr = l.load(line, sr=None)
-        dur = l.get_duration(y=y, sr=sr)
-        speaker = line.split('/')[id]
-        speaker = list(speaker)
-        speaker = ''.join(speaker)
-        meta = [{"audio_filepath": line, "offset": 0, "duration": float(dur), "label": speaker}]
-        speaker = [speaker]
+#         y, sr = l.load(line, sr=None)
+#         dur = l.get_duration(y=y, sr=sr)
+#         speaker = line.split('/')[id]
+#         speaker = list(speaker)
+#         speaker = ''.join(speaker)
+#         meta = [{"audio_filepath": line, "offset": 0, "duration": float(dur), "label": speaker}]
+#         speaker = [speaker]
+            
+        lang, audio_filepath, dur = line.split(",")
+        y, sr = l.load(audio_filepath, sr=None)
+        meta = [{"audio_filepath": audio_filepath, "offset": 0, "duration": float(dur), "label": lang}]
+        speaker = [lang]
+        
         if create_chunks:
             meta, speaker = filter_manifest_line(meta[0], signal=y, sr=sr)
         lines.extend(meta)
@@ -115,9 +123,9 @@ def main(scp, id, out, split=False, create_chunks=False):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--scp", help="scp file name", type=str, required=True)
-    parser.add_argument(
-        "--id", help="field num seperated by '/' to be considered as speaker label", type=int, required=True
-    )
+#     parser.add_argument(
+#         "--id", help="field num seperated by '/' to be considered as speaker label", type=int, required=True
+#     )
     parser.add_argument("--out", help="manifest_file name", type=str, required=True)
     parser.add_argument(
         "--split",
@@ -133,4 +141,5 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    main(args.scp, args.id, args.out, args.split, args.create_chunks)
+#     main(args.scp, args.id, args.out, args.split, args.create_chunks)
+    main(args.scp, args.out, args.split, args.create_chunks)
