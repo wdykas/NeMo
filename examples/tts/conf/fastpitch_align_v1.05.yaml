@@ -4,11 +4,11 @@
 
 name: FastPitch_hybrid
 
-train_dataset: "../datasets/LibriTTS/train_clean_100.json"
-validation_datasets: "../datasets/LibriTTS/dev_clean.json"
+train_dataset: "../datasets/ljspeech_ds/LJSpeech-1.1/train_manifest.json"
+validation_datasets: "../datasets/ljspeech_ds/LJSpeech-1.1/test_manifest.json"
 
 sup_data_types: [align_prior_matrix, pitch, speaker_id]
-sup_data_path: "../datasets/sup_data_path"
+sup_data_path: "../datasets/ljspeech_ds/LJSpeech-1.1/"
 
 # Default values from librosa.pyin
 pitch_fmin: 65.4063949
@@ -160,13 +160,13 @@ model:
     pad_value: 0
     sample_rate: ${model.sample_rate}
     window: ${model.window}
-    preemph: null
+    preemph: 0.97
     dither: 0.00001
     frame_splicing: 1
     log: true
     log_zero_guard_type: add
     log_zero_guard_value: 1e-05
-    mag_power: 1.0
+    mag_power: 2.0
 
   input_fft: #n_embed and padding_idx are added by the model
     _target_: nemo.collections.tts.modules.transformer.FFTransformerEncoder
@@ -240,7 +240,7 @@ trainer:
   check_val_every_n_epoch: 10
 
 exp_manager:
-  exp_dir: 'fastpitch/'
+  exp_dir: 'fastpitch_fixed/'
   name: ${name}
   create_tensorboard_logger: false
   create_checkpoint_callback: true
@@ -248,7 +248,7 @@ exp_manager:
     monitor: v_loss
   create_wandb_logger: true
   wandb_logger_kwargs:
-    name: fastpitch_hybrid
+    name: fastpitch_fixed
     project: ${name}
     entity: nvidia
   resume_if_exists: false
