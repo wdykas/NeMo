@@ -11,7 +11,7 @@ model:
     is_tarred: False
     tarred_audio_filepaths: null
     tarred_shard_strategy: "scatter"
-    num_worker: 20
+    num_workers: 20
 
   validation_ds:
     manifest_filepath: ???
@@ -19,10 +19,10 @@ model:
     labels: null
     batch_size: 128
     shuffle: False
-    num_worker: 20
+    num_workers: 20
 
   model_defaults:
-    filters: 1024
+    filters: 256
     repeat: 3
     dropout: 0.1
     separable: true
@@ -42,12 +42,6 @@ model:
     frame_splicing: 1
     dither: 0.00001
 
-  spec_augment:
-    _target_: nemo.collections.asr.modules.SpectrogramAugmentation
-    freq_masks: 3
-    freq_width: 4
-    time_masks: 5
-    time_width: 0.03
 
   encoder:
     _target_: nemo.collections.asr.modules.ConvASREncoder
@@ -125,7 +119,7 @@ model:
 
   optim:
     name: sgd
-    lr: 0.02 #(original titanet-large was trained with 0.08 lr)
+    lr: 0.08 #(original titanet-large was trained with 0.08 lr)
     weight_decay: 0.001
 
     # scheduler setup
