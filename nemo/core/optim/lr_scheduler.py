@@ -786,7 +786,7 @@ def prepare_lr_scheduler(
         accumulate_grad_batches = scheduler_config.get('t_accumulate_grad_batches')
         limit_train_batches = scheduler_config.get('t_limit_train_batches')
         num_workers = scheduler_config.get('t_num_workers')
-        num_nodes = scheduler_config.get('t_num_nodes')
+        num_nodes = scheduler_args.pop('t_num_nodes')
 
         # Compute effective num max_steps
         try:
