@@ -588,6 +588,7 @@ class ModelPT(LightningModule, Model):
 
             self._optimizer = optimizer
 
+        scheduler_config['t_num_nodes'] = self.trainer.num_nodes
         # Try to instantiate scheduler for optimizer
         self._scheduler = prepare_lr_scheduler(
             optimizer=self._optimizer, scheduler_config=scheduler_config, train_dataloader=self._train_dl
