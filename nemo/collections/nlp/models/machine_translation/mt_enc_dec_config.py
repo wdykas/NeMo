@@ -184,5 +184,5 @@ class MTBottleneckModelConfig(AAYNBaseConfig):
 
 @dataclass
 class MTBlockBottleneckModelConfig(MTBottleneckModelConfig):
-    seq_reduction_factor: int = 16
+    block_size: int = 16
     num_hierar_levels: int = 2

@@ -123,19 +123,6 @@ def main(cfg: MTBlockBottleneckConfig) -> None:
 
     # tokenizers will be trained and and tarred training data will be created if needed
     # model config is then updated
-    num_blocks = cfg.model.num_blocks
-    for ds_name in ['train_ds', 'validation_ds', 'test_ds']:
-        ds = getattr(cfg.model, ds_name, None)
-        if ds is not None:
-            max_seq_length = getattr(ds, 'max_seq_length')
-            if max_seq_length // num_blocks != 0:
-                max_seq_length = max_seq_length // num_blocks * num_blocks
-                logging.info(
-                    f"{ds_name}.max_seq_length is not divisible by seq_reduction_factor."
-                    f"{ds_name}.max_seq_length set to {max_seq_length}"
-                )
-                ds.max_seq_length = max_seq_length
-                ds.tokens_in_batch = max_seq_length
     if cfg.model.preproc_out_dir is not None:
         MTDataPreproc(cfg=cfg.model, trainer=trainer)
 

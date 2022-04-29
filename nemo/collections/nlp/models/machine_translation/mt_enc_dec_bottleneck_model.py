@@ -479,19 +479,91 @@ class MTBlockBottleneckModel(MTBottleneckModel):
         encoders = [copy.deepcopy(self.encoder.encoder) for _ in range(cfg.num_hierar_levels-1)]
         decoders = [copy.deepcopy(self.decoder.decoder) for _ in range(cfg.num_hierar_levels-1)]
         encoders.insert(0, self.encoder)
-        decoders.insert(0, self.decoder)
+        decoders.append(self.decoder)
         self.encoder = torch.nn.ModuleList(encoders)
         self.decoder = torch.nn.ModuleList(decoders)
 
-        @typecheck()
-        def forward(self, src, src_mask, tgt, tgt_mask, timer=None):
+    def chunk_pad_sequence(self, seq, mask):
+        seq_len = seq.size(1)
+        if seq_len < self.cfg.block_size:
+            return seq, mask
 
-            if self.validate_input_ids:
-                # test src/tgt for id range (i.e., hellp in catching wrong tokenizer)
-                self.test_encoder_ids(src, raise_error=True)
-                self.test_decoder_ids(tgt, raise_error=True)
+        if seq_len % self.cfg.block_size != 0:
+            len_diff = (seq_len // self.cfg.block_size + 1) * self.cfg.block_size
+            if seq.dim() == 2:
+                pad_seq = torch.zeros_like(seq[:, :1]).repeat(1, len_diff)
+            else:
+                pad_seq = torch.zeros_like(seq[:, :1]).repeat(1, len_diff, 1)
+            pad_mask = torch.zeros_like(mask[:, :1]).repeat(1, len_diff)
+            seq = torch.cat((seq, pad_seq), dim=1)
+            mask = torch.cat((mask, pad_mask), dim=1)
+        if seq.dim() == 2:
+            seq = seq.reshape(-1, self.cfg.block_size)
+        else:
+            seq = seq.reshape(-1, self.cfg.block_size, seq.size(-1))
+        mask = mask.reshape(-1, self.cfg.block_size)
 
-            if timer is not None:
-                timer.start("encoder")
-            for encoder in self.encoder:
+        return seq, mask
+
+    @typecheck()
+    def forward(self, src, src_mask, tgt, tgt_mask, timer=None):
+
+        if self.validate_input_ids:
+            # test src/tgt for id range (i.e., hellp in catching wrong tokenizer)
+            self.test_encoder_ids(src, raise_error=True)
+            self.test_decoder_ids(tgt, raise_error=True)
+
+        if timer is not None:
+            timer.start("encoder")
+
+        b = src.size(0)
+        lvl_z = []
+        lvl_z_mean = []
+        lvl_z_logv = []
+        lvl_z_mask = []
+        for lvl, encoder in enumerate(self.encoder):
+            if lvl == 0:
+                src, src_mask = self.chunk_pad_sequence(src, src_mask)
                 enc_hiddens, enc_mask = encoder(input_ids=src, encoder_mask=src_mask, return_mask=True, )
+            else:
+                enc_hiddens, enc_mask = self.chunk_pad_sequence(enc_hiddens, enc_mask)
+                enc_hiddens, enc_mask = encoder(encoder_states=enc_hiddens, encoder_mask=enc_mask, )
+            z, z_mean, z_logv = self.encode_latent(hidden=enc_hiddens)
+            lvl_z.append(z)
+            lvl_z_mean.append(z_mean)
+            lvl_z_logv.append(z_logv)
+            lvl_z_mask.append(enc_mask)
+            enc_hiddens = enc_hiddens.reshape(b, -1, self.cfg.encoder.hidden_size)
+            enc_mask  = enc_mask.reshape(b, -1)
+
+        if timer is not None:
+            timer.stop("encoder")
+
+        if timer is not None:
+            timer.start("decoder")
+
+        dec_hiddens, dec_mask = lvl_z[-2], lvl_z_mask[-2]
+        for lvl, decoder in enumerate(self.decoder):
+            enc_lvl = self.cfg.num_hierar_levels - lvl - 1
+            z, enc_mask = lvl_z[enc_lvl], lvl_z_mask[enc_lvl]
+            # decoding cross attention context
+            context_hiddens = self.latent2hidden(z)
+            # TODO: test this loop
+            if lvl == self.cfg.num_hierar_levels - 1:
+                tgt, tgt_mask = self.chunk_pad_sequence(tgt, tgt_mask)
+                dec_hiddens = decoder(
+                    input_ids=tgt, decoder_mask=tgt_mask, encoder_embeddings=context_hiddens, encoder_mask=enc_mask,
+                )
+            else:
+                dec_hiddens = decoder(
+                    decoder_states=dec_hiddens, decoder_mask=dec_mask, encoder_states=context_hiddens, encoder_mask=enc_mask
+                )
+            dec_hiddens = dec_hiddens.reshape(b, -1, self.cfg.decoder.hidden_size)
+            dec_mask = torch.ones_like(dec_hiddens)
+        # build decoding distribution
+        tgt_log_probs = self.log_softmax(hidden_states=dec_hiddens)
+
+        if timer is not None:
+            timer.stop("decoder")
+
+        return lvl_z, lvl_z_mean, lvl_z_logv, lvl_z_mask, tgt_log_probs
