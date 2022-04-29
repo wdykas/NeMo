@@ -87,6 +87,6 @@ model:
       name: WarmupAnnealing
       min_lr: 1e-7
       last_epoch: -1
-      warmup_ratio: 0.01
+      warmup_ratio: 0.05
 
 

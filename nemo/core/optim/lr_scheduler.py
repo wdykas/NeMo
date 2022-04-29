@@ -860,25 +860,23 @@ def prepare_lr_scheduler(
 def compute_max_steps(
     max_epochs, accumulate_grad_batches, limit_train_batches, num_workers, num_samples, batch_size, drop_last
 ):
-    _round = math.floor if drop_last else math.ceil
-
-    sampler_num_samples = math.ceil(num_samples / max(1, num_workers))
-
+    sampler_num_samples = num_samples / max(1, num_workers)
     if drop_last and num_workers > 1:
         logging.warning(
             "Please note that drop_last is broken in pytorch 1.6.0. We will fix when pytorch 1.7.0 is released"
         )
         # TODO: Master verion, not in pytorch 1.6.0
         # sampler_num_samples = math.ceil((num_samples - num_workers)/ num_workers)
-
-    steps_per_epoch = _round(sampler_num_samples / batch_size)
+    steps_per_epoch = sampler_num_samples / batch_size
+    if drop_last:
+        steps_per_epoch = math.floor(sampler_num_samples)
     if isinstance(limit_train_batches, int) or limit_train_batches == 0.0:
-        steps_per_epoch = min(steps_per_epoch, int(limit_train_batches))
+        steps_per_epoch = min(steps_per_epoch, limit_train_batches)
     elif steps_per_epoch != float('inf'):
         # limit_train_batches is a percentage of batches per epoch
-        steps_per_epoch = int(steps_per_epoch * limit_train_batches)
-
-    return math.ceil(steps_per_epoch / accumulate_grad_batches) * max_epochs
+        steps_per_epoch = steps_per_epoch * limit_train_batches
+    #TODO: current PL version does not account for accumulate_grad_batches in global_step calculation
+    return math.ceil(steps_per_epoch * max_epochs)
 
 
 AVAILABLE_SCHEDULERS = {
