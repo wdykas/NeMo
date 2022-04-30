@@ -920,7 +920,9 @@ class PG19Worker:
 
 
 def merge_small_files(document_dir: Path) -> None:
-    pass
+    files = [f for f in document_dir.iterdir() if is_int(f.stem) and f.suffixes == ['.xml']]
+    stats = [f.stat().st_size for f in files]
+    files, stats = map(list, zip(*sorted(zip(files, stats), key=lambda x: x[1])))
 
 
 def preprocess_pg19(
@@ -1212,9 +1214,25 @@ def cut_and_save(file_num, progress_queue, file, num_passes_through_dataset, out
     random.shuffle(text)
     text = '\n'.join([doc[1]['text'] for doc in text])
     text = small.SPACE_DUP.sub(' ', text.replace('\n', ' '))
+    if get_max_allowed_segments_for_text(text, sequence_range[1] - 1) == 0:
+        return
     with out_file.open('w', buffering=BUFFER_SIZE) as out_f:
         for _ in range(num_passes_through_dataset):
             cut_and_save_one_pass(text, out_f, progress_queue, num_words_in_segments)
+
+
+def get_max_allowed_segments_for_text(text: str, max_segment_length: int) -> int:
+    sentences = text.splitlines()
+    num_words = 0
+    # Calculating the maximum number of start sentence. There have to be enough sentences after start sentence
+    # to form even longest segment.
+    sent_i = len(sentences) - 1
+    while sent_i >= 0 and num_words < max_segment_length:
+        num_words += count_words(sentences[sent_i])
+        sent_i -= 1
+    if num_words < max_segment_length:
+        return 0
+    return sent_i + 1
 
 
 class GetMaxAllowedSegmentsPerFileWorker:
@@ -1224,21 +1242,8 @@ class GetMaxAllowedSegmentsPerFileWorker:
 
     def __call__(self, file: Path) -> int:
         text = '\n'.join([doc['text'] for doc in big.read_docs_from_file(file)[0].values()])
-        sentences = text.splitlines()
-        num_words = 0
-        # Calculating the maximum number of start sentence. There have to be enough sentences after start sentence
-        # to form even longest segment.
-        sent_i = len(sentences) - 1
-        while sent_i >= 0 and num_words < self.max_segment_length:
-            num_words += count_words(sentences[sent_i])
-            sent_i -= 1
         self.progress_queue.put(1)
-        if file.name == '14751.xml':
-            print("14751.xml num_words:", num_words)
-            print("14751.xml sent_i:", sent_i)
-        if num_words < self.max_segment_length:
-            return 0
-        return sent_i + 1
+        return get_max_allowed_segments_for_text(text, self.max_segment_length)
 
 
 def get_how_many_segments_to_cut_by_files(
