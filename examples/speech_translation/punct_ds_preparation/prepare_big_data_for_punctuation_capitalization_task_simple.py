@@ -1205,8 +1205,9 @@ def cut_and_save(file_num, progress_queue, file, num_passes_through_dataset, out
 
 
 class GetMaxAllowedSegmentsPerFileWorker:
-    def __init__(self, max_segment_length: int) -> None:
+    def __init__(self, max_segment_length: int, progress_queue: mp.Queue) -> None:
         self.max_segment_length = max_segment_length
+        self.progress_queue = progress_queue
 
     def __call__(self, file: Path) -> int:
         with file.open() as f:
@@ -1219,6 +1220,7 @@ class GetMaxAllowedSegmentsPerFileWorker:
         while sent_i > 0 and num_words < self.max_segment_length:
             num_words += count_words(sentences[sent_i])
             sent_i -= 1
+        self.progress_queue.put(1)
         if num_words < self.max_segment_length:
             return 0
         return sent_i + 1
@@ -1233,7 +1235,9 @@ def get_how_many_segments_to_cut_by_files(
     sizes = [round(f * size) for f in fracs]
     with Progress(len(files), "Calculating maximum number of segments from a file", "file") as progress_queues:
         with mp.Pool(num_jobs) as pool:
-            max_possible_segments_per_file = pool.map(GetMaxAllowedSegmentsPerFileWorker(max_segment_length), files)
+            max_possible_segments_per_file = pool.map(
+                GetMaxAllowedSegmentsPerFileWorker(max_segment_length, progress_queues[0]), files
+            )
     for i, s in enumerate(sizes):
         if s > max_possible_segments_per_file[i]:
             sizes[i] = max_possible_segments_per_file[i]
