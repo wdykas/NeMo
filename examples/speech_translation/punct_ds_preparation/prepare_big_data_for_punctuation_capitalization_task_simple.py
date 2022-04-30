@@ -1072,7 +1072,18 @@ def extract_dev_text_segments_worker(
             num_words_raw = 0
             num_sentences_for_segment = 0
             while num_words_raw < shift + num_words_by_segments[curr_segment_i]:
-                num_words_raw += count_words(sentences[sentence_i + num_sentences_for_segment])
+                try:
+                    num_words_raw += count_words(sentences[sentence_i + num_sentences_for_segment])
+                except IndexError:
+                    print("len(sentences):", len(sentences))
+                    print("sentence_i:", sentence_i)
+                    print("num_sentences_for_segment:", num_sentences_for_segment)
+                    print("shift:", shift)
+                    print("num_words_raw:", num_words_raw)
+                    print("doc_id:", doc_ids[sentence_i])
+                    print("doc sent index:", sent_indices[sentence_i])
+                    print("curr_segment_i:", curr_segment_i)
+                    raise
                 num_sentences_for_segment += 1
             segments.append(
                 cut_segment(
