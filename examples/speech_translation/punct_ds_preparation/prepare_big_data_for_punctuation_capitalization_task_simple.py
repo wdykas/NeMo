@@ -903,7 +903,7 @@ class PG19Worker:
             check_suspicious_endings=True,
             check_suspicious_parentheses=True,
         )
-        text = big.normalize_punctuation(text, self.lang)
+        text = big.normalize_punctuation(text, 'en')
         text = big.NEW_LINE_DUP.sub('\n', text)
         prepared_docs = {
             doc_id: {
