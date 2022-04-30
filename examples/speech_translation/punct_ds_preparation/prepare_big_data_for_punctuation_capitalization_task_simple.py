@@ -893,7 +893,6 @@ class PG19Worker:
         ]
         paragraphs = [UNDERSCORE_PATTERN.sub(r'\1', DOUBLE_HYPHEN_PATTERN.sub(' - ', p)) for p in paragraphs]
         paragraphs = [p for p in paragraphs if big.SUSPICIOUS_LINE.match(p) is None]
-        num_lines = 0
         text = '\n'.join(paragraphs) + '\n'
         text, _ = big.remove_suspicious_lines_and_rearrange_quotes_and_spaces(
             text,
@@ -905,11 +904,12 @@ class PG19Worker:
         text = big.NEW_LINE_DUP.sub('\n', text)
         if not text.strip():
             return
+        text = text + ('' if text[-1] == '\n' else '\n')
         prepared_docs = {
             doc_id: {
-                "text": text + ('' if text[-1] == '\n' else '\n'),
+                "text": text,
                 "start_line": 0,
-                "end_line": num_lines,
+                "end_line": text.count('\n'),
                 "source": file,
                 "title": f"pg19-{idx}",
             }
@@ -1011,10 +1011,10 @@ def generate_segment_location_and_size(
     # Calculating the maximum number of start sentence. There have to be enough sentences after start sentence to form
     # even longest segment.
     sent_i = len(sentences) - 1
-    while sent_i > 0 and num_words < sequence_length_range[1]:
+    while sent_i > 0 and num_words < sequence_length_range[1] - 1:
         num_words += count_words(sentences[sent_i])
         sent_i -= 1
-    if num_words < sequence_length_range[1]:
+    if num_words < sequence_length_range[1] - 1:
         raise ValueError(
             f"Not enough words ({num_words}) in file {file} to cut a segment of length {sequence_length_range[1] - 1}"
         )
@@ -1087,18 +1087,7 @@ def extract_dev_text_segments_worker(
             num_words_raw = 0
             num_sentences_for_segment = 0
             while num_words_raw < shift + num_words_by_segments[curr_segment_i]:
-                try:
-                    num_words_raw += count_words(sentences[sentence_i + num_sentences_for_segment])
-                except IndexError:
-                    print("len(sentences):", len(sentences))
-                    print("sentence_i:", sentence_i)
-                    print("num_sentences_for_segment:", num_sentences_for_segment)
-                    print("shift:", shift)
-                    print("num_words_raw:", num_words_raw)
-                    print("doc_id:", doc_ids[sentence_i])
-                    print("doc sent index:", sent_indices[sentence_i])
-                    print("curr_segment_i:", curr_segment_i)
-                    raise
+                num_words_raw += count_words(sentences[sentence_i + num_sentences_for_segment])
                 num_sentences_for_segment += 1
             segments.append(
                 cut_segment(
@@ -1136,7 +1125,9 @@ def extract_dev_text_segments(
     num_jobs: int,
 ):
     files = [f for f in document_dir.iterdir() if is_int(f.stem) and f.suffixes == ['.xml']]
-    num_segments_by_files = get_how_many_segments_to_cut_by_files(files, dev_size + test_size)
+    num_segments_by_files = get_how_many_segments_to_cut_by_files(
+        files, dev_size + test_size, sequence_length_range[1] - 1
+    )
     num_jobs = min(num_jobs, len(files))
     with Progress(dev_size + test_size, 'Cutting dev and test segments', 'segment') as progress_queues:
         with mp.Pool(num_jobs) as pool:
@@ -1213,11 +1204,39 @@ def cut_and_save(file_num, progress_queue, file, num_passes_through_dataset, out
             cut_and_save_one_pass(text, out_f, progress_queue, num_words_in_segments)
 
 
-def get_how_many_segments_to_cut_by_files(files: List[Path], size: int) -> List[int]:
+class GetMaxAllowedSegmentsPerFileWorker:
+    def __init__(self, max_segment_length: int) -> None:
+        self.max_segment_length = max_segment_length
+
+    def __call__(self, file: Path) -> int:
+        with file.open() as f:
+            text = f.read()
+        sentences = text.splitlines()
+        num_words = 0
+        # Calculating the maximum number of start sentence. There have to be enough sentences after start sentence
+        # to form even longest segment.
+        sent_i = len(sentences) - 1
+        while sent_i > 0 and num_words < self.max_segment_length:
+            num_words += count_words(sentences[sent_i])
+            sent_i -= 1
+        if num_words < self.max_segment_length:
+            return 0
+        return sent_i + 1
+
+
+def get_how_many_segments_to_cut_by_files(
+    files: List[Path], size: int, max_segment_length: int, num_jobs: int
+) -> List[int]:
     stats = [f.stat().st_size for f in files]
     total_size = sum(stats)
     fracs = [s / total_size for s in stats]
     sizes = [round(f * size) for f in fracs]
+    with Progress(len(files), "Calculating maximum number of segments from a file", "file") as progress_queues:
+        with mp.Pool(num_jobs) as pool:
+            max_possible_segments_per_file = pool.map(GetMaxAllowedSegmentsPerFileWorker(max_segment_length), files)
+    for i, s in enumerate(sizes):
+        if s > max_possible_segments_per_file[i]:
+            sizes[i] = max_possible_segments_per_file[i]
     sum_ = sum(sizes)
     if sum_ > size:
         permutation = random.sample(list(range(len(sizes))), len(sizes))
@@ -1229,8 +1248,20 @@ def get_how_many_segments_to_cut_by_files(files: List[Path], size: int) -> List[
             i += 1
     elif sum_ < size:
         permutation = random.sample(list(range(len(sizes))), len(sizes))
-        for i in range(size - sum_):
-            sizes[permutation[i]] += 1
+        was_increase = True
+        while sum_ < size and was_increase:
+            was_increase = False
+            for i in range(size - sum_):
+                if sizes[permutation[i]] < max_possible_segments_per_file[permutation[i]]:
+                    sizes[permutation[i]] += 1
+                    was_increase = True
+                    sum_ += 1
+        if sum_ < size:
+            raise ValueError(
+                f"Cannot cut required number of segments {size} from the dataset because there is no enough "
+                f"large enough files. Maximum allowed number of segments to cut is {sum_}. You may reduce "
+                f"number of segments required or cut them manually."
+            )
     assert len(sizes) == len(files)
     assert all([s >= 0 for s in sizes])
     assert sum(sizes) == size
