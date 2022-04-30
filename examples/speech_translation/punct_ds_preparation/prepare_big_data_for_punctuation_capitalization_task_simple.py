@@ -1175,7 +1175,7 @@ def extract_dev_text_segments(
 
 def cut_and_save_one_pass(text, out_f, progress_queue, num_words_in_segments):
     permutation = random.sample(num_words_in_segments, len(num_words_in_segments))
-    shift = random.randint(0, max(num_words_in_segments))
+    shift = random.randint(0, max(num_words_in_segments) // 2)
     p_i = 0
     start_match = None
     num_in_segment = 0
@@ -1208,14 +1208,15 @@ def cut_and_save_one_pass(text, out_f, progress_queue, num_words_in_segments):
 
 
 def cut_and_save(file_num, progress_queue, file, num_passes_through_dataset, output_dir, sequence_range):
-    num_words_in_segments = list(range(sequence_range[0], sequence_range[1]))
     out_file = output_dir / (file.stem + '.txt')
     text = list(big.read_docs_from_file(file)[0].items())
     random.shuffle(text)
     text = '\n'.join([doc[1]['text'] for doc in text])
     text = small.SPACE_DUP.sub(' ', text.replace('\n', ' '))
-    if get_max_allowed_segments_for_text(text, sequence_range[1] - 1) == 0:
+    num_words = count_words(text)
+    if num_words < sequence_range[0] * 2:
         return
+    num_words_in_segments = list(range(sequence_range[0], min(sequence_range[1], num_words // 2)))
     with out_file.open('w', buffering=BUFFER_SIZE) as out_f:
         for _ in range(num_passes_through_dataset):
             cut_and_save_one_pass(text, out_f, progress_queue, num_words_in_segments)
