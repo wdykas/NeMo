@@ -1,4 +1,5 @@
 import argparse
+import copy
 import io
 import itertools
 import logging
@@ -1111,11 +1112,17 @@ def extract_dev_text_segments_worker(
                 progress_queue.put(progress)
                 progress = 0
         sentence_i += 1
+    filtered_docs = {}
     for doc_id, doc in docs.items():
-        doc['text'] = '\n'.join([line for i, line in enumerate(doc['lines']) if i not in doc['to_exclude']]) + '\n'
-        del doc['lines']
-        del doc['to_exclude']
-    big.write_docs_to_file(docs, output_file)
+        lines = [line for i, line in enumerate(doc['lines']) if i not in doc['to_exclude']]
+        if lines:
+            doc = copy.deepcopy(doc)
+            del doc['lines']
+            del doc['to_exclude']
+            doc['text'] = '\n'.join(lines) + '\n'
+            filtered_docs[doc_id] = doc
+    if filtered_docs:
+        big.write_docs_to_file(filtered_docs, output_file)
     assert len(segments) == num_segments, f"{len(segments)} were cut whereas {num_segments} segments were expected."
     progress_queue.put(progress)
     return segments
