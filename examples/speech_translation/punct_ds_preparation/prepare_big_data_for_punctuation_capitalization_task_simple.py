@@ -918,6 +918,10 @@ class PG19Worker:
         big.write_docs_to_file(prepared_docs, self.document_dir / (str(file_id) + '.xml'))
 
 
+def merge_small_files(document_dir: Path) -> None:
+    pass
+
+
 def preprocess_pg19(
     dir_path: Path,
     document_dir: Path,
@@ -928,8 +932,8 @@ def preprocess_pg19(
 ) -> Dict[int, int]:
     files = list(dir_path.iterdir())
     nf = len(files)
-    doc_ids = list(range(start_doc_id, start_doc_id + len(files)))
-    file_ids = list(range(start_file_id, start_file_id + len(files)))
+    doc_ids = list(range(start_doc_id, start_doc_id + nf))
+    file_ids = list(range(start_file_id, start_file_id + nf))
     with Progress(nf, "Preparing PG-19", "doc") as progress_queues:
         with mp.Pool(num_jobs, initializer=tokenizability_initializer) as pool:
             pool.starmap(
@@ -1212,8 +1216,7 @@ class GetMaxAllowedSegmentsPerFileWorker:
         self.progress_queue = progress_queue
 
     def __call__(self, file: Path) -> int:
-        with file.open() as f:
-            text = f.read()
+        text = '\n'.join([doc['text'] for doc in big.read_docs_from_file(file)[0].values()])
         sentences = text.splitlines()
         num_words = 0
         # Calculating the maximum number of start sentence. There have to be enough sentences after start sentence
