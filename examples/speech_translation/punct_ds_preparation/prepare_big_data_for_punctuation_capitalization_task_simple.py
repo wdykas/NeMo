@@ -1126,7 +1126,7 @@ def extract_dev_text_segments(
 ):
     files = [f for f in document_dir.iterdir() if is_int(f.stem) and f.suffixes == ['.xml']]
     num_segments_by_files = get_how_many_segments_to_cut_by_files(
-        files, dev_size + test_size, sequence_length_range[1] - 1
+        files, dev_size + test_size, sequence_length_range[1] - 1, num_jobs
     )
     num_jobs = min(num_jobs, len(files))
     with Progress(dev_size + test_size, 'Cutting dev and test segments', 'segment') as progress_queues:
