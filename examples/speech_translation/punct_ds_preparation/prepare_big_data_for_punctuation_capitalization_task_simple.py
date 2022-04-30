@@ -31,7 +31,9 @@ logging.basicConfig(level="INFO", format='%(levelname)s -%(asctime)s - %(name)s 
 random.seed(42)
 
 
-SUPPORTED_CORPUS_TYPES = ["wikipedia", "europarl", "TED", "rapid", "news-commentary", "wiki-extracted", "news-crawl"]
+SUPPORTED_CORPUS_TYPES = [
+    "wikipedia", "europarl", "TED", "rapid", "news-commentary", "wiki-extracted", "news-crawl", "pg19"
+]
 
 
 FORBIDDEN_PUNCTUATION_IN_THE_START_OF_SEGMENT = re.compile(f'^[^{WC}]+')
@@ -876,9 +878,8 @@ def preprocess_news_crawl(
 
 
 class PG19Worker:
-    def __init__(self, document_dir: Path, lang: str, tokenizer: TokenizerSpec, progress_queue: mp.Queue) -> None:
+    def __init__(self, document_dir: Path, tokenizer: TokenizerSpec, progress_queue: mp.Queue) -> None:
         self.document_dir = document_dir
-        self.lang = lang
         self.tokenizer = tokenizer
         self.progress_queue = progress_queue
 
@@ -911,7 +912,6 @@ class PG19Worker:
 def preprocess_pg19(
     dir_path: Path,
     document_dir: Path,
-    lang: str,
     start_doc_id: int,
     start_file_id: int,
     tokenizer: TokenizerSpec,
@@ -924,7 +924,7 @@ def preprocess_pg19(
     with Progress(nf, "Preparing PG-19", "doc") as progress_queues:
         with mp.Pool(num_jobs, initializer=tokenizability_initializer) as pool:
             pool.starmap(
-                PG19Worker(document_dir, lang, tokenizer, progress_queues[0]),
+                PG19Worker(document_dir, tokenizer, progress_queues[0]),
                 zip(files, file_ids, doc_ids, range(nf)),
             )
     return dict(zip(doc_ids, file_ids))
@@ -1435,6 +1435,10 @@ def main():
                     start_file_id,
                     tokenizer,
                     args.num_jobs,
+                )
+            elif corpus_type == SUPPORTED_CORPUS_TYPES[7]:  # pg19
+                corpus_doc_id_to_file_i = preprocess_pg19(
+                    file_or_dir_path, document_dir, start_doc_id, start_file_id, tokenizer, args.num_jobs
                 )
             else:
                 raise ValueError(
