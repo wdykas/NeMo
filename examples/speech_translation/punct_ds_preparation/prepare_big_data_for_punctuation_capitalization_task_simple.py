@@ -1005,8 +1005,10 @@ def count_words(text):
 def generate_segment_location_and_size(
     sentences: List[str], sequence_length_range: Tuple[int, int], num_segments: int, file: Path
 ) -> Tuple[List[int], List[int]]:
-    if num_segments <= 0:
-        raise ValueError(f"Number of cut segments have to positive whereas num_segments={num_segments}")
+    if num_segments < 0:
+        raise ValueError(f"Number of cut segments cannot be negative whereas num_segments={num_segments}")
+    if num_segments == 0:
+        return [], []
     num_words = 0
     # Calculating the maximum number of start sentence. There have to be enough sentences after start sentence to form
     # even longest segment.
