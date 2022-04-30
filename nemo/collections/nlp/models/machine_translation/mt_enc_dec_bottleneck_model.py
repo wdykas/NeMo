@@ -479,17 +479,29 @@ class MTBlockBottleneckModel(MTBottleneckModel):
         encoders = [copy.deepcopy(self.encoder.encoder) for _ in range(cfg.num_hierar_levels-1)]
         decoders = [copy.deepcopy(self.decoder.decoder) for _ in range(cfg.num_hierar_levels-1)]
         encoders.insert(0, self.encoder)
-        decoders.append(self.decoder)
         self.encoder = torch.nn.ModuleList(encoders)
-        self.decoder = torch.nn.ModuleList(decoders)
+        self.lvl_decoder = torch.nn.ModuleList(decoders)
 
-    def chunk_pad_sequence(self, seq, mask):
+    def loss(self, **kwargs):
+        # TODO: update loss when self.model_type in ["mim", "vae"]
+        return super().loss(**kwargs)
+
+    def chunk_pad_sequence(self, seq, mask, force_batch_size=None):
         seq_len = seq.size(1)
-        if seq_len < self.cfg.block_size:
+        if force_batch_size is None:
+            block_size = self.cfg.block_size
+            num_blocks = seq_len // block_size + 1
+        else:
+            b = seq.size(0)
+            num_blocks = force_batch_size // b
+            #TODO: at decoding which not use the labels/target seq_len
+            #TODO: create a max tgt block_size based on src blocks size
+            block_size = seq_len // num_blocks + 1
+        if seq_len < block_size:
             return seq, mask
 
-        if seq_len % self.cfg.block_size != 0:
-            len_diff = (seq_len // self.cfg.block_size + 1) * self.cfg.block_size
+        if seq_len % block_size != 0:
+            len_diff = num_blocks * block_size - seq_len
             if seq.dim() == 2:
                 pad_seq = torch.zeros_like(seq[:, :1]).repeat(1, len_diff)
             else:
@@ -498,23 +510,18 @@ class MTBlockBottleneckModel(MTBottleneckModel):
             seq = torch.cat((seq, pad_seq), dim=1)
             mask = torch.cat((mask, pad_mask), dim=1)
         if seq.dim() == 2:
-            seq = seq.reshape(-1, self.cfg.block_size)
+            seq = seq.reshape(-1, block_size)
         else:
-            seq = seq.reshape(-1, self.cfg.block_size, seq.size(-1))
-        mask = mask.reshape(-1, self.cfg.block_size)
+            seq = seq.reshape(-1, block_size, seq.size(-1))
+        mask = mask.reshape(-1, block_size)
 
         return seq, mask
 
-    @typecheck()
-    def forward(self, src, src_mask, tgt, tgt_mask, timer=None):
 
-        if self.validate_input_ids:
-            # test src/tgt for id range (i.e., hellp in catching wrong tokenizer)
-            self.test_encoder_ids(src, raise_error=True)
-            self.test_decoder_ids(tgt, raise_error=True)
+    def hierar_encoder(self, src, src_mask, timer=None):
 
         if timer is not None:
-            timer.start("encoder")
+            timer.start("hierar_encoder")
 
         b = src.size(0)
         lvl_z = []
@@ -526,44 +533,145 @@ class MTBlockBottleneckModel(MTBottleneckModel):
                 src, src_mask = self.chunk_pad_sequence(src, src_mask)
                 enc_hiddens, enc_mask = encoder(input_ids=src, encoder_mask=src_mask, return_mask=True, )
             else:
-                enc_hiddens, enc_mask = self.chunk_pad_sequence(enc_hiddens, enc_mask)
                 enc_hiddens, enc_mask = encoder(encoder_states=enc_hiddens, encoder_mask=enc_mask, )
+            enc_hiddens = enc_hiddens.reshape(b, -1, self.cfg.encoder.hidden_size)
+            enc_mask  = enc_mask.reshape(b, -1)
+            enc_hiddens, enc_mask = self.chunk_pad_sequence(enc_hiddens, enc_mask)
             z, z_mean, z_logv = self.encode_latent(hidden=enc_hiddens)
             lvl_z.append(z)
             lvl_z_mean.append(z_mean)
             lvl_z_logv.append(z_logv)
             lvl_z_mask.append(enc_mask)
-            enc_hiddens = enc_hiddens.reshape(b, -1, self.cfg.encoder.hidden_size)
-            enc_mask  = enc_mask.reshape(b, -1)
 
         if timer is not None:
-            timer.stop("encoder")
+            timer.stop("hierar_encoder")
+
+        return lvl_z, lvl_z_mean, lvl_z_logv, lvl_z_mask
+
+    def hierar_decoder(self, lvl_context_hidden, lvl_context_mask, timer=None):
 
         if timer is not None:
-            timer.start("decoder")
+            timer.start("hierar_decoder")
 
-        dec_hiddens, dec_mask = lvl_z[-2], lvl_z_mask[-2]
-        for lvl, decoder in enumerate(self.decoder):
+        dec_hiddens = None
+        for lvl, decoder in enumerate(self.lvl_decoder):
             enc_lvl = self.cfg.num_hierar_levels - lvl - 1
-            z, enc_mask = lvl_z[enc_lvl], lvl_z_mask[enc_lvl]
-            # decoding cross attention context
-            context_hiddens = self.latent2hidden(z)
-            # TODO: test this loop
-            if lvl == self.cfg.num_hierar_levels - 1:
-                tgt, tgt_mask = self.chunk_pad_sequence(tgt, tgt_mask)
-                dec_hiddens = decoder(
-                    input_ids=tgt, decoder_mask=tgt_mask, encoder_embeddings=context_hiddens, encoder_mask=enc_mask,
-                )
-            else:
-                dec_hiddens = decoder(
-                    decoder_states=dec_hiddens, decoder_mask=dec_mask, encoder_states=context_hiddens, encoder_mask=enc_mask
-                )
-            dec_hiddens = dec_hiddens.reshape(b, -1, self.cfg.decoder.hidden_size)
-            dec_mask = torch.ones_like(dec_hiddens)
+            context_hiddens, enc_mask = lvl_context_hidden[enc_lvl], lvl_context_mask[enc_lvl]
+            context_hiddens = context_hiddens.reshape(-1, 1, self.cfg.decoder.hidden_size)
+            enc_mask = enc_mask.reshape(-1, 1)
+            if dec_hiddens is not None:
+                dec_hiddens = dec_hiddens.reshape(-1, 1, self.cfg.decoder.hidden_size)
+                # TODO: are there better aggregation functions?
+                # TODO: should we do this during prob decoding?
+                context_hiddens = context_hiddens + dec_hiddens
+            dec_hiddens, dec_mask = lvl_context_hidden[enc_lvl-1], lvl_context_mask[enc_lvl-1]
+            dec_hiddens = decoder(
+                decoder_states=dec_hiddens, decoder_mask=dec_mask, encoder_states=context_hiddens, encoder_mask=enc_mask
+            )
+
+        if timer is not None:
+            timer.stop("hierar_decoder")
+
+        return context_hiddens, enc_mask
+
+    def final_decode(self, tgt, tgt_mask, context_hiddens, enc_mask, timer):
+
+        if timer is not None:
+            timer.start("final_decode")
+
+        batch_size, orig_tgt_seq_len = tgt.size()
+        # TODO: do each block need and eos token?
+        tgt, tgt_mask = self.chunk_pad_sequence(tgt, tgt_mask, force_batch_size=context_hiddens.size(0))
+        dec_hiddens = self.decoder(
+            input_ids=tgt, decoder_mask=tgt_mask, encoder_embeddings=context_hiddens, encoder_mask=enc_mask,
+        )
         # build decoding distribution
+        dec_hiddens = dec_hiddens.reshape(batch_size, -1, self.cfg.decoder.hidden_size)[:, :orig_tgt_seq_len]
         tgt_log_probs = self.log_softmax(hidden_states=dec_hiddens)
 
         if timer is not None:
-            timer.stop("decoder")
+            timer.stop("final_decode")
+
+        return tgt_log_probs
+
+    @typecheck()
+    def forward(self, src, src_mask, tgt, tgt_mask, timer=None):
+
+        if self.validate_input_ids:
+            # test src/tgt for id range (i.e., hellp in catching wrong tokenizer)
+            self.test_encoder_ids(src, raise_error=True)
+            self.test_decoder_ids(tgt, raise_error=True)
+
+        lvl_z, lvl_z_mean, lvl_z_logv, lvl_z_mask = self.hierar_encoder(src, src_mask, timer)
+        lvl_context_hidden = [self.latent2hidden(z) for z in lvl_z]
+        context_hiddens, enc_mask = self.hierar_decoder(lvl_context_hidden, lvl_z_mask, timer)
+        tgt_log_probs = self.final_decode(tgt, tgt_mask, context_hiddens, enc_mask, timer)
 
         return lvl_z, lvl_z_mean, lvl_z_logv, lvl_z_mask, tgt_log_probs
+
+    @torch.no_grad()
+    def batch_translate(
+        self, src: torch.LongTensor, src_mask: torch.LongTensor, return_beam_scores: bool = False, cache={}
+    ):
+        """
+        Translates a minibatch of inputs from source language to target language.
+        Args:
+            src: minibatch of inputs in the src language (batch x seq_len)
+            src_mask: mask tensor indicating elements to be ignored (batch x seq_len)
+        Returns:
+            translations: a list strings containing detokenized translations
+            inputs: a list of string containing detokenized inputs
+        """
+        mode = self.training
+        timer = cache.get("timer", None)
+        try:
+            self.eval()
+
+            # build posterior distribution q(x|z)
+            if ("lvl_z" not in cache) or ("lvl_z_mean" not in cache) or ("lvl_z_mask" not in cache):
+                lvl_z, lvl_z_mean, _, lvl_z_mask = self.hierar_encoder(src, src_mask, timer)
+            else:
+                lvl_z, lvl_z_mean, lvl_z_mask = cache["lvl_z"], cache["lvl_z_mean"], cache["lvl_z_mask"]
+
+            if getattr(self, "deterministic_translate", True):
+                lvl_z = lvl_z_mean
+
+            # decoding cross attention context
+            lvl_context_hidden = [self.latent2hidden(z) for z in lvl_z]
+
+            if ("context_hiddens" not in cache) or ("enc_mask" not in cache):
+                context_hiddens, enc_mask = self.hierar_decoder(lvl_context_hidden, lvl_z_mask, timer)
+            else:
+                context_hiddens, enc_mask = cache["context_hiddens"], cache["enc_mask"]
+
+            if timer is not None:
+                timer.start("sampler")
+
+            best_translations = self.beam_search(
+                encoder_hidden_states=context_hiddens,
+                encoder_input_mask=enc_mask,
+                return_beam_scores=return_beam_scores,
+            )
+            if timer is not None:
+                timer.stop("sampler")
+
+            if return_beam_scores:
+                all_translations, scores, best_translations = best_translations
+                scores = scores.view(-1)
+                all_translations = self.ids_to_postprocessed_text(
+                    all_translations, self.decoder_tokenizer, self.target_processor, filter_beam_ids=True
+                )
+
+            best_translations = self.ids_to_postprocessed_text(
+                best_translations, self.decoder_tokenizer, self.target_processor, filter_beam_ids=True
+            )
+            inputs = self.ids_to_postprocessed_text(
+                src, self.encoder_tokenizer, self.source_processor, filter_beam_ids=False
+            )
+
+        finally:
+            self.train(mode=mode)
+        if return_beam_scores:
+            return inputs, all_translations, scores.data.cpu().numpy().tolist(), best_translations
+
+        return inputs, best_translations
