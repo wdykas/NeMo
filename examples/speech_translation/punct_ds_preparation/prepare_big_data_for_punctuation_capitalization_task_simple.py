@@ -47,6 +47,7 @@ LIST_PATTERN = re.compile(f'^ *(?:{small.ROMAN_NUMERAL.pattern}|[0-9]+|[a-z]) *[
 NEW_LINE_WITH_SPACES_PATTERN = re.compile(' *\n *')
 DOUBLE_HYPHEN_PATTERN = re.compile(' *-- *')
 SQUARE_BRACKETS_PATTERN = re.compile(r' ?\[.{1,2}] *')
+UNDERSCORE_PATTERN = re.compile(r' _([^_]+)_ ')
 
 NUM_LINES_PER_NEWS_CRAWL_TMP_FILE = 10 ** 6
 
@@ -890,12 +891,20 @@ class PG19Worker:
             NEW_LINE_WITH_SPACES_PATTERN.sub(' ', p) for p in SEVERAL_NEW_LINES_PATTERN.split(text)
             if len(p) > PG_19_MIN_PARAGRAPH_LEN and LIST_PATTERN.search(p) is None
         ]
-        paragraphs = [DOUBLE_HYPHEN_PATTERN.sub(' - ', p) for p in paragraphs]
-        paragraphs = [p for p in paragraphs if big.SUSPICIOUS_LINE.match(p) is not None]
+        paragraphs = [UNDERSCORE_PATTERN.sub(r' \1 ', DOUBLE_HYPHEN_PATTERN.sub(' - ', p)) for p in paragraphs]
+        paragraphs = [p for p in paragraphs if big.SUSPICIOUS_LINE.match(p) is None]
         num_lines = 0
         text = '\n'.join(paragraphs) + '\n'
-        if not text:
+        if not text.strip():
             return
+        text, _ = big.remove_suspicious_lines_and_rearrange_quotes_and_spaces(
+            text,
+            normalize_and_check_quotes_and_parentheses=True,
+            check_suspicious_endings=True,
+            check_suspicious_parentheses=True,
+        )
+        text = big.normalize_punctuation(text, self.lang)
+        text = big.NEW_LINE_DUP.sub('\n', text)
         prepared_docs = {
             doc_id: {
                 "text": text + ('' if text[-1] == '\n' else '\n'),
@@ -1005,7 +1014,11 @@ def generate_segment_location_and_size(
     while sent_i > 0 and num_words < sequence_length_range[1]:
         num_words += count_words(sentences[sent_i])
         sent_i -= 1
-    if num_segments > sent_i + 1:
+    if num_words < sequence_length_range[1]:
+        raise ValueError(
+            f"Not enough words ({num_words}) in file {file} to cut a segment of length {sequence_length_range[1] - 1}"
+        )
+    elif num_segments > sent_i + 1:
         raise ValueError(
             f"Not enough words in file {file} to cut {num_segments} segments with number of words in "
             f"range {sequence_length_range}. If {num_words} words are taken in the end of document, the number of "
@@ -1055,6 +1068,8 @@ def extract_dev_text_segments_worker(
     for doc_id, doc in docs.items():
         doc['lines'] = doc['text'].splitlines()
         doc['to_exclude'] = set()
+        if len(doc['lines']) == 0:
+            logging.warning(f"Document {doc_id} in file {file} is empty.")
         sentences += doc['lines']
         doc_ids += [doc_id] * len(doc['lines'])
         sent_indices.extend(range(len(doc['lines'])))
