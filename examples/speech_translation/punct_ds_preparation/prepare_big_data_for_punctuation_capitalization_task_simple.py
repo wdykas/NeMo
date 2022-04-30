@@ -1005,13 +1005,13 @@ def count_words(text):
 def generate_segment_location_and_size(
     sentences: List[str], sequence_length_range: Tuple[int, int], num_segments: int, file: Path
 ) -> Tuple[List[int], List[int]]:
-    if num_segments < 0:
-        raise ValueError(f"Number of cut segments cannot be negative whereas num_segments={num_segments}")
+    if num_segments <= 0:
+        raise ValueError(f"Number of cut segments have to positive whereas num_segments={num_segments}")
     num_words = 0
     # Calculating the maximum number of start sentence. There have to be enough sentences after start sentence to form
     # even longest segment.
     sent_i = len(sentences) - 1
-    while sent_i > 0 and num_words < sequence_length_range[1] - 1:
+    while sent_i >= 0 and num_words < sequence_length_range[1] - 1:
         num_words += count_words(sentences[sent_i])
         sent_i -= 1
     if num_words < sequence_length_range[1] - 1:
@@ -1217,10 +1217,13 @@ class GetMaxAllowedSegmentsPerFileWorker:
         # Calculating the maximum number of start sentence. There have to be enough sentences after start sentence
         # to form even longest segment.
         sent_i = len(sentences) - 1
-        while sent_i > 0 and num_words < self.max_segment_length:
+        while sent_i >= 0 and num_words < self.max_segment_length:
             num_words += count_words(sentences[sent_i])
             sent_i -= 1
         self.progress_queue.put(1)
+        if file.name == '14751.xml':
+            print("14751.xml num_words:", num_words)
+            print("14751.xml sent_i:", sent_i)
         if num_words < self.max_segment_length:
             return 0
         return sent_i + 1
@@ -1233,6 +1236,14 @@ def get_how_many_segments_to_cut_by_files(
     total_size = sum(stats)
     fracs = [s / total_size for s in stats]
     sizes = [round(f * size) for f in fracs]
+    target_index = None
+    for i, file in enumerate(files):
+        if file.name == '14751.xml':
+            target_index = i
+    if target_index is None:
+        print("14751.xml is not found")
+    else:
+        print("Initial number of segments expected from 14751.xml:", sizes[target_index])
     with Progress(len(files), "Calculating maximum number of segments from a file", "file") as progress_queues:
         with mp.Pool(num_jobs) as pool:
             max_possible_segments_per_file = pool.map(
@@ -1241,6 +1252,10 @@ def get_how_many_segments_to_cut_by_files(
     for i, s in enumerate(sizes):
         if s > max_possible_segments_per_file[i]:
             sizes[i] = max_possible_segments_per_file[i]
+    if target_index is None:
+        print("14751.xml is not found")
+    else:
+        print("Number of segments expected from 14751.xml after first correction:", sizes[target_index])
     sum_ = sum(sizes)
     if sum_ > size:
         permutation = random.sample(list(range(len(sizes))), len(sizes))
@@ -1255,17 +1270,24 @@ def get_how_many_segments_to_cut_by_files(
         was_increase = True
         while sum_ < size and was_increase:
             was_increase = False
-            for i in range(size - sum_):
-                if sizes[permutation[i]] < max_possible_segments_per_file[permutation[i]]:
-                    sizes[permutation[i]] += 1
+            for j in permutation:
+                if sizes[j] < max_possible_segments_per_file[j]:
+                    sizes[j] += 1
                     was_increase = True
                     sum_ += 1
+                    if sum_ >= size:
+                        assert sum_ == size
+                        break
         if sum_ < size:
             raise ValueError(
                 f"Cannot cut required number of segments {size} from the dataset because there is no enough "
                 f"large enough files. Maximum allowed number of segments to cut is {sum_}. You may reduce "
                 f"number of segments required or cut them manually."
             )
+    if target_index is None:
+        print("14751.xml is not found")
+    else:
+        print("Number of segments expected from 14751.xml after all amendments:", sizes[target_index])
     assert len(sizes) == len(files)
     assert all([s >= 0 for s in sizes])
     assert sum(sizes) == size
