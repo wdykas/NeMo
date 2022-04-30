@@ -47,7 +47,7 @@ LIST_PATTERN = re.compile(f'^ *(?:{small.ROMAN_NUMERAL.pattern}|[0-9]+|[a-z]) *[
 NEW_LINE_WITH_SPACES_PATTERN = re.compile(' *\n *')
 DOUBLE_HYPHEN_PATTERN = re.compile(' *-- *')
 SQUARE_BRACKETS_PATTERN = re.compile(r' ?\[.{1,2}] *')
-UNDERSCORE_PATTERN = re.compile(r' _([^_]+)_ ')
+UNDERSCORE_PATTERN = re.compile(fr'(?<![{WC}/])_([^_]+)_(?![{WC}/])')
 
 NUM_LINES_PER_NEWS_CRAWL_TMP_FILE = 10 ** 6
 
@@ -888,15 +888,13 @@ class PG19Worker:
         with file.open() as f:
             text = big.ALL_PARENTHESES.sub(' ', SQUARE_BRACKETS_PATTERN.sub(' ', f.read()))
         paragraphs = [
-            NEW_LINE_WITH_SPACES_PATTERN.sub(' ', p) for p in SEVERAL_NEW_LINES_PATTERN.split(text)
+            NEW_LINE_WITH_SPACES_PATTERN.sub(' ', p).strip() for p in SEVERAL_NEW_LINES_PATTERN.split(text)
             if len(p) > PG_19_MIN_PARAGRAPH_LEN and LIST_PATTERN.search(p) is None
         ]
-        paragraphs = [UNDERSCORE_PATTERN.sub(r' \1 ', DOUBLE_HYPHEN_PATTERN.sub(' - ', p)) for p in paragraphs]
+        paragraphs = [UNDERSCORE_PATTERN.sub(r'\1', DOUBLE_HYPHEN_PATTERN.sub(' - ', p)) for p in paragraphs]
         paragraphs = [p for p in paragraphs if big.SUSPICIOUS_LINE.match(p) is None]
         num_lines = 0
         text = '\n'.join(paragraphs) + '\n'
-        if not text.strip():
-            return
         text, _ = big.remove_suspicious_lines_and_rearrange_quotes_and_spaces(
             text,
             normalize_and_check_quotes_and_parentheses=True,
@@ -905,6 +903,8 @@ class PG19Worker:
         )
         text = big.normalize_punctuation(text, 'en')
         text = big.NEW_LINE_DUP.sub('\n', text)
+        if not text.strip():
+            return
         prepared_docs = {
             doc_id: {
                 "text": text + ('' if text[-1] == '\n' else '\n'),
