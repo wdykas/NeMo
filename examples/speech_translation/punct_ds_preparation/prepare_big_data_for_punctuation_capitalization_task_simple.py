@@ -49,6 +49,7 @@ NEW_LINE_WITH_SPACES_PATTERN = re.compile(' *\n *')
 DOUBLE_HYPHEN_PATTERN = re.compile(' *-- *')
 SQUARE_BRACKETS_PATTERN = re.compile(r' ?\[.{1,2}] *')
 UNDERSCORE_PATTERN = re.compile(fr'(?<![{WC}/])_([^_]+)_(?![{WC}/])')
+WORD_CHAR_ENDING_PATTERN = re.compile(f'[{WC}]$')
 
 NUM_LINES_PER_NEWS_CRAWL_TMP_FILE = 10 ** 6
 
@@ -894,12 +895,12 @@ class PG19Worker:
             if len(p) > PG_19_MIN_PARAGRAPH_LEN and LIST_PATTERN.search(p) is None
         ]
         paragraphs = [UNDERSCORE_PATTERN.sub(r'\1', DOUBLE_HYPHEN_PATTERN.sub(' - ', p)) for p in paragraphs]
-        paragraphs = [p for p in paragraphs if big.SUSPICIOUS_LINE.match(p) is None]
+        paragraphs = [p for p in paragraphs if WORD_CHAR_ENDING_PATTERN.search(p) is None]
         text = '\n'.join(paragraphs) + '\n'
         text, _ = big.remove_suspicious_lines_and_rearrange_quotes_and_spaces(
             text,
             normalize_and_check_quotes_and_parentheses=True,
-            check_suspicious_endings=True,
+            check_suspicious_endings=False,
             check_suspicious_parentheses=True,
         )
         text = big.normalize_punctuation(text, 'en')
