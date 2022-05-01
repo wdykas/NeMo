@@ -33,7 +33,7 @@ random.seed(42)
 
 
 SUPPORTED_CORPUS_TYPES = [
-    "wikipedia", "europarl", "TED", "rapid", "news-commentary", "wiki-extracted", "news-crawl", "pg19"
+    "wikipedia", "europarl", "TED", "rapid", "news-commentary", "wiki-extracted", "news-crawl", "pg19", "pubmed"
 ]
 
 
@@ -991,6 +991,69 @@ def preprocess_pg19(
     return merge_small_files(document_dir, doc_id_to_file_i)
 
 
+class PubMedWorker:
+    def __init__(self, document_dir: Path, tokenizer: TokenizerSpec, progress_queue: mp.Queue) -> None:
+        self.document_dir = document_dir
+        self.tokenizer = tokenizer
+        self.progress_queue = progress_queue
+
+    def __call__(self, file: Path, file_id: int, doc_id: int, idx: int) -> None:
+        with file.open() as f:
+            original_text = f.read()
+            text = big.ALL_PARENTHESES.sub(' ', SQUARE_BRACKETS_PATTERN.sub(' ', original_text))
+        paragraphs = [
+            NEW_LINE_WITH_SPACES_PATTERN.sub(' ', p).strip() for p in SEVERAL_NEW_LINES_PATTERN.split(text)
+            if len(p) > PG_19_MIN_PARAGRAPH_LEN and LIST_PATTERN.search(p) is None
+        ]
+        paragraphs = [UNDERSCORE_PATTERN.sub(r'\1', DOUBLE_HYPHEN_PATTERN.sub(' - ', p)) for p in paragraphs]
+        paragraphs = [p for p in paragraphs if WORD_CHAR_ENDING_PATTERN.search(p) is None]
+        text = '\n'.join(paragraphs) + '\n'
+        text, _ = big.remove_suspicious_lines_and_rearrange_quotes_and_spaces(
+            text,
+            normalize_and_check_quotes_and_parentheses=True,
+            check_suspicious_endings=False,
+            check_suspicious_parentheses=True,
+        )
+        text = big.normalize_punctuation(text, 'en')
+        text = big.NEW_LINE_DUP.sub('\n', text)
+        if not text.strip():
+            return
+        text = text.lstrip() + ('' if text[-1] == '\n' else '\n')
+        prepared_docs = {
+            doc_id: {
+                "text": text,
+                "start_line": 0,
+                "end_line": original_text.count('\n'),
+                "source": file,
+                "title": f"pg19-{idx}",
+            }
+        }
+        self.progress_queue.put(1)
+        big.write_docs_to_file(prepared_docs, self.document_dir / (str(file_id) + '.xml'))
+
+
+def preprocess_pubmed(
+    dir_path: Path,
+    document_dir: Path,
+    start_doc_id: int,
+    start_file_id: int,
+    tokenizer: TokenizerSpec,
+    num_jobs: int,
+) -> Dict[int, int]:
+    files = list(dir_path.iterdir())
+    nf = len(files)
+    doc_ids = list(range(start_doc_id, start_doc_id + nf))
+    file_ids = list(range(start_file_id, start_file_id + nf))
+    with Progress(nf, "Preparing PubMed", "doc") as progress_queues:
+        with mp.Pool(num_jobs, initializer=tokenizability_initializer) as pool:
+            pool.starmap(
+                PubMedWorker(document_dir, tokenizer, progress_queues[0]),
+                zip(files, file_ids, doc_ids, range(nf)),
+            )
+    doc_id_to_file_i = dict(zip(doc_ids, file_ids))
+    return merge_small_files(document_dir, doc_id_to_file_i)
+
+
 def is_int(s):
     try:
         int(s)
@@ -1589,6 +1652,10 @@ def main():
                 with open('PG-19_doc_id_to_file_i.json', 'w') as f:
                     import json
                     json.dump(corpus_doc_id_to_file_i, f)
+            elif corpus_type == SUPPORTED_CORPUS_TYPES[8]:  # pubmed
+                corpus_doc_id_to_file_i = preprocess_pubmed(
+                    file_or_dir_path, document_dir, start_doc_id, start_file_id, tokenizer, args.num_jobs
+                )
             else:
                 raise ValueError(
                     f"Unsupported corpus type '{corpus_type}. Supported corpus types are {big.SUPPORTED_CORPUS_TYPES}"
