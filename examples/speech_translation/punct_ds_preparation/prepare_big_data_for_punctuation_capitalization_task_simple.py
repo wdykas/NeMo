@@ -887,7 +887,8 @@ class PG19Worker:
 
     def __call__(self, file: Path, file_id: int, doc_id: int, idx: int) -> None:
         with file.open() as f:
-            text = big.ALL_PARENTHESES.sub(' ', SQUARE_BRACKETS_PATTERN.sub(' ', f.read()))
+            original_text = f.read()
+            text = big.ALL_PARENTHESES.sub(' ', SQUARE_BRACKETS_PATTERN.sub(' ', original_text))
         paragraphs = [
             NEW_LINE_WITH_SPACES_PATTERN.sub(' ', p).strip() for p in SEVERAL_NEW_LINES_PATTERN.split(text)
             if len(p) > PG_19_MIN_PARAGRAPH_LEN and LIST_PATTERN.search(p) is None
@@ -905,12 +906,12 @@ class PG19Worker:
         text = big.NEW_LINE_DUP.sub('\n', text)
         if not text.strip():
             return
-        text = text + ('' if text[-1] == '\n' else '\n')
+        text = text.lstrip() + ('' if text[-1] == '\n' else '\n')
         prepared_docs = {
             doc_id: {
                 "text": text,
                 "start_line": 0,
-                "end_line": text.count('\n'),
+                "end_line": original_text.count('\n'),
                 "source": file,
                 "title": f"pg19-{idx}",
             }
@@ -919,10 +920,52 @@ class PG19Worker:
         big.write_docs_to_file(prepared_docs, self.document_dir / (str(file_id) + '.xml'))
 
 
-def merge_small_files(document_dir: Path) -> None:
-    files = [f for f in document_dir.iterdir() if is_int(f.stem) and f.suffixes == ['.xml']]
+def reverse_doc_id_to_file_i(doc_id_to_file_i: Dict[int, int]) -> Dict[int, List[int]]:
+    rev = {}
+    for k, v in doc_id_to_file_i.items():
+        if v in rev:
+            rev[v].append(k)
+        else:
+            rev[v] = [k]
+    return rev
+
+
+def rev_rev_doc_id_to_file_i(rev: Dict[int, List[int]]) -> Dict[int, int]:
+    rev_rev = {}
+    for k, v in rev.items():
+        for vv in v:
+            rev_rev[vv] = k
+    return rev_rev
+
+
+def merge_small_files(document_dir: Path, doc_id_to_file_i: Dict[int, int]) -> Dict[int, int]:
+    rev = reverse_doc_id_to_file_i(doc_id_to_file_i)
+    files = sorted(
+        [f for f in document_dir.iterdir() if is_int(f.stem) and f.suffixes == ['.xml']], key=lambda x: int(x.stem)
+    )
     stats = [f.stat().st_size for f in files]
-    files, stats = map(list, zip(*sorted(zip(files, stats), key=lambda x: x[1])))
+    max_size = max(stats)
+    curr_updated_file = files[0]
+    curr_file_i = int(curr_updated_file.stem)
+    curr_fo = curr_updated_file.open('a')
+    curr_size = stats[0]
+    for i in range(1, len(files)):
+        if curr_size >= max_size:
+            curr_fo.close()
+            curr_updated_file = files[i]
+            curr_file_i = int(curr_updated_file.stem)
+            curr_fo = curr_updated_file.open('a')
+            curr_size = stats[i]
+        else:
+            file_i = int(files[i].stem)
+            with files[i].open() as f:
+                curr_fo.write(f.read())
+            curr_size += stats[i]
+            rev[curr_file_i] += rev[file_i]
+            del rev[file_i]
+            files[i].unlink()
+    curr_fo.close()
+    return rev_rev_doc_id_to_file_i(rev)
 
 
 def preprocess_pg19(
@@ -943,7 +986,8 @@ def preprocess_pg19(
                 PG19Worker(document_dir, tokenizer, progress_queues[0]),
                 zip(files, file_ids, doc_ids, range(nf)),
             )
-    return dict(zip(doc_ids, file_ids))
+    doc_id_to_file_i = dict(zip(doc_ids, file_ids))
+    return merge_small_files(document_dir, doc_id_to_file_i)
 
 
 def is_int(s):
@@ -1541,6 +1585,9 @@ def main():
                 corpus_doc_id_to_file_i = preprocess_pg19(
                     file_or_dir_path, document_dir, start_doc_id, start_file_id, tokenizer, args.num_jobs
                 )
+                with open('PG-19_doc_id_to_file_i.json', 'w') as f:
+                    import json
+                    json.dump(corpus_doc_id_to_file_i, f)
             else:
                 raise ValueError(
                     f"Unsupported corpus type '{corpus_type}. Supported corpus types are {big.SUPPORTED_CORPUS_TYPES}"
