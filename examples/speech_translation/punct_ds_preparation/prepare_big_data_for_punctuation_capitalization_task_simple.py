@@ -1,6 +1,5 @@
 import argparse
 import copy
-import io
 import itertools
 import logging
 import multiprocessing as mp
@@ -8,10 +7,8 @@ import random
 import re
 from itertools import accumulate, chain
 from pathlib import Path
-from queue import Empty
 from subprocess import PIPE, Popen, run
 from tempfile import TemporaryDirectory
-from time import sleep
 from typing import Dict, List, Optional, Set, Tuple, Union
 
 import chardet
@@ -48,9 +45,11 @@ SEVERAL_NEW_LINES_PATTERN = re.compile('(?:\n[ \t]*){2,}')
 LIST_PATTERN = re.compile(f'^ *(?:{small.ROMAN_NUMERAL.pattern}|[0-9]+|[a-z]) *[.)]', flags=re.I | re.MULTILINE)
 NEW_LINE_WITH_SPACES_PATTERN = re.compile(' *\n *')
 DOUBLE_HYPHEN_PATTERN = re.compile(' *-- *')
-SQUARE_BRACKETS_PATTERN = re.compile(r' ?\[.{1,2}] *')
+SQUARE_BRACKETS_PATTERN = re.compile(r' ?\[[^]]+] *')
 UNDERSCORE_PATTERN = re.compile(fr'(?<![{WC}/])_([^_]+)_(?![{WC}/])')
 WORD_CHAR_ENDING_PATTERN = re.compile(f'[{WC}]$')
+UPPERCASE_INTRO = re.compile('[A-Z ]{2,}: ([A-Z])')
+SHORT_LINE = re.compile('\n.{1,50}\n')
 
 NUM_LINES_PER_NEWS_CRAWL_TMP_FILE = 10 ** 6
 
@@ -1009,20 +1008,26 @@ class PubMedWorker:
                 encoding = chardet.detect(blob)['encoding']
                 logging.info(f"Determined encoding '{encoding}'")
                 original_text = blob.decode(encoding)
-        text = big.ALL_PARENTHESES.sub(' ', SQUARE_BRACKETS_PATTERN.sub(' ', original_text))
+        original_text = small.SPACING_CHARACTERS_TO_REPLACE.sub(' ', original_text)
+        text = UPPERCASE_INTRO.sub(r'\1', big.ALL_PARENTHESES.sub(' ', SQUARE_BRACKETS_PATTERN.sub(' ', original_text)))
         paragraphs = [
             NEW_LINE_WITH_SPACES_PATTERN.sub(' ', p).strip() for p in SEVERAL_NEW_LINES_PATTERN.split(text)
             if len(p) > PG_19_MIN_PARAGRAPH_LEN and LIST_PATTERN.search(p) is None
         ]
+        paragraphs = [SHORT_LINE.sub('\n', p) if p.count('\n') > 1 else p for p in paragraphs]
         paragraphs = [UNDERSCORE_PATTERN.sub(r'\1', DOUBLE_HYPHEN_PATTERN.sub(' - ', p)) for p in paragraphs]
         paragraphs = [p for p in paragraphs if WORD_CHAR_ENDING_PATTERN.search(p) is None]
-        text = '\n'.join(paragraphs) + '\n'
-        text, _ = big.remove_suspicious_lines_and_rearrange_quotes_and_spaces(
-            text,
-            normalize_and_check_quotes_and_parentheses=True,
-            check_suspicious_endings=False,
-            check_suspicious_parentheses=True,
-        )
+        new_paragraphs = []
+        for p in paragraphs:
+            ps = nltk.sent_tokenize(p)
+            ps, _ = big.remove_suspicious_lines_and_rearrange_quotes_and_spaces(
+                '\n'.join(ps),
+                normalize_and_check_quotes_and_parentheses=True,
+                check_suspicious_endings=False,
+                check_suspicious_parentheses=True,
+            )
+            new_paragraphs.append(' '.join(ps.split('\n')))
+        text = '\n'.join(new_paragraphs) + '\n'
         text = big.normalize_punctuation(text, 'en')
         text = big.NEW_LINE_DUP.sub('\n', text)
         if not text.strip():
