@@ -1005,6 +1005,8 @@ def is_sent_plausible(sent: str) -> bool:
         else:
             punc.append(elem)
     nw = len(words)
+    if nw == 0:
+        return True
     nw_without_letters = 0
     for w in words:
         if LETTER.search(w) is None:
