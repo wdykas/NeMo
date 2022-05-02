@@ -49,7 +49,8 @@ SQUARE_BRACKETS_PATTERN = re.compile(r' ?\[[^]]+] *')
 UNDERSCORE_PATTERN = re.compile(fr'(?<![{WC}/])_([^_]+)_(?![{WC}/])')
 WORD_CHAR_ENDING_PATTERN = re.compile(f'[{WC}]$')
 UPPERCASE_INTRO = re.compile('[A-Z ]{2,}: ([A-Z])')
-SHORT_LINE = re.compile('\n.{1,50}\n')
+SHORT_LINE = re.compile('^.{1,50}\n')
+LETTER = re.compile('[a-zA-Z]')
 
 NUM_LINES_PER_NEWS_CRAWL_TMP_FILE = 10 ** 6
 
@@ -60,6 +61,10 @@ REPORT_PROGRESS_PERIOD = 5000
 INTACT_SENTENCES_PROGRESS_PERIOD = 10000
 
 PG_19_MIN_PARAGRAPH_LEN = 100
+
+MAX_FRACTION_OF_WORDS_WITHOUT_LETTERS = 0.7
+MAX_QUOTIENT_OF_NUMBER_OF_DOTS_IN_SENTENCE = 0.5
+MIN_NUM_WORDS_FOR_FRACTION_CRITERIA = 15
 
 
 def count_in_blocks(files, size=BUFFER_SIZE, specific_to_count=None, num_characters=None):
@@ -991,6 +996,26 @@ def preprocess_pg19(
     return merge_small_files(document_dir, doc_id_to_file_i)
 
 
+def is_sent_plausible(sent: str) -> bool:
+    words_and_punc = small.WORD.split(sent)
+    words, punc = [], []
+    for elem in words_and_punc:
+        if small.WORD.match(elem):
+            words.append(elem)
+        else:
+            punc.append(elem)
+    nw = len(words)
+    nw_without_letters = 0
+    for w in words:
+        if LETTER.search(w) is None:
+            nw_without_letters += 1
+    if nw_without_letters / nw > MAX_FRACTION_OF_WORDS_WITHOUT_LETTERS and nw > MIN_NUM_WORDS_FOR_FRACTION_CRITERIA:
+        return False
+    if sent.count('.') / nw > MAX_QUOTIENT_OF_NUMBER_OF_DOTS_IN_SENTENCE and nw > MIN_NUM_WORDS_FOR_FRACTION_CRITERIA:
+        return False
+    return True
+
+
 class PubMedWorker:
     def __init__(self, document_dir: Path, tokenizer: TokenizerSpec, progress_queue: mp.Queue) -> None:
         self.document_dir = document_dir
@@ -1002,11 +1027,9 @@ class PubMedWorker:
             try:
                 original_text = f.read()
             except UnicodeDecodeError:
-                logging.info(f"Cannot decode file {file} using utf-8.")
                 with file.open('rb') as fb:
                     blob = fb.read(10 ** 5)
                 encoding = chardet.detect(blob)['encoding']
-                logging.info(f"Determined encoding '{encoding}'")
                 original_text = blob.decode(encoding)
         original_text = small.SPACING_CHARACTERS_TO_REPLACE.sub(' ', original_text)
         text = UPPERCASE_INTRO.sub(r'\1', big.ALL_PARENTHESES.sub(' ', SQUARE_BRACKETS_PATTERN.sub(' ', original_text)))
@@ -1027,7 +1050,9 @@ class PubMedWorker:
                 check_suspicious_endings=False,
                 check_suspicious_parentheses=True,
             )
-            new_paragraphs.append(' '.join(ps.split('\n')))
+            ps = ps.split('\n')
+            ps = [sent for sent in ps if is_sent_plausible(sent)]
+            new_paragraphs.append(' '.join(ps))
         text = '\n'.join(new_paragraphs) + '\n'
         text = big.normalize_punctuation(text, 'en')
         text = big.NEW_LINE_DUP.sub('\n', text)
