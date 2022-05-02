@@ -1010,11 +1010,12 @@ class PubMedWorker:
                 original_text = blob.decode(encoding)
         original_text = small.SPACING_CHARACTERS_TO_REPLACE.sub(' ', original_text)
         text = UPPERCASE_INTRO.sub(r'\1', big.ALL_PARENTHESES.sub(' ', SQUARE_BRACKETS_PATTERN.sub(' ', original_text)))
+        paragraphs = SEVERAL_NEW_LINES_PATTERN.split(text)
+        paragraphs = [SHORT_LINE.sub('\n', p) if p.count('\n') > 1 else p for p in paragraphs]
         paragraphs = [
-            NEW_LINE_WITH_SPACES_PATTERN.sub(' ', p).strip() for p in SEVERAL_NEW_LINES_PATTERN.split(text)
+            NEW_LINE_WITH_SPACES_PATTERN.sub(' ', p).strip() for p in paragraphs
             if len(p) > PG_19_MIN_PARAGRAPH_LEN and LIST_PATTERN.search(p) is None
         ]
-        paragraphs = [SHORT_LINE.sub('\n', p) if p.count('\n') > 1 else p for p in paragraphs]
         paragraphs = [UNDERSCORE_PATTERN.sub(r'\1', DOUBLE_HYPHEN_PATTERN.sub(' - ', p)) for p in paragraphs]
         paragraphs = [p for p in paragraphs if WORD_CHAR_ENDING_PATTERN.search(p) is None]
         new_paragraphs = []
