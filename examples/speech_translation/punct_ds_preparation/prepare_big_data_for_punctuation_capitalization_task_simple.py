@@ -1082,7 +1082,9 @@ def preprocess_pubmed(
     tokenizer: TokenizerSpec,
     num_jobs: int,
 ) -> Dict[int, int]:
-    files = list(dir_path.iterdir())
+    files = []
+    for d in dir_path.iterdir():
+        files += list(d.iterdir())
     nf = len(files)
     doc_ids = list(range(start_doc_id, start_doc_id + nf))
     file_ids = list(range(start_file_id, start_file_id + nf))

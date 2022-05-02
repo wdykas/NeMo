@@ -7,7 +7,7 @@ python prepare_big_data_for_punctuation_capitalization_task_simple.py \
   --allowed_punctuation '.,?' \
   --only_first_punctuation_character_after_word_in_autoregressive \
   --no_label_if_all_characters_are_upper_case \
-  --input_files_or_dirs /media/apeganov/DATA/pubmed_OA_commercial/text \
+  --input_files_or_dirs /media/apeganov/DATA/pubmed_OA_commercial/extracted \
   --num_jobs 24 \
   --dev_size 0 \
   --test_size 0 \
