@@ -10,6 +10,8 @@ validation_datasets: "../datasets/ljspeech_ds/LJSpeech-1.1/test_manifest.json"
 sup_data_types: [align_prior_matrix, pitch, speaker_id]
 sup_data_path: "../datasets/ljspeech_ds/LJSpeech-1.1/"
 
+checkpoint_path: 'FastPitch_pretrained.ckpt'
+
 # Default values from librosa.pyin
 pitch_fmin: 65.4063949
 pitch_fmax: 2093.004638
