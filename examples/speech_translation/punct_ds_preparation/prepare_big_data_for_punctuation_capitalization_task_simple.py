@@ -14,6 +14,7 @@ from tempfile import TemporaryDirectory
 from time import sleep
 from typing import Dict, List, Optional, Set, Tuple, Union
 
+import chardet
 import nltk
 import numpy as np
 from bs4 import BeautifulSoup, NavigableString
@@ -889,7 +890,7 @@ class PG19Worker:
     def __call__(self, file: Path, file_id: int, doc_id: int, idx: int) -> None:
         with file.open() as f:
             original_text = f.read()
-            text = big.ALL_PARENTHESES.sub(' ', SQUARE_BRACKETS_PATTERN.sub(' ', original_text))
+        text = big.ALL_PARENTHESES.sub(' ', SQUARE_BRACKETS_PATTERN.sub(' ', original_text))
         paragraphs = [
             NEW_LINE_WITH_SPACES_PATTERN.sub(' ', p).strip() for p in SEVERAL_NEW_LINES_PATTERN.split(text)
             if len(p) > PG_19_MIN_PARAGRAPH_LEN and LIST_PATTERN.search(p) is None
@@ -999,8 +1000,15 @@ class PubMedWorker:
 
     def __call__(self, file: Path, file_id: int, doc_id: int, idx: int) -> None:
         with file.open() as f:
-            original_text = f.read()
-            text = big.ALL_PARENTHESES.sub(' ', SQUARE_BRACKETS_PATTERN.sub(' ', original_text))
+            try:
+                original_text = f.read()
+            except UnicodeDecodeError:
+                print(f"Cannot decode file {file} using utf-8.")
+                with file.open('rb') as fb:
+                    blob = fb.read(10 ** 5)
+                encoding = chardet.detect(blob)['encoding']
+                original_text = blob.decode(encoding)
+        text = big.ALL_PARENTHESES.sub(' ', SQUARE_BRACKETS_PATTERN.sub(' ', original_text))
         paragraphs = [
             NEW_LINE_WITH_SPACES_PATTERN.sub(' ', p).strip() for p in SEVERAL_NEW_LINES_PATTERN.split(text)
             if len(p) > PG_19_MIN_PARAGRAPH_LEN and LIST_PATTERN.search(p) is None
