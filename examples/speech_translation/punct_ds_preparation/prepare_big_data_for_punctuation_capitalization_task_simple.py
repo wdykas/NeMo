@@ -1404,14 +1404,6 @@ def get_how_many_segments_to_cut_by_files(
     total_size = sum(stats)
     fracs = [s / total_size for s in stats]
     sizes = [round(f * size) for f in fracs]
-    target_index = None
-    for i, file in enumerate(files):
-        if file.name == '14751.xml':
-            target_index = i
-    if target_index is None:
-        print("14751.xml is not found")
-    else:
-        print("Initial number of segments expected from 14751.xml:", sizes[target_index])
     with Progress(len(files), "Calculating maximum number of segments from a file", "file") as progress_queues:
         with mp.Pool(num_jobs) as pool:
             max_possible_segments_per_file = pool.map(
@@ -1420,10 +1412,6 @@ def get_how_many_segments_to_cut_by_files(
     for i, s in enumerate(sizes):
         if s > max_possible_segments_per_file[i]:
             sizes[i] = max_possible_segments_per_file[i]
-    if target_index is None:
-        print("14751.xml is not found")
-    else:
-        print("Number of segments expected from 14751.xml after first correction:", sizes[target_index])
     sum_ = sum(sizes)
     if sum_ > size:
         permutation = random.sample(list(range(len(sizes))), len(sizes))
@@ -1452,10 +1440,6 @@ def get_how_many_segments_to_cut_by_files(
                 f"large enough files. Maximum allowed number of segments to cut is {sum_}. You may reduce "
                 f"number of segments required or cut them manually."
             )
-    if target_index is None:
-        print("14751.xml is not found")
-    else:
-        print("Number of segments expected from 14751.xml after all amendments:", sizes[target_index])
     assert len(sizes) == len(files)
     assert all([s >= 0 for s in sizes])
     assert sum(sizes) == size
