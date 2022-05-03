@@ -1253,44 +1253,33 @@ def count_words(text):
     return len(small.WORD_WITH_PRECEDING_AND_FOLLOWING_PUNCTUATION.findall(text))
 
 
-def generate_segment_location_and_size(
-    sentences: List[str], sequence_length_range: Tuple[int, int], num_segments: int, file: Path
-) -> Tuple[List[int], List[int]]:
+def generate_segment_location(sentences: List[str], max_length: int, num_segments: int, file: Path) -> List[int]:
     if num_segments < 0:
         raise ValueError(f"Number of cut segments cannot be negative whereas num_segments={num_segments}")
     if num_segments == 0:
-        return [], []
+        return []
     num_words = 0
     # Calculating the maximum number of start sentence. There have to be enough sentences after start sentence to form
     # even longest segment.
     sent_i = len(sentences) - 1
-    while sent_i >= 0 and num_words < sequence_length_range[1] - 1:
+    while sent_i >= 0 and num_words < max_length:
         num_words += count_words(sentences[sent_i])
         sent_i -= 1
-    if num_words < sequence_length_range[1] - 1:
-        raise ValueError(
-            f"Not enough words ({num_words}) in file {file} to cut a segment of length {sequence_length_range[1] - 1}"
-        )
+    if num_words < max_length:
+        raise ValueError(f"Not enough words ({num_words}) in file {file} to cut a segment of length {max_length}")
     elif num_segments > sent_i + 1:
         raise ValueError(
-            f"Not enough words in file {file} to cut {num_segments} segments with number of words in "
-            f"range {sequence_length_range}. If {num_words} words are taken in the end of document, the number of "
+            f"Not enough words in file {file} to cut {num_segments} segments with maximum number of words in "
+            f"segment {max_length}. If {num_words} words are taken in the end of document, the number of "
             f"remaining sentences {sent_i + 1} is less than number of segments to cut."
         )
     try:
         start_sentences = sorted(random.sample(list(range(sent_i + 1)), num_segments))
     except ValueError:
-        logging.info(
-            f"sequence_length_range, num_segments, file, sent_i: "
-            f"{sequence_length_range}, {num_segments}, {file}, {sent_i}"
-        )
+        logging.info(f"max_length, num_segments, file, sent_i: {max_length}, {num_segments}, {file}, {sent_i}")
         raise
-    lengths = list(range(sequence_length_range[0], sequence_length_range[1]))
-    num_words = []
-    for i in range(num_segments):
-        num_words.append(lengths[i % len(lengths)])
-    assert len(start_sentences) == len(num_words)
-    return start_sentences, num_words
+    assert len(start_sentences) == num_segments
+    return start_sentences
 
 
 def cut_segment(text, shift, num_words_in_segment):
@@ -1307,11 +1296,10 @@ def cut_segment(text, shift, num_words_in_segment):
 def extract_dev_text_segments_worker(
     file: Path,
     num_segments: int,
-    sequence_length_range: Tuple[int, int],
+    segment_lengths: List[int],
     after_extraction_document_dir: Path,
     progress_queue: mp.Queue,
 ):
-    print("sequence_length_rage:", sequence_length_range)
     after_extraction_document_dir.mkdir(parents=True, exist_ok=True)
     output_file = after_extraction_document_dir / file.name
     segments = []
@@ -1327,12 +1315,12 @@ def extract_dev_text_segments_worker(
         sentences += doc['lines']
         doc_ids += [doc_id] * len(doc['lines'])
         sent_indices.extend(range(len(doc['lines'])))
-    start_sentences, num_words_by_segments = generate_segment_location_and_size(
-        sentences, sequence_length_range, num_segments, file
+    start_sentences = generate_segment_location(
+        sentences, max(segment_lengths), num_segments, file
     )
     import json
     from collections import Counter
-    num_words_by_segments_counter = dict(sorted(Counter(num_words_by_segments).items()))
+    num_words_by_segments_counter = dict(sorted(Counter(segment_lengths).items()))
     print(json.dumps(num_words_by_segments_counter, indent=2))
     curr_segment_i = 0
     sentence_i = 0
@@ -1344,14 +1332,14 @@ def extract_dev_text_segments_worker(
             shift = random.randint(0, num_words // 2)
             num_words_raw = 0
             num_sentences_for_segment = 0
-            while num_words_raw < shift + num_words_by_segments[curr_segment_i]:
+            while num_words_raw < shift + segment_lengths[curr_segment_i]:
                 num_words_raw += count_words(sentences[sentence_i + num_sentences_for_segment])
                 num_sentences_for_segment += 1
             segments.append(
                 cut_segment(
                     ' '.join(sentences[sentence_i : sentence_i + num_sentences_for_segment]),
                     shift,
-                    num_words_by_segments[curr_segment_i],
+                    segment_lengths[curr_segment_i],
                 )
             )
             for i in range(num_sentences_for_segment):
@@ -1379,6 +1367,21 @@ def extract_dev_text_segments_worker(
     return segments
 
 
+def get_segment_lengths_by_files(
+    num_segments_by_files: List[int], sequence_length_range: Tuple[int, int]
+) -> List[List[int]]:
+    segment_lengths_by_files = []
+    all_lengths = list(range(sequence_length_range[0], sequence_length_range[1]))
+    curr_length_idx = 0
+    for i, ns in enumerate(num_segments_by_files):
+        segment_lengths_for_file = []
+        for _ in range(ns):
+            segment_lengths_for_file.append(all_lengths[curr_length_idx])
+            curr_length_idx = (curr_length_idx + 1) % len(all_lengths)
+        segment_lengths_by_files.append(segment_lengths_for_file)
+    return segment_lengths_by_files
+
+
 def extract_dev_text_segments(
     document_dir: Path,
     after_extraction_document_dir: Path,
@@ -1393,6 +1396,7 @@ def extract_dev_text_segments(
         files, dev_size + test_size, sequence_length_range[1] - 1, num_jobs
     )
     num_jobs = min(num_jobs, len(files))
+    segment_lengths_by_files = get_segment_lengths_by_files(num_segments_by_files, sequence_length_range)
     with Progress(dev_size + test_size, 'Cutting dev and test segments', 'segment') as progress_queues:
         with mp.Pool(num_jobs) as pool:
             result = pool.starmap(
@@ -1400,7 +1404,7 @@ def extract_dev_text_segments(
                 zip(
                     files,
                     num_segments_by_files,
-                    [sequence_length_range] * len(files),
+                    segment_lengths_by_files,
                     [after_extraction_document_dir] * len(files),
                     [progress_queues[0]] * len(files),
                 )
