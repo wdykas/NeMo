@@ -41,7 +41,7 @@ class NeMoTransformerBottleneckConfig(NeMoTransformerConfig):
     arch: str = ''
     hidden_steps: int = -1
     hidden_blocks: int = 1
-    hidden_init_method: str = "params"
+    hidden_init_method: str = "normal"
     enc_num_layers: int = 0
 
 

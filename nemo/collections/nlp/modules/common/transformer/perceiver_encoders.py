@@ -78,8 +78,9 @@ class PerceiverEncoder(torch.nn.Module):
             )
         else:
             self.enc_self_att = None
-
-        if self.hidden_init_method == "params":
+        if self.hidden_init_method == "normal":
+            self.init_hidden = torch.nn.Parameter(torch.nn.init.xavier_normal_(torch.empty(hidden_steps, hidden_size)))
+        elif self.hidden_init_method == "params":
             # learnable initial hidden values
             self.init_hidden = torch.nn.Parameter(torch.nn.init.xavier_normal_(torch.empty(hidden_steps, hidden_size)))
             self.init_cross_att = TransformerDecoder(
@@ -164,7 +165,9 @@ class PerceiverEncoder(torch.nn.Module):
         )
 
         # initialize hidden state
-        if self._hidden_init_method == "params":
+        if self._hidden_init_method == "normal":
+            hidden_states = self.init_hidden.unsqueeze(0).expand(encoder_states.shape[0], -1, -1)
+        elif self._hidden_init_method == "params":
             # initialize latent with learned parameters
             hidden_states = self.init_hidden.unsqueeze(0).expand(encoder_states.shape[0], -1, -1)
             hidden_states = self.init_cross_att(

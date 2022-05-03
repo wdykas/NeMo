@@ -164,7 +164,7 @@ class MTBottleneckModelConfig(AAYNBaseConfig):
         arch='seq2seq',
         hidden_steps=32,
         hidden_blocks=1,
-        hidden_init_method='params',
+        hidden_init_method='normal',
         enc_num_layers=0,
     )
 
