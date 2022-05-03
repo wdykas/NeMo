@@ -75,6 +75,8 @@ MAX_FRACTION_OF_WORDS_WITHOUT_LETTERS = 0.7
 MAX_QUOTIENT_OF_NUMBER_OF_DOTS_IN_SENTENCE = 0.5
 MIN_NUM_WORDS_FOR_FRACTION_CRITERIA = 15
 
+GOOGLE_NORMALIZATION_DATASET_MIN_NUM_WORDS_IN_SENTENCE = 6
+
 
 def count_in_blocks(files, size=BUFFER_SIZE, specific_to_count=None, num_characters=None):
     total_num_characters = 0
@@ -1122,9 +1124,10 @@ def preprocess_pubmed(
 
 
 class GoogleNormalizationWorker:
-    def __init__(self, document_dir: Path, progress_queue: mp.Queue) -> None:
+    def __init__(self, document_dir: Path, tokenizer: TokenizerSpec, progress_queue: mp.Queue) -> None:
         self.document_dir = document_dir
         self.progress_queue = progress_queue
+        self.tokenizer = tokenizer
 
     def __call__(self, file: Path, file_id: int, doc_id: int, idx: int) -> None:
         n_orig_lines = 0
@@ -1135,7 +1138,8 @@ class GoogleNormalizationWorker:
                 n_orig_lines += 1
                 parts = line.split()
                 if parts[0] == '<eos>':
-                    lines.append(current_line)
+                    if count_words(current_line) >= GOOGLE_NORMALIZATION_DATASET_MIN_NUM_WORDS_IN_SENTENCE:
+                        lines.append(current_line)
                     current_line = ""
                 else:
                     if small.WORD_CHARACTER.match(parts[1]) is not None and current_line:
@@ -1143,15 +1147,22 @@ class GoogleNormalizationWorker:
                     current_line += parts[1]
         text = '\n'.join(lines) + '\n'
         text = big.ALL_PARENTHESES.sub(' ', text)
+        global tok_chars
+        global untok_chars
+        text = small.remove_untokenizable_characters_from_text(
+            text, self.tokenizer, tok_chars, untok_chars, remove_entire_lines=True
+        )
         text, _ = big.remove_suspicious_lines_and_rearrange_quotes_and_spaces(
             text,
             normalize_and_check_quotes_and_parentheses=True,
             check_suspicious_endings=False,
             check_suspicious_parentheses=True,
         )
+        text = big.SPACE_DUP.sub(' ', text)
         if not text.strip():
             return
         text = text + ('' if text[-1] == '\n' else '\n')
+        text = big.normalize_punctuation(text, 'en')
         prepared_docs = {
             doc_id: {
                 "text": text,
@@ -1170,6 +1181,7 @@ def preprocess_google_normalization_dataset(
     document_dir: Path,
     start_doc_id: int,
     start_file_id: int,
+    tokenizer: TokenizerSpec,
     num_jobs: int,
 ) -> Dict[int, int]:
     files = list(dir_path.iterdir())
@@ -1179,7 +1191,7 @@ def preprocess_google_normalization_dataset(
     with Progress(nf, "Preparing Google Normalization dataset", "doc") as progress_queues:
         with mp.Pool(num_jobs, initializer=tokenizability_initializer) as pool:
             pool.starmap(
-                GoogleNormalizationWorker(document_dir, progress_queues[0]),
+                GoogleNormalizationWorker(document_dir, tokenizer, progress_queues[0]),
                 zip(files, file_ids, doc_ids, range(nf)),
             )
     return dict(zip(doc_ids, file_ids))
@@ -1797,11 +1809,11 @@ def main():
                 )
             elif corpus_type == SUPPORTED_CORPUS_TYPES[9]:  # google-normalization-dataset
                 corpus_doc_id_to_file_i = preprocess_google_normalization_dataset(
-                    file_or_dir_path, document_dir, start_doc_id, start_file_id, args.num_jobs
+                    file_or_dir_path, document_dir, start_doc_id, start_file_id, tokenizer, args.num_jobs
                 )
             elif corpus_type == SUPPORTED_CORPUS_TYPES[10]:  # tatoeba
                 corpus_doc_id_to_file_i = preprocess_tatoeba(
-                    file_or_dir_path, document_dir, start_doc_id, start_file_id, args.num_jobs
+                    file_or_dir_path, document_dir, start_doc_id, start_file_id
                 )
             else:
                 raise ValueError(
