@@ -1131,19 +1131,16 @@ class GoogleNormalizationWorker:
         lines = []
         with file.open() as f:
             current_line = ""
-            print("Start loop")
-            for i, line in enumerate(f):
-                if i % 10**5 == 0:
-                    print(i)
+            for line in f:
                 n_orig_lines += 1
                 parts = line.split()
                 if parts[0] == '<eos>':
                     lines.append(current_line)
+                    current_line = ""
                 else:
                     if small.WORD_CHARACTER.match(parts[1]) is not None and current_line:
                         current_line += ' '
                     current_line += parts[1]
-            print("Finish loop")
         text = '\n'.join(lines) + '\n'
         text = big.ALL_PARENTHESES.sub(' ', text)
         text, _ = big.remove_suspicious_lines_and_rearrange_quotes_and_spaces(
