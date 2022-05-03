@@ -1175,7 +1175,7 @@ def preprocess_google_normalization_dataset(
     nf = len(files)
     doc_ids = list(range(start_doc_id, start_doc_id + nf))
     file_ids = list(range(start_file_id, start_file_id + nf))
-    with Progress(nf, "Preparing PubMed", "doc") as progress_queues:
+    with Progress(nf, "Preparing Google Normalization dataset", "doc") as progress_queues:
         with mp.Pool(num_jobs, initializer=tokenizability_initializer) as pool:
             pool.starmap(
                 GoogleNormalizationWorker(document_dir, progress_queues[0]),
@@ -1184,8 +1184,25 @@ def preprocess_google_normalization_dataset(
     return dict(zip(doc_ids, file_ids))
 
 
-def preprocess_tatoeba():
-    pass
+def preprocess_tatoeba(file_path, document_dir, doc_id, file_id) -> Dict[int, int]:
+    logging.info("Processing tatoeba...")
+    lines = []
+    with file_path.open() as f:
+        for line in f:
+            words = line.split()
+            lines.append(' '.join(words[2:]))
+    text = '\n'.join(lines)
+    prepared_docs = {
+        doc_id: {
+            "text": text,
+            "start_line": 0,
+            "end_line": len(lines),
+            "source": file_path,
+            "title": f"tatoeba",
+        }
+    }
+    big.write_docs_to_file(prepared_docs, document_dir / (str(file_id) + '.xml'))
+    return {doc_id: file_id}
 
 
 def is_int(s):
@@ -1292,12 +1309,11 @@ def cut_segment(text, shift, num_words_in_segment):
 
 
 def extract_dev_text_segments_worker(
-    file: Path,
-    num_segments: int,
-    segment_lengths: List[int],
-    after_extraction_document_dir: Path,
-    progress_queue: mp.Queue,
+    file: Path, segment_lengths: List[int], after_extraction_document_dir: Path, progress_queue: mp.Queue,
 ):
+    num_segments = len(segment_lengths)
+    if num_segments == 0:
+        return []
     after_extraction_document_dir.mkdir(parents=True, exist_ok=True)
     output_file = after_extraction_document_dir / file.name
     segments = []
@@ -1401,7 +1417,6 @@ def extract_dev_text_segments(
                 extract_dev_text_segments_worker,
                 zip(
                     files,
-                    num_segments_by_files,
                     segment_lengths_by_files,
                     [after_extraction_document_dir] * len(files),
                     [progress_queues[0]] * len(files),

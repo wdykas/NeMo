@@ -964,6 +964,7 @@ def write_dataset_sub(
     only_first_punctuation_character_after_word_in_autoregressive,
     no_label_if_all_characters_are_upper_case,
 ):
+    no_exclamation_mark = '!' not in allowed_punctuation
     extended_punctuation = allowed_punctuation | {' ', '\n'}
     output_dir.mkdir(parents=True, exist_ok=True)
     text_fn, input_fn = output_dir / Path('text.txt'), output_dir / Path('input.txt')
@@ -979,6 +980,8 @@ def write_dataset_sub(
     def autoregressive_repl3(match):
         w = match.group(1)
         p = match.group(2)
+        if no_exclamation_mark:
+            p = p.replace('!', '.')
         plbl = ''
         if p:
             for c in p:
@@ -988,6 +991,8 @@ def write_dataset_sub(
 
     def autoregressive_repl4(match):
         p = match.group(2)
+        if no_exclamation_mark:
+            p = p.replace('!', '.')
         plbl = ''
         if p:
             for c in p:
@@ -998,6 +1003,8 @@ def write_dataset_sub(
     def bert_repl1(match):
         w = match.group(1)
         p = match.group(2)
+        if no_exclamation_mark:
+            p = p.replace('!', '.')
         if p:
             c_i = 0
             while c_i < len(p) and p[c_i] not in allowed_punctuation:
@@ -1008,6 +1015,8 @@ def write_dataset_sub(
 
     def bert_repl2(match):
         p = match.group(0)
+        if no_exclamation_mark:
+            p = p.replace('!', '.')
         if p:
             c_i = 0
             while c_i < len(p) and p[c_i] not in allowed_punctuation:
@@ -1019,6 +1028,8 @@ def write_dataset_sub(
     def autoregressive_repl1(match):
         w = match.group(1)
         p = match.group(2)
+        if no_exclamation_mark:
+            p = p.replace('!', '.')
         if p:
             c_i = 0
             while c_i < len(p) and p[c_i] not in allowed_punctuation:
@@ -1029,6 +1040,8 @@ def write_dataset_sub(
 
     def autoregressive_repl2(match):
         p = match.group(2)
+        if no_exclamation_mark:
+            p = p.replace('!', '.')
         if p:
             c_i = 0
             while c_i < len(p) and p[c_i] not in allowed_punctuation:
@@ -1157,6 +1170,8 @@ def write_dataset_fast(
                     line_progress = 0
             word, punctuation = m.group(1), m.group(2)
             punctuation = m.group(2)
+            if '!' not in allowed_punctuation:
+                punctuation = punctuation.replace('!', '.')
             if create_model_input:
                 inp_f.write(word.lower() + ('\n' if '\n' in punctuation else ' '))
             if bert_labels:
@@ -1210,6 +1225,7 @@ def write_dataset(
     only_first_punctuation_character_after_word_in_autoregressive,
     no_label_if_all_characters_are_upper_case,
 ):
+    no_exclamation_mark = '!' not in allowed_punctuation
     output_dir.mkdir(parents=True, exist_ok=True)
     text_fn, input_fn = output_dir / Path('text.txt'), output_dir / Path('input.txt')
     bert_fn, ar_fn = output_dir / Path('bert_labels.txt'), output_dir / Path('autoregressive_labels.txt')
@@ -1221,6 +1237,8 @@ def write_dataset(
         move_to_line(in_f, borders[0])
         for l_i in tqdm(range(borders[1] - borders[0])):
             line = in_f.readline().strip()
+            if no_exclamation_mark:
+                line = line.replace('!', '.')
             if not line:
                 raise ValueError(
                     f"Line number {l_i} in file {input_file} is empty, whereas all lines in file for cutting has "
