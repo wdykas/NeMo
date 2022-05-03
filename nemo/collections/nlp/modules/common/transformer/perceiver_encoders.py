@@ -134,7 +134,7 @@ class PerceiverEncoder(torch.nn.Module):
 
     @property
     def supported_init_methods(self):
-        return ["params", "bridge"]
+        return ["normal", "params", "bridge"]
 
     @property
     def hidden_steps(self):
