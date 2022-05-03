@@ -184,5 +184,5 @@ class MTBottleneckModelConfig(AAYNBaseConfig):
 
 @dataclass
 class MTBlockBottleneckModelConfig(MTBottleneckModelConfig):
-    block_size: int = 16
+    max_num_blocks: int = 16
     num_hierar_levels: int = 2

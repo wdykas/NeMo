@@ -15,6 +15,7 @@
 import itertools
 import json
 import copy
+import math
 import random
 from multiprocessing import Value
 from pathlib import Path
@@ -476,47 +477,174 @@ class MTBlockBottleneckModel(MTBottleneckModel):
     def __init__(self, cfg: MTBlockBottleneckModelConfig, trainer: Trainer = None):
         super().__init__(cfg=cfg, trainer=trainer)
 
+        max_num_blocks = self.cfg.max_num_blocks
+        tokens_in_batch = self.cfg.train_ds.tokens_in_batch
+        self.block_size = tokens_in_batch // max_num_blocks + math.ceil(tokens_in_batch % max_num_blocks)
+
         encoders = [copy.deepcopy(self.encoder.encoder) for _ in range(cfg.num_hierar_levels-1)]
         decoders = [copy.deepcopy(self.decoder.decoder) for _ in range(cfg.num_hierar_levels-1)]
         encoders.insert(0, self.encoder)
         self.encoder = torch.nn.ModuleList(encoders)
         self.lvl_decoder = torch.nn.ModuleList(decoders)
 
+    def other_collate(self, batch):
+        # TODO: add the following in collator or dataset preproc:
+
+        src_ids, src_mask, tgt_ids, tgt_mask, labels = batch
+
+        src_ids[src_ids == self.encoder_tokenizer.eos_id] = self.encoder_tokenizer.pad_id
+        src_ids = src_ids[:, 1:-1]
+        src_mask = (src_ids != self.encoder_tokenizer.pad_id).type(src_ids.dtype)
+        tgt_ids = tgt_ids[:, 1:]
+        tgt_mask = tgt_mask[:, 1:]
+        labels[labels == self.decoder_tokenizer.eos_id] = self.decoder_tokenizer.pad_id
+        labels = labels[:, :-1]
+
+        seq_len = max(src_ids.size(1), tgt_ids.size(1))
+        act_num_blocks = seq_len // self.block_size + math.ceil(seq_len % self.block_size)
+        src_ids, src_mask = self.chunk_pad_sequence(
+            src_ids, src_mask, self.encoder_tokenizer.pad_id, act_num_blocks
+        )
+        src_ids, src_mask = self.add_bos_token(src_ids, src_mask, self.encoder_tokenizer.bos_id)
+        src_ids, src_mask = self.add_eos_token(src_ids, src_mask, self.encoder_tokenizer.pad_id, self.encoder_tokenizer.eos_id)
+        tgt_ids, tgt_mask = self.chunk_pad_sequence(
+            tgt_ids, tgt_mask, self.decoder_tokenizer.pad_id, act_num_blocks
+        )
+        tgt_ids, tgt_mask = self.add_bos_token(tgt_ids, tgt_mask, self.decoder_tokenizer.bos_id)
+        labels, _ = self.chunk_pad_sequence(
+            labels, None, self.decoder_tokenizer.pad_id, act_num_blocks
+        )
+        labels, _ = self.add_eos_token(labels, tgt_mask, self.decoder_tokenizer.pad_id, self.decoder_tokenizer.eos_id)
+        assert src_ids.size(0) == tgt_ids.size(0)
+        return src_ids, src_mask, tgt_ids, tgt_mask, labels
+
+    @staticmethod
+    def resize_batch(batch):
+        for i in range(len(batch)):
+            if batch[i].ndim == 3:
+                # Dataset returns already batched data and the first dimension of size 1 added by DataLoader
+                # is excess.
+                batch[i] = batch[i].squeeze(dim=0)
+        return batch
+
+    def training_step(self, batch, batch_idx):
+        # TODO: remove other_collate when method moved to dataset
+        batch = self.resize_batch(batch)
+        batch = self.other_collate(batch)
+        return super().training_step(batch, batch_idx)
+
+    def eval_step(self, batch, batch_idx, mode, dataloader_idx=0):
+        # TODO: remove other_collate when method moved to dataset
+        batch = self.resize_batch(batch)
+        orig_src_ids, _, orig_tgt_ids, _, _ = batch
+        batch = self.other_collate(batch)
+        if self.log_timing:
+            timer = timers.NamedTimer()
+        else:
+            timer = None
+
+        if self.multilingual:
+            self.source_processor = self.source_processor_list[dataloader_idx]
+            self.target_processor = self.target_processor_list[dataloader_idx]
+
+        src_ids, src_mask, tgt_ids, tgt_mask, labels = batch
+        z, z_mean, z_logv, z_mask, tgt_log_probs = self(src_ids, src_mask, tgt_ids, tgt_mask, timer=timer)
+        eval_loss, info_dict = self.loss(
+            z=z,
+            z_mean=z_mean,
+            z_logv=z_logv,
+            z_mask=z_mask,
+            tgt_log_probs=tgt_log_probs,
+            tgt=tgt_ids,
+            tgt_mask=tgt_mask,
+            tgt_labels=labels,
+            train=False,
+            return_info=True,
+        )
+        # pass cache to sampler in order to reuse encoder's output
+        cache = dict(z=z, z_mean=z_mean, z_mask=z_mask, timer=timer, orig_batch_size=orig_src_ids.size(0))
+
+        translations = self.batch_translate(src=src_ids, src_mask=src_mask, cache=cache)
+
+        num_measurements = labels.shape[0] * labels.shape[1]
+        if dataloader_idx == 0:
+            getattr(self, f'{mode}_loss')(
+                loss=eval_loss, num_measurements=num_measurements,
+            )
+        else:
+            getattr(self, f'{mode}_loss_{dataloader_idx}')(
+                loss=eval_loss, num_measurements=num_measurements,
+            )
+        np_tgt = orig_tgt_ids.detach().cpu().numpy()
+        ground_truths = [self.decoder_tokenizer.ids_to_text(tgt) for tgt in np_tgt]
+        ground_truths = [self.target_processor.detokenize(tgt.split(' ')) for tgt in ground_truths]
+        num_non_pad_tokens = np.not_equal(np_tgt, self.decoder_tokenizer.pad_id).sum().item()
+
+        inputs = self.ids_to_postprocessed_text(
+            orig_src_ids, self.encoder_tokenizer, self.source_processor, filter_beam_ids=False
+        )
+
+        # collect logs
+        log_dict = {k: v.detach().cpu().numpy() if torch.is_tensor(v) else v for k, v in info_dict.items()}
+        # add timing if required
+        if timer is not None:
+            for k, v in timer.export().items():
+                log_dict[f"{k}_timing"] = v
+
+        return {
+            'inputs': inputs,
+            'translations': translations,
+            'ground_truths': ground_truths,
+            'num_non_pad_tokens': num_non_pad_tokens,
+            'log': log_dict,
+        }
+
     def loss(self, **kwargs):
         # TODO: update loss when self.model_type in ["mim", "vae"]
         return super().loss(**kwargs)
 
-    def chunk_pad_sequence(self, seq, mask, force_batch_size=None):
+    def chunk_pad_sequence(self, seq, mask, pad_id, num_blocks):
         seq_len = seq.size(1)
-        if force_batch_size is None:
-            block_size = self.cfg.block_size
-            num_blocks = seq_len // block_size + 1
-        else:
-            b = seq.size(0)
-            num_blocks = force_batch_size // b
-            #TODO: at decoding which not use the labels/target seq_len
-            #TODO: create a max tgt block_size based on src blocks size
-            block_size = seq_len // num_blocks + 1
-        if seq_len < block_size:
+        if num_blocks == 1:
             return seq, mask
 
-        if seq_len % block_size != 0:
-            len_diff = num_blocks * block_size - seq_len
-            if seq.dim() == 2:
-                pad_seq = torch.zeros_like(seq[:, :1]).repeat(1, len_diff)
-            else:
-                pad_seq = torch.zeros_like(seq[:, :1]).repeat(1, len_diff, 1)
-            pad_mask = torch.zeros_like(mask[:, :1]).repeat(1, len_diff)
-            seq = torch.cat((seq, pad_seq), dim=1)
-            mask = torch.cat((mask, pad_mask), dim=1)
+        len_diff = num_blocks * self.block_size - seq_len
         if seq.dim() == 2:
-            seq = seq.reshape(-1, block_size)
+            # re-add pad id
+            pad_seq = torch.full_like(seq[:, :1], pad_id).repeat(1, len_diff)
         else:
-            seq = seq.reshape(-1, block_size, seq.size(-1))
-        mask = mask.reshape(-1, block_size)
+            pad_seq = torch.full_like(seq[:, :1], pad_id).repeat(1, len_diff, 1)
+        seq = torch.cat((seq, pad_seq), dim=1)
+
+        if mask is not None:
+            pad_mask = torch.zeros_like(mask[:, :1]).repeat(1, len_diff)
+            mask = torch.cat((mask, pad_mask), dim=1)
+
+        if seq.dim() == 2:
+            seq = seq.reshape(-1, self.block_size)
+        else:
+            seq = seq.reshape(-1, self.block_size, seq.size(-1))
+
+        if mask is not None:
+            mask = mask.reshape(-1, self.block_size)
 
         return seq, mask
 
+    def add_bos_token(self, seq, mask, bos_id):
+        bos_tensor = torch.full_like(seq[:, :1], bos_id)
+        seq = torch.cat((bos_tensor, seq), dim=1)
+        bos_mask = torch.ones_like(mask[:, :1])
+        mask = torch.cat((bos_mask, mask), dim=1)
+        return seq, mask
+
+    def add_eos_token(self, seq, mask, pad_id, eos_id):
+        eos_seq = torch.full_like(seq[:, :1], eos_id)
+        pad_seq = torch.full_like(seq[:, :1], pad_id)
+        seq = torch.cat((seq, pad_seq), dim=1)
+        eos_indices = mask.sum(1).unsqueeze(1) - 1
+        seq.scatter_(1, eos_indices, eos_seq)
+        mask = (seq != pad_id).type(mask.dtype)
+        return seq, mask
 
     def hierar_encoder(self, src, src_mask, timer=None):
 
@@ -524,19 +652,20 @@ class MTBlockBottleneckModel(MTBottleneckModel):
             timer.start("hierar_encoder")
 
         b = src.size(0)
+        pad_id = self.encoder_tokenizer.pad_id
         lvl_z = []
         lvl_z_mean = []
         lvl_z_logv = []
         lvl_z_mask = []
         for lvl, encoder in enumerate(self.encoder):
             if lvl == 0:
-                src, src_mask = self.chunk_pad_sequence(src, src_mask)
                 enc_hiddens, enc_mask = encoder(input_ids=src, encoder_mask=src_mask, return_mask=True, )
             else:
                 enc_hiddens, enc_mask = encoder(encoder_states=enc_hiddens, encoder_mask=enc_mask, )
             enc_hiddens = enc_hiddens.reshape(b, -1, self.cfg.encoder.hidden_size)
             enc_mask  = enc_mask.reshape(b, -1)
-            enc_hiddens, enc_mask = self.chunk_pad_sequence(enc_hiddens, enc_mask)
+            act_num_blocks = enc_hiddens.size(1) // self.block_size + math.ceil(enc_hiddens.size(1) % self.block_size)
+            enc_hiddens, enc_mask = self.chunk_pad_sequence(enc_hiddens, enc_mask, pad_id, act_num_blocks)
             z, z_mean, z_logv = self.encode_latent(hidden=enc_hiddens)
             lvl_z.append(z)
             lvl_z_mean.append(z_mean)
@@ -557,12 +686,11 @@ class MTBlockBottleneckModel(MTBottleneckModel):
         for lvl, decoder in enumerate(self.lvl_decoder):
             enc_lvl = self.cfg.num_hierar_levels - lvl - 1
             context_hiddens, enc_mask = lvl_context_hidden[enc_lvl], lvl_context_mask[enc_lvl]
-            context_hiddens = context_hiddens.reshape(-1, 1, self.cfg.decoder.hidden_size)
-            enc_mask = enc_mask.reshape(-1, 1)
+            #context_hiddens = context_hiddens.reshape(-1, 1, self.cfg.decoder.hidden_size)
+            #enc_mask = enc_mask.reshape(-1, 1)
             if dec_hiddens is not None:
-                dec_hiddens = dec_hiddens.reshape(-1, 1, self.cfg.decoder.hidden_size)
+                #dec_hiddens = dec_hiddens.reshape(-1, 1, self.cfg.decoder.hidden_size)
                 # TODO: are there better aggregation functions?
-                # TODO: should we do this during prob decoding?
                 context_hiddens = context_hiddens + dec_hiddens
             dec_hiddens, dec_mask = lvl_context_hidden[enc_lvl-1], lvl_context_mask[enc_lvl-1]
             dec_hiddens = decoder(
@@ -579,14 +707,11 @@ class MTBlockBottleneckModel(MTBottleneckModel):
         if timer is not None:
             timer.start("final_decode")
 
-        batch_size, orig_tgt_seq_len = tgt.size()
-        # TODO: do each block need and eos token?
-        tgt, tgt_mask = self.chunk_pad_sequence(tgt, tgt_mask, force_batch_size=context_hiddens.size(0))
         dec_hiddens = self.decoder(
             input_ids=tgt, decoder_mask=tgt_mask, encoder_embeddings=context_hiddens, encoder_mask=enc_mask,
         )
         # build decoding distribution
-        dec_hiddens = dec_hiddens.reshape(batch_size, -1, self.cfg.decoder.hidden_size)[:, :orig_tgt_seq_len]
+        #dec_hiddens = dec_hiddens.reshape(batch_size, -1, self.cfg.decoder.hidden_size)[:, :orig_tgt_seq_len]
         tgt_log_probs = self.log_softmax(hidden_states=dec_hiddens)
 
         if timer is not None:
@@ -624,6 +749,7 @@ class MTBlockBottleneckModel(MTBottleneckModel):
         """
         mode = self.training
         timer = cache.get("timer", None)
+        orig_batch_size = cache["orig_batch_size"]
         try:
             self.eval()
 
@@ -658,20 +784,18 @@ class MTBlockBottleneckModel(MTBottleneckModel):
             if return_beam_scores:
                 all_translations, scores, best_translations = best_translations
                 scores = scores.view(-1)
+                all_translations = all_translations.reshape(orig_batch_size, -1)
                 all_translations = self.ids_to_postprocessed_text(
                     all_translations, self.decoder_tokenizer, self.target_processor, filter_beam_ids=True
                 )
-
+            best_translations = best_translations.reshape(orig_batch_size, -1)
             best_translations = self.ids_to_postprocessed_text(
                 best_translations, self.decoder_tokenizer, self.target_processor, filter_beam_ids=True
-            )
-            inputs = self.ids_to_postprocessed_text(
-                src, self.encoder_tokenizer, self.source_processor, filter_beam_ids=False
             )
 
         finally:
             self.train(mode=mode)
         if return_beam_scores:
-            return inputs, all_translations, scores.data.cpu().numpy().tolist(), best_translations
+            return all_translations, scores.data.cpu().numpy().tolist(), best_translations
 
-        return inputs, best_translations
+        return best_translations

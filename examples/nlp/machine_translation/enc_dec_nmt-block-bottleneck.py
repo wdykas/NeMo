@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import os
 from dataclasses import dataclass
 from typing import Optional
 
@@ -96,6 +96,8 @@ Usage:
       +exp_manager.checkpoint_callback_params.mode=max 
 """
 
+
+#os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 
 @dataclass
 class MTBlockBottleneckConfig(NemoConfig):
