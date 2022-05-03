@@ -482,6 +482,8 @@ class MTBlockBottleneckModel(MTBottleneckModel):
         self.block_size = tokens_in_batch // max_num_blocks + math.ceil(tokens_in_batch % max_num_blocks)
 
         encoders = [copy.deepcopy(self.encoder.encoder) for _ in range(cfg.num_hierar_levels-1)]
+        for encoder in encoders:
+            encoder.enc_self_att = None
         decoders = [copy.deepcopy(self.decoder.decoder) for _ in range(cfg.num_hierar_levels-1)]
         encoders.insert(0, self.encoder)
         self.encoder = torch.nn.ModuleList(encoders)
