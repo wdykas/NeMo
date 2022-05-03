@@ -1144,7 +1144,7 @@ class GoogleNormalizationWorker:
         text = '\n'.join(lines) + '\n'
         text = big.ALL_PARENTHESES.sub(' ', text)
         text, _ = big.remove_suspicious_lines_and_rearrange_quotes_and_spaces(
-            '\n'.join(text),
+            text,
             normalize_and_check_quotes_and_parentheses=True,
             check_suspicious_endings=False,
             check_suspicious_parentheses=True,
