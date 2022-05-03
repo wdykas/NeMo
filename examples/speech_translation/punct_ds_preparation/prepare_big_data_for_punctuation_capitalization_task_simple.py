@@ -1030,9 +1030,16 @@ class PubMedWorker:
                 original_text = f.read()
             except UnicodeDecodeError:
                 with file.open('rb') as fb:
-                    blob = fb.read(10 ** 5)
+                    blob = fb.read()
                 encoding = chardet.detect(blob)['encoding']
-                original_text = blob.decode(encoding)
+                try:
+                    original_text = blob.decode(encoding)
+                except UnicodeDecodeError:
+                    logging.warning(
+                        f"Could not decode file {file} using 'utf-8' and determined by `chardet` encoding "
+                        f"'{encoding}'. Skipping file {file}."
+                    )
+                    return
         original_text = small.SPACING_CHARACTERS_TO_REPLACE.sub(' ', original_text)
         text = UPPERCASE_INTRO.sub(r'\1', big.ALL_PARENTHESES.sub(' ', SQUARE_BRACKETS_PATTERN.sub(' ', original_text)))
         paragraphs = SEVERAL_NEW_LINES_PATTERN.split(text)
