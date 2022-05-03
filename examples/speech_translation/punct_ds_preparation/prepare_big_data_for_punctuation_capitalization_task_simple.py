@@ -41,6 +41,7 @@ SUPPORTED_CORPUS_TYPES = [
     "pg19",
     "pubmed",
     "google-normalization-dataset",
+    "tatoeba",
 ]
 
 
