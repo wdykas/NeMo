@@ -1332,10 +1332,6 @@ def extract_dev_text_segments_worker(
     start_sentences = generate_segment_location(
         sentences, max(segment_lengths), num_segments, file
     )
-    import json
-    from collections import Counter
-    num_words_by_segments_counter = dict(sorted(Counter(segment_lengths).items()))
-    print(json.dumps(num_words_by_segments_counter, indent=2))
     curr_segment_i = 0
     sentence_i = 0
     progress = 0
