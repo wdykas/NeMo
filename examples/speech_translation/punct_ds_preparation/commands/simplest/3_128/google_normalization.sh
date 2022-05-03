@@ -8,7 +8,7 @@ python prepare_big_data_for_punctuation_capitalization_task_simple.py \
   --allowed_punctuation '.,?' \
   --only_first_punctuation_character_after_word_in_autoregressive \
   --no_label_if_all_characters_are_upper_case \
-  --input_files_or_dirs /media/apeganov/DATA/google_text_normalization/en_with_types_small \
+  --input_files_or_dirs /media/apeganov/DATA/google_text_normalization/en_with_types \
   --num_jobs 24 \
   --num_passes_through_dataset 1 \
   --dev_size 10000 \
