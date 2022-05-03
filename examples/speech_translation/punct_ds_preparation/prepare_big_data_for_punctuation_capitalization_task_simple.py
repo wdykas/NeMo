@@ -31,7 +31,16 @@ random.seed(42)
 
 
 SUPPORTED_CORPUS_TYPES = [
-    "wikipedia", "europarl", "TED", "rapid", "news-commentary", "wiki-extracted", "news-crawl", "pg19", "pubmed"
+    "wikipedia",
+    "europarl",
+    "TED",
+    "rapid",
+    "news-commentary",
+    "wiki-extracted",
+    "news-crawl",
+    "pg19",
+    "pubmed",
+    "google-normalization-dataset",
 ]
 
 
@@ -886,9 +895,8 @@ def preprocess_news_crawl(
 
 
 class PG19Worker:
-    def __init__(self, document_dir: Path, tokenizer: TokenizerSpec, progress_queue: mp.Queue) -> None:
+    def __init__(self, document_dir: Path, progress_queue: mp.Queue) -> None:
         self.document_dir = document_dir
-        self.tokenizer = tokenizer
         self.progress_queue = progress_queue
 
     def __call__(self, file: Path, file_id: int, doc_id: int, idx: int) -> None:
@@ -979,7 +987,6 @@ def preprocess_pg19(
     document_dir: Path,
     start_doc_id: int,
     start_file_id: int,
-    tokenizer: TokenizerSpec,
     num_jobs: int,
 ) -> Dict[int, int]:
     files = list(dir_path.iterdir())
@@ -987,9 +994,9 @@ def preprocess_pg19(
     doc_ids = list(range(start_doc_id, start_doc_id + nf))
     file_ids = list(range(start_file_id, start_file_id + nf))
     with Progress(nf, "Preparing PG-19", "doc") as progress_queues:
-        with mp.Pool(num_jobs, initializer=tokenizability_initializer) as pool:
+        with mp.Pool(num_jobs) as pool:
             pool.starmap(
-                PG19Worker(document_dir, tokenizer, progress_queues[0]),
+                PG19Worker(document_dir, progress_queues[0]),
                 zip(files, file_ids, doc_ids, range(nf)),
             )
     doc_id_to_file_i = dict(zip(doc_ids, file_ids))
@@ -1055,6 +1062,8 @@ class PubMedWorker:
         paragraphs = [UNDERSCORE_PATTERN.sub(r'\1', DOUBLE_HYPHEN_PATTERN.sub(' - ', p)) for p in paragraphs]
         paragraphs = [p for p in paragraphs if WORD_CHAR_ENDING_PATTERN.search(p) is None]
         new_paragraphs = []
+        global tok_chars
+        global untok_chars
         for p in paragraphs:
             ps = nltk.sent_tokenize(p)
             ps, _ = big.remove_suspicious_lines_and_rearrange_quotes_and_spaces(
@@ -1062,6 +1071,9 @@ class PubMedWorker:
                 normalize_and_check_quotes_and_parentheses=True,
                 check_suspicious_endings=False,
                 check_suspicious_parentheses=True,
+            )
+            ps, tok_chars, untok_chars, _ = small.remove_untokenizable_characters_from_text(
+                ps, self.tokenizer, tok_chars, untok_chars, remove_entire_lines=True
             )
             ps = ps.split('\n')
             ps = [sent for sent in ps if is_sent_plausible(sent)]
@@ -1078,7 +1090,7 @@ class PubMedWorker:
                 "start_line": 0,
                 "end_line": original_text.count('\n'),
                 "source": file,
-                "title": f"pg19-{idx}",
+                "title": f"pubmed-{idx}",
             }
         }
         self.progress_queue.put(1)
@@ -1107,6 +1119,75 @@ def preprocess_pubmed(
             )
     doc_id_to_file_i = dict(zip(doc_ids, file_ids))
     return merge_small_files(document_dir, doc_id_to_file_i)
+
+
+class GoogleNormalizationWorker:
+    def __init__(self, document_dir: Path, progress_queue: mp.Queue) -> None:
+        self.document_dir = document_dir
+        self.progress_queue = progress_queue
+
+    def __call__(self, file: Path, file_id: int, doc_id: int, idx: int) -> None:
+        n_orig_lines = 0
+        lines = []
+        with file.open() as f:
+            current_line = ""
+            for line in f:
+                n_orig_lines += 1
+                parts = line.split()
+                if parts[0] == '<eos>':
+                    lines.append(current_line)
+                else:
+                    if small.WORD_CHARACTER.match(parts[1]) is not None and current_line:
+                        current_line += ' '
+                    current_line += parts[1]
+        text = '\n'.join(lines) + '\n'
+        text = big.ALL_PARENTHESES.sub(' ', text)
+        text, _ = big.remove_suspicious_lines_and_rearrange_quotes_and_spaces(
+            '\n'.join(text),
+            normalize_and_check_quotes_and_parentheses=True,
+            check_suspicious_endings=False,
+            check_suspicious_parentheses=True,
+        )
+        if not text.strip():
+            return
+        text = text + ('' if text[-1] == '\n' else '\n')
+        prepared_docs = {
+            doc_id: {
+                "text": text,
+                "start_line": 0,
+                "end_line": n_orig_lines,
+                "source": file,
+                "title": f"gnd-{idx}",
+            }
+        }
+        self.progress_queue.put(1)
+        big.write_docs_to_file(prepared_docs, self.document_dir / (str(file_id) + '.xml'))
+
+
+def preprocess_google_normalization_dataset(
+    dir_path: Path,
+    document_dir: Path,
+    start_doc_id: int,
+    start_file_id: int,
+    num_jobs: int,
+) -> Dict[int, int]:
+    files = []
+    for d in dir_path.iterdir():
+        files += list(d.iterdir())
+    nf = len(files)
+    doc_ids = list(range(start_doc_id, start_doc_id + nf))
+    file_ids = list(range(start_file_id, start_file_id + nf))
+    with Progress(nf, "Preparing PubMed", "doc") as progress_queues:
+        with mp.Pool(num_jobs, initializer=tokenizability_initializer) as pool:
+            pool.starmap(
+                GoogleNormalizationWorker(document_dir, progress_queues[0]),
+                zip(files, file_ids, doc_ids, range(nf)),
+            )
+    return dict(zip(doc_ids, file_ids))
+
+
+def preprocess_tatoeba():
+    pass
 
 
 def is_int(s):
@@ -1230,6 +1311,7 @@ def extract_dev_text_segments_worker(
     after_extraction_document_dir: Path,
     progress_queue: mp.Queue,
 ):
+    print("sequence_length_rage:", sequence_length_range)
     after_extraction_document_dir.mkdir(parents=True, exist_ok=True)
     output_file = after_extraction_document_dir / file.name
     segments = []
@@ -1248,6 +1330,10 @@ def extract_dev_text_segments_worker(
     start_sentences, num_words_by_segments = generate_segment_location_and_size(
         sentences, sequence_length_range, num_segments, file
     )
+    import json
+    from collections import Counter
+    num_words_by_segments_counter = dict(sorted(Counter(num_words_by_segments).items()))
+    print(json.dumps(num_words_by_segments_counter, indent=2))
     curr_segment_i = 0
     sentence_i = 0
     progress = 0
@@ -1686,7 +1772,7 @@ def main():
                 )
             elif corpus_type == SUPPORTED_CORPUS_TYPES[7]:  # pg19
                 corpus_doc_id_to_file_i = preprocess_pg19(
-                    file_or_dir_path, document_dir, start_doc_id, start_file_id, tokenizer, args.num_jobs
+                    file_or_dir_path, document_dir, start_doc_id, start_file_id, args.num_jobs
                 )
                 with open('PG-19_doc_id_to_file_i.json', 'w') as f:
                     import json
@@ -1694,6 +1780,14 @@ def main():
             elif corpus_type == SUPPORTED_CORPUS_TYPES[8]:  # pubmed
                 corpus_doc_id_to_file_i = preprocess_pubmed(
                     file_or_dir_path, document_dir, start_doc_id, start_file_id, tokenizer, args.num_jobs
+                )
+            elif corpus_type == SUPPORTED_CORPUS_TYPES[9]:  # google-normalization-dataset
+                corpus_doc_id_to_file_i = preprocess_google_normalization_dataset(
+                    file_or_dir_path, document_dir, start_doc_id, start_file_id, args.num_jobs
+                )
+            elif corpus_type == SUPPORTED_CORPUS_TYPES[10]:  # tatoeba
+                corpus_doc_id_to_file_i = preprocess_tatoeba(
+                    file_or_dir_path, document_dir, start_doc_id, start_file_id, args.num_jobs
                 )
             else:
                 raise ValueError(
