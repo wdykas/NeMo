@@ -4,6 +4,7 @@ train_dataset: ???
 validation_datasets: ???
 sup_data_path: ???
 sup_data_types: [ "align_prior_matrix", "pitch" ]
+exp_dir_var: ???
 
 # Default values from librosa.pyin
 pitch_fmin: 65.40639132514966
@@ -208,7 +209,7 @@ model:
 
 trainer:
   num_nodes: 1
-  devices: 1
+  devices: -1
   accelerator: gpu
   strategy: ddp
   precision: 16
@@ -222,7 +223,7 @@ trainer:
   check_val_every_n_epoch: 5
 
 exp_manager:
-  exp_dir: null
+  exp_dir: ${exp_dir_var}
   name: ${name}
   create_tensorboard_logger: true
   create_checkpoint_callback: true
