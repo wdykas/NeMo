@@ -479,7 +479,8 @@ class MTBlockBottleneckModel(MTBottleneckModel):
 
         max_num_blocks = self.cfg.max_num_blocks
         tokens_in_batch = self.cfg.train_ds.tokens_in_batch
-        self.block_size = tokens_in_batch // max_num_blocks + math.ceil(tokens_in_batch % max_num_blocks)
+        self.block_size = tokens_in_batch // max_num_blocks + math.ceil(tokens_in_batch % max_num_blocks / max_num_blocks)
+        self.current_batch_size = None
 
         encoders = [copy.deepcopy(self.encoder.encoder) for _ in range(cfg.num_hierar_levels-1)]
         for encoder in encoders:
@@ -489,11 +490,12 @@ class MTBlockBottleneckModel(MTBottleneckModel):
         self.encoder = torch.nn.ModuleList(encoders)
         self.lvl_decoder = torch.nn.ModuleList(decoders)
 
+    @torch.no_grad()
     def other_collate(self, batch):
         # TODO: add the following in collator or dataset preproc:
 
         src_ids, src_mask, tgt_ids, tgt_mask, labels = batch
-
+        self.current_batch_size = src_ids.size(0)
         src_ids[src_ids == self.encoder_tokenizer.eos_id] = self.encoder_tokenizer.pad_id
         src_ids = src_ids[:, 1:-1]
         src_mask = (src_ids != self.encoder_tokenizer.pad_id).type(src_ids.dtype)
@@ -503,7 +505,7 @@ class MTBlockBottleneckModel(MTBottleneckModel):
         labels = labels[:, :-1]
 
         seq_len = max(src_ids.size(1), tgt_ids.size(1))
-        act_num_blocks = seq_len // self.block_size + math.ceil(seq_len % self.block_size)
+        act_num_blocks = seq_len // self.block_size + math.ceil(seq_len % self.block_size / self.block_size)
         src_ids, src_mask = self.chunk_pad_sequence(
             src_ids, src_mask, self.encoder_tokenizer.pad_id, act_num_blocks
         )
@@ -564,7 +566,7 @@ class MTBlockBottleneckModel(MTBottleneckModel):
             return_info=True,
         )
         # pass cache to sampler in order to reuse encoder's output
-        cache = dict(z=z, z_mean=z_mean, z_mask=z_mask, timer=timer, orig_batch_size=orig_src_ids.size(0))
+        cache = dict(z=z, z_mean=z_mean, z_mask=z_mask, timer=timer)
 
         translations = self.batch_translate(src=src_ids, src_mask=src_mask, cache=cache)
 
@@ -653,21 +655,23 @@ class MTBlockBottleneckModel(MTBottleneckModel):
         if timer is not None:
             timer.start("hierar_encoder")
 
-        b = src.size(0)
         pad_id = self.encoder_tokenizer.pad_id
         lvl_z = []
         lvl_z_mean = []
         lvl_z_logv = []
         lvl_z_mask = []
+
         for lvl, encoder in enumerate(self.encoder):
             if lvl == 0:
                 enc_hiddens, enc_mask = encoder(input_ids=src, encoder_mask=src_mask, return_mask=True, )
             else:
                 enc_hiddens, enc_mask = encoder(encoder_states=enc_hiddens, encoder_mask=enc_mask, )
-            enc_hiddens = enc_hiddens.reshape(b, -1, self.cfg.encoder.hidden_size)
-            enc_mask  = enc_mask.reshape(b, -1)
-            act_num_blocks = enc_hiddens.size(1) // self.block_size + math.ceil(enc_hiddens.size(1) % self.block_size)
-            enc_hiddens, enc_mask = self.chunk_pad_sequence(enc_hiddens, enc_mask, pad_id, act_num_blocks)
+            if enc_hiddens.size(0) * enc_hiddens.size(1) > src.size(0):
+                # Need to be further chunked
+                enc_hiddens = enc_hiddens.reshape(self.current_batch_size, -1, self.cfg.encoder.hidden_size)
+                enc_mask  = enc_mask.reshape(self.current_batch_size, -1)
+                act_num_blocks = enc_hiddens.size(1) // self.block_size + math.ceil(enc_hiddens.size(1) % self.block_size / self.block_size)
+                enc_hiddens, enc_mask = self.chunk_pad_sequence(enc_hiddens, enc_mask, pad_id, act_num_blocks)
             z, z_mean, z_logv = self.encode_latent(hidden=enc_hiddens)
             lvl_z.append(z)
             lvl_z_mean.append(z_mean)
@@ -688,10 +692,7 @@ class MTBlockBottleneckModel(MTBottleneckModel):
         for lvl, decoder in enumerate(self.lvl_decoder):
             enc_lvl = self.cfg.num_hierar_levels - lvl - 1
             context_hiddens, enc_mask = lvl_context_hidden[enc_lvl], lvl_context_mask[enc_lvl]
-            #context_hiddens = context_hiddens.reshape(-1, 1, self.cfg.decoder.hidden_size)
-            #enc_mask = enc_mask.reshape(-1, 1)
             if dec_hiddens is not None:
-                #dec_hiddens = dec_hiddens.reshape(-1, 1, self.cfg.decoder.hidden_size)
                 # TODO: are there better aggregation functions?
                 context_hiddens = context_hiddens + dec_hiddens
             dec_hiddens, dec_mask = lvl_context_hidden[enc_lvl-1], lvl_context_mask[enc_lvl-1]
@@ -713,7 +714,6 @@ class MTBlockBottleneckModel(MTBottleneckModel):
             input_ids=tgt, decoder_mask=tgt_mask, encoder_embeddings=context_hiddens, encoder_mask=enc_mask,
         )
         # build decoding distribution
-        #dec_hiddens = dec_hiddens.reshape(batch_size, -1, self.cfg.decoder.hidden_size)[:, :orig_tgt_seq_len]
         tgt_log_probs = self.log_softmax(hidden_states=dec_hiddens)
 
         if timer is not None:
@@ -725,7 +725,7 @@ class MTBlockBottleneckModel(MTBottleneckModel):
     def forward(self, src, src_mask, tgt, tgt_mask, timer=None):
 
         if self.validate_input_ids:
-            # test src/tgt for id range (i.e., hellp in catching wrong tokenizer)
+            # test src/tgt for id range (i.e., help in catching wrong tokenizer)
             self.test_encoder_ids(src, raise_error=True)
             self.test_decoder_ids(tgt, raise_error=True)
 
@@ -751,7 +751,6 @@ class MTBlockBottleneckModel(MTBottleneckModel):
         """
         mode = self.training
         timer = cache.get("timer", None)
-        orig_batch_size = cache["orig_batch_size"]
         try:
             self.eval()
 
@@ -786,11 +785,11 @@ class MTBlockBottleneckModel(MTBottleneckModel):
             if return_beam_scores:
                 all_translations, scores, best_translations = best_translations
                 scores = scores.view(-1)
-                all_translations = all_translations.reshape(orig_batch_size, -1)
+                all_translations = all_translations.reshape(self.current_batch_size, -1)
                 all_translations = self.ids_to_postprocessed_text(
                     all_translations, self.decoder_tokenizer, self.target_processor, filter_beam_ids=True
                 )
-            best_translations = best_translations.reshape(orig_batch_size, -1)
+            best_translations = best_translations.reshape(self.current_batch_size, -1)
             best_translations = self.ids_to_postprocessed_text(
                 best_translations, self.decoder_tokenizer, self.target_processor, filter_beam_ids=True
             )
