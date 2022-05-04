@@ -106,8 +106,6 @@ def __process_data(dataset_path, val_size, test_size, seed_for_ds_split):
             for d in data:
                 f.write(json.dumps(d) + '\n')
 
-
-
     save(dataset_path / "train_manifest.json", train_entries)
     save(dataset_path / "val_manifest.json", validate_entries)
     save(dataset_path / "test_manifest.json", test_entries)
@@ -118,7 +116,7 @@ def main():
 
     dataset_root = args.data_root / "openslr-95-german-neutral-tts"
     dataset_root.mkdir(parents=True, exist_ok=True)
-
+    #ToDo(@aroraakshit): correct the following two functions
     # __maybe_download_file(URL + ZIPPED_FOLDER, dataset_root / ZIPPED_FOLDER)
     
     # __extract_file(dataset_root / ZIPPED_FOLDER, dataset_root)
