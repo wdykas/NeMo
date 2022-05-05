@@ -688,7 +688,7 @@ class MTBlockBottleneckModel(MTBottleneckModel):
         if timer is not None:
             timer.start("hierar_decoder")
 
-        dec_hiddens = None
+        context_hiddens = enc_mask = dec_hiddens = None
         for lvl, decoder in enumerate(self.lvl_decoder):
             enc_lvl = self.cfg.num_hierar_levels - lvl - 1
             context_hiddens, enc_mask = lvl_context_hidden[enc_lvl], lvl_context_mask[enc_lvl]
@@ -702,7 +702,9 @@ class MTBlockBottleneckModel(MTBottleneckModel):
 
         if timer is not None:
             timer.stop("hierar_decoder")
-
+        if context_hiddens is None:
+            assert len(lvl_context_hidden) == 1
+            context_hiddens, enc_mask = lvl_context_hidden[0], lvl_context_mask[0]
         return context_hiddens, enc_mask
 
     def final_decode(self, tgt, tgt_mask, context_hiddens, enc_mask, timer):
