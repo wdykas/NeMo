@@ -40,7 +40,8 @@ class PerceiverEncoder(torch.nn.Module):
         hidden_steps: int = 32,
         hidden_init_method: str = "default",
         hidden_blocks: int = 2,
-        enc_num_layers: int = 0
+        enc_num_layers: int = 0,
+        use_residual_connections: bool = False,
     ):
         super().__init__()
 
@@ -49,6 +50,7 @@ class PerceiverEncoder(torch.nn.Module):
         self._hidden_init_method = hidden_init_method
         self._hidden_blocks = hidden_blocks
         self.enc_num_layers = enc_num_layers
+        self.use_residual_connections = use_residual_connections
 
         if self._hidden_init_method == "default":
             self._hidden_init_method = "params"
@@ -181,7 +183,8 @@ class PerceiverEncoder(torch.nn.Module):
             hidden_states = self.att_bridge(hidden=encoder_states, hidden_mask=encoder_mask,)
 
         for self_att, cross_att in zip(self.self_att_layers, self.cross_att_layers):
-            residual = hidden_states
+            if self.use_residual_connections:
+                residual = hidden_states
 
             # cross attention of hidden over encoder states
             hidden_states = cross_att(
@@ -194,7 +197,7 @@ class PerceiverEncoder(torch.nn.Module):
             # self-attention over hidden
             hidden_states = self_att(encoder_states=hidden_states, encoder_mask=hidden_mask,)
 
-            # residual connection
-            hidden_states += residual
+            if self.use_residual_connections:
+                hidden_states += residual
 
         return hidden_states, hidden_mask

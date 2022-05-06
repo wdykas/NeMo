@@ -32,6 +32,7 @@ model:
   latent_size: -1 # dimension of latent (projected from hidden) -1 will take value of hidden size
   non_recon_warmup_batches: 200000 # warm-up steps for mim, and vae losses
   recon_per_token: true # when false reconstruction is computed per sample, not per token
+  use_residual_connections: true  # use skip connection btw encoder blocks
 
   encoder:
     mask_future: false

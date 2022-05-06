@@ -149,6 +149,7 @@ class MTBottleneckModelConfig(AAYNBaseConfig):
     non_recon_warmup_batches: int = 200000
     recon_per_token: bool = True
     log_timing: bool = True
+    use_residual_connections: bool = True
 
     encoder: NeMoTransformerBottleneckEncoderConfig = NeMoTransformerBottleneckEncoderConfig(
         library='nemo',

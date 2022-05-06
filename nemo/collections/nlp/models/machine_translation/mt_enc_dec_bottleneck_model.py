@@ -486,6 +486,8 @@ class MTBlockBottleneckModel(MTBottleneckModel):
         for encoder in encoders:
             encoder.enc_self_att = None
         decoders = [copy.deepcopy(self.decoder.decoder) for _ in range(cfg.num_hierar_levels-1)]
+        for decoder in decoders:
+            decoder.diagonal = None  # TODO: change if hier-dec has latent targets
         encoders.insert(0, self.encoder)
         self.encoder = torch.nn.ModuleList(encoders)
         self.lvl_decoder = torch.nn.ModuleList(decoders)
