@@ -407,6 +407,7 @@ class MegatronT0PrimeModel(MegatronT0Model):
             num_layers=cfg.prompt_encoder.num_layers,
             reparametrize=cfg.prompt_encoder.reparametrize,
             prompt_gen_type=cfg.prompt_encoder.prompt_gen_type,
+            precision=cfg.precision,
             trainer=trainer
         )
         self.word_embeddings = self.model.enc_dec_model.encoder_embedding.word_embeddings
@@ -416,32 +417,48 @@ class MegatronT0PrimeModel(MegatronT0Model):
         self.pad_token_id = self.model.tokenizer.pad_id if self.model.tokenizer.pad_id is not None \
             else self.model.tokenizer.unk_id
 
-    def get_prompt_embeddings(self, enc_input_id, ctx_ex_prompt, prompt_encoder=None):
+    def get_prompt_embeddings(self, enc_input_id, ctx_ex_prompt, enc_mask, ctx_ex_mask, prompt_encoder=None):
         queries_for_embedding = enc_input_id.clone()
+        queries_mask = enc_mask
         if ctx_ex_prompt is not None:
             queries_for_embedding = torch.cat((queries_for_embedding, ctx_ex_prompt.clone()), dim=1)
+            queries_mask = torch.cat((queries_mask, ctx_ex_mask), dim=1)
         queries_for_embedding[(queries_for_embedding == self.pseudo_token_id)] = self.pad_token_id
         query_embeddings = self.word_embeddings(queries_for_embedding)
 
         if self.cfg.prompt_encoder.task_dependent:
             prompt_condition = query_embeddings
+            prompt_condition_mask = queries_mask
         else:
             prompt_condition = None
+            prompt_condition_mask= None
 
         if self.float_type == torch.float32:
             if prompt_encoder is None:
-                prompt_embeds = self.prompt_encoder(prompt_condition=prompt_condition)
+                prompt_embeds = self.prompt_encoder(
+                    prompt_condition=prompt_condition,
+                    prompt_condition_mask=prompt_condition_mask
+                )
             else:
-                prompt_embeds = prompt_encoder(prompt_condition=prompt_condition)
+                prompt_embeds = prompt_encoder(
+                    prompt_condition=prompt_condition,
+                    prompt_condition_mask=prompt_condition_mask
+                )
         else:
             with torch.autocast(device_type="cuda", dtype=self.float_type):
                 if prompt_encoder is None:
-                    prompt_embeds = self.prompt_encoder(prompt_condition=prompt_condition)
+                    prompt_embeds = self.prompt_encoder(
+                        prompt_condition=prompt_condition,
+                        prompt_condition_mask=prompt_condition_mask
+                    )
                 else:
-                    prompt_embeds = prompt_encoder(prompt_condition=prompt_condition)
+                    prompt_embeds = prompt_encoder(
+                        prompt_condition=prompt_condition,
+                        prompt_condition_mask=prompt_condition_mask
+                    )
         return prompt_embeds, query_embeddings
 
-    def embed_input(self, enc_input_id, ctx_ex_prompt, prompt_input_ids, enc_mask):
+    def embed_input(self, enc_input_id, ctx_ex_prompt, prompt_input_ids, enc_mask, ctx_ex_mask):
         """
         This method will replace the virtual tokens in the enc_input_id with
         embeddings calculated from `prompt_encoder`. If the `prompt_input_ids` is
@@ -456,13 +473,15 @@ class MegatronT0PrimeModel(MegatronT0Model):
         """
         bz, seq_len = enc_input_id.shape
 
-        prompt_embeds, query_embeddings = self.get_prompt_embeddings(enc_input_id, ctx_ex_prompt)
+        prompt_embeds, query_embeddings = self.get_prompt_embeddings(
+            enc_input_id, ctx_ex_prompt, enc_mask, ctx_ex_mask
+        )
 
         query_embeddings = query_embeddings[:, :seq_len, :].clone().type(self.float_type)
         encoder_position_ids = build_position_ids(enc_input_id)
         position_embeddings = self.position_embeddings(encoder_position_ids)
 
-        encoder_input = torch.cat((prompt_embeds, query_embeddings + position_embeddings), dim=1)
+        encoder_input = torch.cat((prompt_embeds, query_embeddings + position_embeddings.type(self.float_type)), dim=1)
         enc_mask = torch.cat((torch.ones_like(prompt_embeds[:, :, 0]), enc_mask), dim=1)
 
         return prompt_embeds, encoder_input, enc_mask
@@ -472,7 +491,9 @@ class MegatronT0PrimeModel(MegatronT0Model):
         prompt_ids, tokens_prompt, ctx_ex_prompt, ctx_ex_mask \
             = self.process_batch(batch)
 
-        prompt_emb, encoder_input, enc_mask = self.embed_input(tokens_enc, ctx_ex_prompt, tokens_prompt, enc_mask)
+        prompt_emb, encoder_input, enc_mask = self.embed_input(
+            tokens_enc, ctx_ex_prompt, tokens_prompt, enc_mask, ctx_ex_mask
+        )
         if self.float_type == torch.float32:
             tokens_loss = itemgetter("tokens_loss")(self.model.enc_dec_model(
                 enc_input_ids=tokens_enc, dec_input_ids=tokens_dec,
@@ -495,7 +516,9 @@ class MegatronT0PrimeModel(MegatronT0Model):
         tokens_enc, tokens_dec, loss_mask, labels, enc_mask, dec_mask, task_ids, \
         prompt_ids, tokens_prompt, ctx_ex_prompt, ctx_ex_mask \
             = self.process_batch(batch)
-        prompt_emb, encoder_input, enc_mask = self.embed_input(tokens_enc, ctx_ex_prompt, tokens_prompt, enc_mask)
+        prompt_emb, encoder_input, enc_mask = self.embed_input(
+            tokens_enc, ctx_ex_prompt, tokens_prompt, enc_mask, ctx_ex_mask
+        )
         loss = self.get_loss(batch)
         reduced_loss = average_losses_across_data_parallel_group([loss])
         predicted_token_ids, log_probs = self.model.decode(
@@ -643,10 +666,15 @@ class MegatronT0SSLPrimeModel(MegatronT0PrimeModel):
             tokens_enc, tokens_dec, loss_mask, labels, enc_mask, dec_mask, task_ids, \
             prompt_ids, tokens_prompt, ctx_ex_prompt, ctx_ex_mask \
                 = self.process_batch(batch)
-        prompt_embeds, encoder_input, enc_mask = self.embed_input(tokens_enc, ctx_ex_prompt, tokens_prompt, enc_mask)
+        prompt_embeds, encoder_input, enc_mask = self.embed_input(
+            tokens_enc, ctx_ex_prompt, tokens_prompt, enc_mask, ctx_ex_mask
+        )
 
         if self.trainer.training:
-            ssl_loss = self.compute_ssl_loss(prompt_embeds, tokens_enc, ctx_ex_prompt, tokens_enc_2, ctx_ex_prompt_2)
+            ssl_loss = self.compute_ssl_loss(
+                prompt_embeds, tokens_enc, ctx_ex_prompt, tokens_enc_2, ctx_ex_prompt_2,
+                enc_mask, enc_mask_2, ctx_ex_mask, ctx_ex_mask_2
+            )
             self.log('ssl_loss', ssl_loss)
 
         if self.float_type == torch.float32:
@@ -670,16 +698,33 @@ class MegatronT0SSLPrimeModel(MegatronT0PrimeModel):
         else:
             return loss
 
-    def compute_ssl_loss(self, prompt_embeds, tokens_enc_1, ctx_ex_prompt_1, tokens_enc_2, ctx_ex_prompt_2):
+    def compute_ssl_loss(
+            self,
+            prompt_embeds,
+            tokens_enc_1,
+            ctx_ex_prompt_1,
+            tokens_enc_2,
+            ctx_ex_prompt_2,
+            enc_mask,
+            enc_mask_2,
+            ctx_ex_mask,
+            ctx_ex_mask_2
+    ):
 
         prompt_embeds_s1 = prompt_embeds
-        prompt_embeds_s2, _ = self.get_prompt_embeddings(tokens_enc_2, ctx_ex_prompt_2)
+        prompt_embeds_s2, _ = self.get_prompt_embeddings(
+            tokens_enc_2, ctx_ex_prompt_2, enc_mask_2, ctx_ex_mask_2
+        )
         student_out1 = self.ssl_proj_student(prompt_embeds_s1)
         student_out2 = self.ssl_proj_student(prompt_embeds_s2)
 
         with torch.no_grad():
-            prompt_embeds_t1, _ = self.get_prompt_embeddings(tokens_enc_1, ctx_ex_prompt_1, self.teacher_net)
-            prompt_embeds_t2, _ = self.get_prompt_embeddings(tokens_enc_2, ctx_ex_prompt_2, self.teacher_net)
+            prompt_embeds_t1, _ = self.get_prompt_embeddings(
+                tokens_enc_1, ctx_ex_prompt_1, enc_mask, ctx_ex_mask, self.teacher_net
+            )
+            prompt_embeds_t2, _ = self.get_prompt_embeddings(
+                tokens_enc_2, ctx_ex_prompt_2, enc_mask_2, ctx_ex_mask_2, self.teacher_net
+            )
             teacher_out1 = self.ssl_proj_teacher(prompt_embeds_t1)
             teacher_out2 = self.ssl_proj_teacher(prompt_embeds_t2)
 

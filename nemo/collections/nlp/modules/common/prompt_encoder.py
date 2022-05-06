@@ -20,30 +20,21 @@ from pytorch_lightning import Trainer
 
 from nemo.core.classes import Exportable, NeuralModule
 from nemo.core.classes.common import typecheck
-from nemo.core.neural_types import ChannelType, NeuralType
+from nemo.collections.nlp.modules.common.megatron.module import MegatronModule
 from nemo.collections.nlp.models.language_modeling.bert_lm_model import BERTLMModel
+from nemo.collections.nlp.modules.common.transformer.perceiver_encoders import ParallelPerceiverEncoder
 
 __all__ = ['PromptEncoder']
 
 
-class PromptEncoder(NeuralModule, Exportable):
+class PromptEncoder(MegatronModule):
     """
     The Prompt Encoder network that is used to generate the virtual token embeddings
     """
 
-    @property
-    def input_types(self) -> Optional[Dict[str, NeuralType]]:
-        return {
-            "prompt_condition": NeuralType(('B', 'T', 'C'), ChannelType(), optional=True),
-        }
-
-    @property
-    def output_types(self) -> Optional[Dict[str, NeuralType]]:
-        return {"output_embeds": NeuralType(('B', 'T', 'C'), ChannelType())}
-
     def __init__(
             self, prompt_seq_len: int, hidden_size: int, prompt_dropout: float, num_layers: int,
-            reparametrize: bool, prompt_gen_type: str, trainer: Optional[Trainer] = None
+            reparametrize: bool, prompt_gen_type: str, precision: int, trainer: Optional[Trainer] = None
     ):
         """
         Initializes the PromptEncoder module.
@@ -59,40 +50,50 @@ class PromptEncoder(NeuralModule, Exportable):
         self.prompt_seq_len = prompt_seq_len
         self.hidden_size = hidden_size
         self.reparametrize = reparametrize
-        # ent embedding
-        self.cloze_mask = torch.LongTensor([1] * prompt_seq_len).bool()
-        self.register_buffer('seq_indices', torch.LongTensor(list(range(self.prompt_seq_len))))
-        self.embedding = torch.nn.Embedding(self.prompt_seq_len, self.hidden_size)
         PromptGenModels = {
             "sequential": SeqPromptGenerator,
             "linear": LinearPromptGenerator,
+            "bottleneck": BottleneckPromptGenerator,
             "bert": BertPromptGenerator
         }
+        self.prompt_gen_type = prompt_gen_type
+        if prompt_gen_type in ["bottleneck", "bert"]:
+            assert self.reparametrize
+        if prompt_gen_type in ["sequential", "linear"]:
+            # ent embedding
+            self.cloze_mask = torch.LongTensor([1] * prompt_seq_len).bool()
+            self.register_buffer('seq_indices', torch.LongTensor(list(range(self.prompt_seq_len))))
+            self.embedding = torch.nn.Embedding(self.prompt_seq_len, self.hidden_size)
         if self.reparametrize:
             PromptGen = PromptGenModels[prompt_gen_type]
-            self.prompt_generator = PromptGen(hidden_size, prompt_dropout, prompt_seq_len, num_layers, trainer)
+            self.prompt_generator = PromptGen(
+                hidden_size, prompt_dropout, prompt_seq_len, num_layers, precision, trainer
+            )
 
-    @typecheck()
-    def forward(self, prompt_condition=None) -> torch.Tensor:
-        prompt_embeds = self.embedding(self.seq_indices).unsqueeze(0)
-        if prompt_condition is not None:
-            bz, task_seq, _ = prompt_condition.shape
-            _, seq, emb = prompt_embeds.shape
-            prompt_embeds = prompt_embeds.expand(bz, seq, emb).clone()
-            length = min(task_seq, seq)
-            prompt_embeds[:, 0:length, :] = prompt_condition[:, 0:length, :]
+    def forward(self, prompt_condition=None, prompt_condition_mask=None) -> torch.Tensor:
+        if self.prompt_gen_type in ["sequential", "linear"]:
+            prompt_embeds = self.embedding(self.seq_indices).unsqueeze(0)
+            if prompt_condition is not None:
+                bz, task_seq, _ = prompt_condition.shape
+                _, seq, emb = prompt_embeds.shape
+                prompt_embeds = prompt_embeds.expand(bz, seq, emb).clone()
+                length = min(task_seq, seq)
+                prompt_embeds[:, 0:length, :] = prompt_condition[:, 0:length, :]
+        else:
+            prompt_embeds = prompt_condition
         if self.reparametrize:
-            prompt_embeds = self.prompt_generator(prompt_embeds)
+            prompt_embeds = self.prompt_generator(prompt_embeds, prompt_condition_mask)
         return prompt_embeds
 
 
-class LinearPromptGenerator(NeuralModule, Exportable):
+class LinearPromptGenerator(MegatronModule):
     def __init__(
             self,
             hidden_size: int,
             prompt_dropout: float,
-            prompt_seq_len: float,
+            prompt_seq_len: int,
             num_layers: int,
+            precision: int,
             trainer: Trainer
     ):
         """
@@ -109,19 +110,19 @@ class LinearPromptGenerator(NeuralModule, Exportable):
             nn.ReLU(), nn.Linear(hidden_size, hidden_size)
         )
 
-    @typecheck()
-    def forward(self, prompt_embeds) -> torch.Tensor:
+    def forward(self, prompt_embeds, prompt_embeds_mask) -> torch.Tensor:
         prompt_embeds = self.mlp_head(prompt_embeds[:, 0:self.prompt_seq_len, :])
         return prompt_embeds
 
 
-class SeqPromptGenerator(NeuralModule, Exportable):
+class SeqPromptGenerator(MegatronModule):
     def __init__(
             self,
             hidden_size: int,
             prompt_dropout: float,
-            prompt_seq_len: float,
+            prompt_seq_len: int,
             num_layers: int,
+            precision: int,
             trainer: Trainer
     ):
         """
@@ -129,8 +130,8 @@ class SeqPromptGenerator(NeuralModule, Exportable):
         Args:
             prompt_seq_len: number of prompt embeddings to produce
             hidden_size: hidden dimension
-            prompt_dropout: the dropout used for the LSTM
-            num_layers: number of layers used in the LSTM
+            prompt_dropout: hidden dropout
+            num_layers: number of layers
         """
         super().__init__()
         self.prompt_seq_len = prompt_seq_len
@@ -147,21 +148,19 @@ class SeqPromptGenerator(NeuralModule, Exportable):
             nn.ReLU(), nn.Linear(hidden_size, hidden_size)
         )
 
-    @typecheck()
-    def forward(self, prompt_embeds) -> torch.Tensor:
-        # TODO: am I taking the representation of padded inputs?
-        # TODO: do I need to add dropout on the prompt encoder?
+    def forward(self, prompt_embeds, prompt_embeds_mask) -> torch.Tensor:
         prompt_embeds = self.mlp_head(self.lstm_head(prompt_embeds)[0][:, -self.prompt_seq_len:, :])
         return prompt_embeds
 
 
-class BertPromptGenerator(NeuralModule, Exportable):
+class BertPromptGenerator(MegatronModule):
     def __init__(
             self,
             hidden_size: int,
             prompt_dropout: float,
-            prompt_seq_len: float,
+            prompt_seq_len: int,
             num_layers: int,
+            precision: int,
             trainer: Trainer
     ):
         """
@@ -169,17 +168,54 @@ class BertPromptGenerator(NeuralModule, Exportable):
         Args:
             prompt_seq_len: number of prompt embeddings to produce
             hidden_size: hidden dimension
-            prompt_dropout: the dropout used for the LSTM
-            num_layers: number of layers used in the LSTM
+            prompt_dropout: hidden dropout
+            num_layers: number of layers
         """
         super().__init__()
         self.prompt_seq_len = prompt_seq_len
-        self.bert = BERTLMModel.restore_from(
+        self.encoder = BERTLMModel.restore_from(
             "bertbaseuncased",
             trainer=trainer
         )
 
-    @typecheck()
-    def forward(self, prompt_embeds) -> torch.Tensor:
-        prompt_embeds = self.mlp_head(self.lstm_head(prompt_embeds)[0])
+    def forward(self, prompt_embeds, prompt_embeds_mask) -> torch.Tensor:
+        prompt_embeds, mask = self.encoder(prompt_embeds, prompt_embeds_mask)
+        return prompt_embeds[:, :self.prompt_seq_len]
+
+
+class BottleneckPromptGenerator(MegatronModule):
+    def __init__(
+            self,
+            hidden_size: int,
+            prompt_dropout: float,
+            prompt_seq_len: int,
+            num_layers: int,
+            precision: int,
+            trainer: Trainer
+    ):
+        """
+        Initializes the PromptEncoder module.
+        Args:
+            prompt_seq_len: number of prompt embeddings to produce
+            hidden_size: hidden dimension
+            prompt_dropout: hidden dropout
+            num_layers: number of layers
+        """
+        super().__init__()
+        self.prompt_seq_len = prompt_seq_len
+        self.encoder = ParallelPerceiverEncoder(
+                num_layers=num_layers,
+                hidden_size=hidden_size,
+                inner_size=hidden_size * 4,
+                num_attention_heads=12,
+                ffn_dropout=prompt_dropout,
+                hidden_act='gelu',
+                hidden_steps=prompt_seq_len,
+                hidden_blocks=1,
+                hidden_init_method="default",
+                precision=precision
+            )
+
+    def forward(self, prompt_embeds, prompt_embeds_mask) -> torch.Tensor:
+        prompt_embeds, mask = self.encoder(prompt_embeds, prompt_embeds_mask)
         return prompt_embeds
