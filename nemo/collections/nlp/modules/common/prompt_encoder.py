@@ -207,7 +207,7 @@ class BottleneckPromptGenerator(MegatronModule):
                 num_layers=num_layers,
                 hidden_size=hidden_size,
                 inner_size=hidden_size * 4,
-                num_attention_heads=12,
+                num_attention_heads=16,
                 ffn_dropout=prompt_dropout,
                 hidden_act='gelu',
                 hidden_steps=prompt_seq_len,
