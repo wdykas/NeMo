@@ -1,7 +1,7 @@
 pipeline {
   agent {
         docker {
-      image 'gitlab-master.nvidia.com/sandeepsub/nemo_containers:nemo-180-2203-ci-apex-8cc91ceaa8faa64451d90e11b8ad4732393b32aa'
+      image 'nvcr.io/nvidia/pytorch:22.04-py3'
       args '--device=/dev/nvidia0 --gpus all -e TRANSFORMERS_OFFLINE=1 --user 0:128 -v /home/TestData:/home/TestData -v $HOME/.cache:/root/.cache --shm-size=8g'
         }
   }
@@ -124,12 +124,12 @@ pipeline {
       parallel {
         stage('En TN grammars') {
           steps {
-            sh 'CUDA_VISIBLE_DEVICES="" python nemo_text_processing/text_normalization/normalize.py "1" --cache_dir /home/TestData/nlp/text_norm/ci/grammars/4-26'
+            sh 'CUDA_VISIBLE_DEVICES="" python nemo_text_processing/text_normalization/normalize.py --text="1" --cache_dir /home/TestData/nlp/text_norm/ci/grammars/4-26'
           }
         }
         stage('En ITN grammars') {
           steps {
-            sh 'CUDA_VISIBLE_DEVICES="" python nemo_text_processing/inverse_text_normalization/inverse_normalize.py --language en "twenty" --cache_dir /home/TestData/nlp/text_norm/ci/grammars/4-26'
+            sh 'CUDA_VISIBLE_DEVICES="" python nemo_text_processing/inverse_text_normalization/inverse_normalize.py --language en --text="twenty" --cache_dir /home/TestData/nlp/text_norm/ci/grammars/4-26'
           }
         }
         stage('Test En non-deterministic TN & Run all En TN/ITN tests (restore grammars from cache)') {
@@ -153,7 +153,7 @@ pipeline {
         stage('L2: Eng TN') {
           steps {
             sh 'cd tools/text_processing_deployment && python pynini_export.py --output=/home/TestData/nlp/text_norm/output/ --grammars=tn_grammars --cache_dir /home/TestData/nlp/text_norm/ci/grammars/4-26 --language=en && ls -R /home/TestData/nlp/text_norm/output/ && echo ".far files created "|| exit 1'
-            sh 'cd nemo_text_processing/text_normalization/ &&  python run_predict.py --input=/home/TestData/nlp/text_norm/ci/test.txt --input_case="lower_cased" --language=en --output=/home/TestData/nlp/text_norm/output/test.pynini.txt --verbose'
+            sh 'cd nemo_text_processing/text_normalization/ &&  python normalize.py --input_file=/home/TestData/nlp/text_norm/ci/test.txt --input_case="lower_cased" --language=en --output_file=/home/TestData/nlp/text_norm/output/test.pynini.txt --verbose'
             sh 'cat /home/TestData/nlp/text_norm/output/test.pynini.txt'
             sh 'cmp --silent /home/TestData/nlp/text_norm/output/test.pynini.txt /home/TestData/nlp/text_norm/ci/test_goal_py_04-14.txt || exit 1'
             sh 'rm -rf /home/TestData/nlp/text_norm/output/*'
@@ -163,7 +163,7 @@ pipeline {
         stage('L2: Eng ITN export') {
           steps {
             sh 'cd tools/text_processing_deployment && python pynini_export.py --output=/home/TestData/nlp/text_denorm/output/ --grammars=itn_grammars --cache_dir /home/TestData/nlp/text_norm/ci/grammars/4-26 --language=en && ls -R /home/TestData/nlp/text_denorm/output/ && echo ".far files created "|| exit 1'
-            sh 'cd nemo_text_processing/inverse_text_normalization/ &&  python run_predict.py --input=/home/TestData/nlp/text_denorm/ci/test.txt --language=en --output=/home/TestData/nlp/text_denorm/output/test.pynini.txt --verbose'
+            sh 'cd nemo_text_processing/inverse_text_normalization/ &&  python inverse_normalize.py --input_file=/home/TestData/nlp/text_denorm/ci/test.txt --language=en --output_file=/home/TestData/nlp/text_denorm/output/test.pynini.txt --verbose'
             sh 'cmp --silent /home/TestData/nlp/text_denorm/output/test.pynini.txt /home/TestData/nlp/text_denorm/ci/test_goal_py.txt || exit 1'
             sh 'rm -rf /home/TestData/nlp/text_denorm/output/*'
           }
@@ -826,7 +826,7 @@ pipeline {
             model.test_ds.batch_size=2 \
             model.nemo_path=null \
             trainer.val_check_interval=0.0 \
-            trainer.devices=[1] \
+            trainer.devices=[0] \
             model.dataset.use_cache=false \
             model.language_model.pretrained_model_name=bert-base-uncased \
             trainer.accelerator=gpu \
@@ -1076,7 +1076,7 @@ pipeline {
             exp_manager=null'
           }
         }
-       stage('Duplex Text Normalization with Tarred dataset') {
+        stage('Duplex Text Normalization with Tarred dataset') {
           steps {
             sh 'cd examples/nlp/duplex_text_normalization && \
             python duplex_text_normalization_train.py \
@@ -1099,9 +1099,31 @@ pipeline {
             data.train_ds.tar_metadata_file=/home/TestData/nlp/duplex_text_norm/tarred_small/metadata.json \
             data.test_ds.use_cache=false \
             data.test_ds.data_path=/home/TestData/nlp/duplex_text_norm/small_test.tsv'
-
           }
         }
+        //this is a new test by @aleksandraa
+        //cannot run it in a fork, Jenkins doesn't see it
+        //need to uncomment, when given writing permissions to NeMo
+        //stage('Text normalization as tagging (Thutmose Tagger)') {
+        //  steps {
+        //    sh 'cd examples/nlp/normalization_as_tagging && \
+	    //    python normalization_as_tagging_train.py \
+	    //    lang="en" \
+        //    data.validation_ds.data_path=/home/TestData/nlp/text_normalization_as_tagging/en_mini/valid.tsv \
+        //    data.train_ds.data_path=/home/TestData/nlp/text_normalization_as_tagging/en_mini/train.tsv \
+        //    data.train_ds.batch_size=2 \
+        //    data.train_ds.num_workers=2 \
+        //    model.language_model.pretrained_model_name=bert-base-uncased \
+        //    model.label_map=/home/TestData/nlp/text_normalization_as_tagging/en_mini/label_map.txt \
+        //    model.semiotic_classes=/home/TestData/nlp/text_normalization_as_tagging/en_mini/semiotic_classes.txt \
+        //    exp_manager.create_checkpoint_callback=false \
+        //    trainer.devices=1 \
+        //    trainer.num_nodes=1 \
+        //    trainer.accelerator=gpu \
+        //    trainer.strategy=ddp \
+        //    +trainer.fast_dev_run=true'
+        //  }
+        //}
       }
     }
     // Runs out of memory on the 12G TITAN V (GPU 0 on main CI)
@@ -2793,7 +2815,7 @@ pipeline {
         // TODO(Oktai15): update it in 1.8.0 version
         stage('T5 GLUE RTE') {
           steps {
-            sh "python examples/nlp/language_modeling/megatron_t5_glue.py \
+            sh "python examples/nlp/language_modeling/megatron_t5_seq2seq_finetune.py \
             trainer.devices=1 \
             trainer.accelerator=gpu \
             trainer.log_every_n_steps=1 \
@@ -2821,7 +2843,7 @@ pipeline {
         }
         stage('T5 GLUE XNLI') {
           steps {
-            sh "python examples/nlp/language_modeling/megatron_t5_glue.py \
+            sh "python examples/nlp/language_modeling/megatron_t5_seq2seq_finetune.py \
             -cn megatron_t5_config_finetune_glue_xnli \
             trainer.devices=1 \
             trainer.accelerator=gpu \
