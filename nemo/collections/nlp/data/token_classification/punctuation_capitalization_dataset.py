@@ -873,7 +873,7 @@ class BertPunctuationCapitalizationDataset(Dataset):
             other useful information.
         n_jobs (:obj:`int`, `optional`, defaults to :obj:`0`): number of workers used for tokenization, encoding
             labels, creating "first token in word" mask, and clipping. If ``n_jobs <= 0`` data preparation is performed
-            without multiprocessing. By default ``n_jobs`` is equal to the number of CPUs.
+            without multiprocessing. By default ``n_jobs`` is ``0``.
 
             .. warning::
                 There can be deadlocking problems with some tokenizers (e.g. SentencePiece, HuggingFace AlBERT)
@@ -1354,9 +1354,10 @@ class BertPunctuationCapitalizationDataset(Dataset):
                     if i > start:
                         batch_size = i - start
                         logging.warning(
-                            f"Could not create batch with multiple of 8 size. Probably there is a too long sequence in "
-                            f"the dataset. current_max_length={current_max_length}. Batch size will be reduced to "
-                            f"{batch_size}. tokens_in_batch={self.tokens_in_batch}. The batch includes sequences from "
+                            f"Could not create batch with multiple of 8 size. Probably, there is a too long sequence "
+                            f"in the dataset or parameter `tokens_in_batch` is too small. Current length of sequences "
+                            f"in batch is {current_max_length}. Batch size will be reduced to {batch_size}. "
+                            f"tokens_in_batch={self.tokens_in_batch}. The batch includes sequences from "
                             f"{start} to {i - 1}."
                         )
                     else:

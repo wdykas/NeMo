@@ -90,7 +90,9 @@ VOCAB_FILE_NAME = {
     'MBart50Tokenizer': 'vocab.txt',
     'T5Tokenizer': 'vocab.txt',
     'CamembertTokenizer': "sentencepiece.bpe.model",
-    "GPT2Tokenizer": "vocab.json",
+    'GPT2Tokenizer': "vocab.json",
+    'T5Tokenizer': "spiece.model",
+    "BartTokenizer": "vocab.json",
 }
 
 

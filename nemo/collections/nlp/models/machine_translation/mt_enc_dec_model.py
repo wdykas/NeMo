@@ -24,6 +24,7 @@ import numpy as np
 import torch
 import torch.distributed as dist
 import torch.utils.data as pt_data
+import webdataset as wd
 from omegaconf import DictConfig, ListConfig, OmegaConf
 from pytorch_lightning import Trainer
 from pytorch_lightning.utilities import rank_zero_only
@@ -145,7 +146,7 @@ class MTEncDecModel(EncDecNLPModel, Exportable):
                 decoder_vocab_file = (
                     self.register_artifact("decoder_tokenizer.vocab_file", cfg.encoder_tokenizer.get('vocab_file')),
                 )
-            self.setup_enc_dec_tokenizers(
+            encoder_tokenizer, decoder_tokenizer = self.setup_enc_dec_tokenizers(
                 encoder_tokenizer_library=self.encoder_tokenizer_library,
                 encoder_tokenizer_model=encoder_tokenizer_model,
                 encoder_bpe_dropout=cfg.encoder_tokenizer.get('bpe_dropout', 0.0)
@@ -155,15 +156,17 @@ class MTEncDecModel(EncDecNLPModel, Exportable):
                 encoder_r2l=cfg.encoder_tokenizer.get('r2l', False),
                 decoder_tokenizer_library=self.decoder_tokenizer_library,
                 encoder_tokenizer_vocab_file=encoder_vocab_file,
-                decoder_tokenizer_vocab_file=decoder_vocab_file,
                 decoder_tokenizer_model=decoder_tokenizer_model,
                 decoder_bpe_dropout=cfg.decoder_tokenizer.get('bpe_dropout', 0.0)
                 if cfg.decoder_tokenizer.get('bpe_dropout', 0.0) is not None
                 else 0.0,
                 decoder_model_name=cfg.decoder.get('model_name') if hasattr(cfg.decoder, 'model_name') else None,
                 decoder_r2l=cfg.decoder_tokenizer.get('r2l', False),
-                decoder_word_tokens=cfg.decoder_tokenizer.get('word_tokens'),
+                special_tokens=self.special_tokens,
+                encoder_sentencepiece_legacy=cfg.encoder_tokenizer.get('sentencepiece_legacy', False),
+                decoder_sentencepiece_legacy=cfg.encoder_tokenizer.get('sentencepiece_legacy', False),
             )
+            self.encoder_tokenizer, self.decoder_tokenizer = encoder_tokenizer, decoder_tokenizer
             if self.multilingual:
                 if isinstance(self.src_language, ListConfig) and isinstance(self.tgt_language, ListConfig):
                     raise ValueError(
@@ -186,16 +189,23 @@ class MTEncDecModel(EncDecNLPModel, Exportable):
                 else:
                     self.src_language = [self.src_language] * len(self.tgt_language)
 
-                self.source_processor_list = []
-                self.target_processor_list = []
-                for src_lng, tgt_lng in zip(self.src_language, self.tgt_language):
-                    src_prcsr, tgt_prscr = self.setup_pre_and_post_processing_utils(src_lng, tgt_lng)
-                    self.source_processor_list.append(src_prcsr)
-                    self.target_processor_list.append(tgt_prscr)
+                (
+                    self.source_processor_list,
+                    self.target_processor_list,
+                    self.multilingual_ids,
+                ) = MTEncDecModel.setup_multilingual_ids_and_processors(
+                    self.src_language,
+                    self.tgt_language,
+                    self.encoder_tokenizer,
+                    self.encoder_tokenizer_library,
+                    self.decoder_tokenizer_library,
+                )
 
             else:
                 # After this call, the model will have  self.source_processor and self.target_processor objects
-                self.setup_pre_and_post_processing_utils(self.src_language, self.tgt_language)
+                self.source_processor, self.target_processor = MTEncDecModel.setup_pre_and_post_processing_utils(
+                    self.src_language, self.tgt_language, self.encoder_tokenizer_library, self.decoder_tokenizer_library
+                )
                 self.multilingual_ids = [None]
         self.use_decoder_tips = cfg.get('use_decoder_tips', False)
         if cfg.get('tgt_character_vocabulary') is None:
@@ -326,14 +336,18 @@ class MTEncDecModel(EncDecNLPModel, Exportable):
         self.filter_beam_ids = cfg.get("filter_beam_ids", True)
 
     @classmethod
-    def setup_multilingual_ids_and_processors(cls, src_language, tgt_language, tokenizer, tokenizer_library):
+    def setup_multilingual_ids_and_processors(
+        cls, src_language, tgt_language, encoder_tokenizer, encoder_tokenizer_library, decoder_tokenizer_library
+    ):
         multilingual_ids = []
         if isinstance(src_language, ListConfig):
             for lng in src_language:
                 multilingual_ids.append(None)
         else:
             for lng in tgt_language:
-                multilingual_ids.append(tokenizer.token_to_id("<" + lng + ">"))
+                if f"<{lng}>" not in encoder_tokenizer.vocab:
+                    encoder_tokenizer.add_special_tokens({f"<{lng}>": f"<{lng}>"})
+                multilingual_ids.append(encoder_tokenizer.token_to_id(f"<{lng}>"))
 
         if isinstance(src_language, ListConfig):
             tgt_language = [tgt_language] * len(src_language)
@@ -344,7 +358,7 @@ class MTEncDecModel(EncDecNLPModel, Exportable):
         target_processor_list = []
         for src_lng, tgt_lng in zip(src_language, tgt_language):
             src_prcsr, tgt_prscr = MTEncDecModel.setup_pre_and_post_processing_utils(
-                src_lng, tgt_lng, tokenizer_library, tokenizer_library
+                src_lng, tgt_lng, encoder_tokenizer_library, decoder_tokenizer_library
             )
             source_processor_list.append(src_prcsr)
             target_processor_list.append(tgt_prscr)
@@ -637,6 +651,8 @@ class MTEncDecModel(EncDecNLPModel, Exportable):
         decoder_r2l=False,
         decoder_word_tokens=None,
         decoder_tokenizer_vocab_file=None,
+        encoder_sentencepiece_legacy=False,
+        decoder_sentencepiece_legacy=False,
         special_tokens={},
     ):
 
@@ -656,6 +672,7 @@ class MTEncDecModel(EncDecNLPModel, Exportable):
             special_tokens=special_tokens,
             use_fast=False,
             r2l=encoder_r2l,
+            legacy=encoder_sentencepiece_legacy,
         )
 
         decoder_tokenizer = get_nmt_tokenizer(
@@ -667,13 +684,14 @@ class MTEncDecModel(EncDecNLPModel, Exportable):
             special_tokens=None,
             use_fast=False,
             r2l=decoder_r2l,
-            word_tokens=decoder_word_tokens
+            word_tokens=decoder_word_tokens,
+            legacy=decoder_sentencepiece_legacy,
         )
 
         # validate no token is negative for sentencepiece tokenizers
-        for tok_name, tok_library, tok_model in [
-            ("encoder_tokenizer", encoder_tokenizer_library, encoder_tokenizer),
-            ("decoder_tokenizer", decoder_tokenizer_library, decoder_tokenizer),
+        for tok_name, tok_library, tok_model, legacy in [
+            ("encoder_tokenizer", encoder_tokenizer_library, encoder_tokenizer, encoder_sentencepiece_legacy),
+            ("decoder_tokenizer", decoder_tokenizer_library, decoder_tokenizer, decoder_sentencepiece_legacy),
         ]:
             if tok_library == 'sentencepiece':
                 negative_tokens = []
@@ -681,11 +699,38 @@ class MTEncDecModel(EncDecNLPModel, Exportable):
                     v = getattr(tok_model.tokenizer, n)()
                     if v < 0:
                         negative_tokens.append(f"{n}={v}")
-
-                if negative_tokens:
+                if negative_tokens and not legacy:
                     raise ValueError(
                         f"{tok_name}=sentencepiece has invalid negative special tokens = {negative_tokens}"
                     )
+                # If using the legacy sentencepiece tokenizer, we can add the missing tokens as "special" tokens.
+                else:
+                    # If using sentencepiece legacy, eos, bos and pad need to be set/added differently.
+                    if legacy:
+                        # bos, eos, pad and unk may be present in the provided spm .model file, if they are, use it.
+                        if not hasattr(tok_model, 'pad_token'):
+                            if hasattr(tok_model.tokenizer, 'pad_id') and tok_model.tokenizer.pad_id() > 0:
+                                tok_model.pad_token = tok_model.tokenizer.id_to_piece(tok_model.tokenizer.pad_id())
+                            else:
+                                tok_model.add_special_tokens({'pad_token': '<pad>'})
+                        else:
+                            tok_model.add_special_tokens({'pad_token': '<pad>'})
+
+                        if not hasattr(tok_model, 'bos_token'):
+                            if hasattr(tok_model.tokenizer, 'bos_id') and tok_model.tokenizer.bos_id() > 0:
+                                tok_model.bos_token = tok_model.tokenizer.id_to_piece(tok_model.tokenizer.bos_id())
+                            else:
+                                tok_model.add_special_tokens({'bos_token': '<bos>'})
+                        else:
+                            tok_model.add_special_tokens({'bos_token': '<s>'})
+
+                        if not hasattr(tok_model, 'eos_token'):
+                            if hasattr(tok_model.tokenizer, 'eos_id') and tok_model.tokenizer.eos_id() > 0:
+                                tok_model.eos_token = tok_model.tokenizer.id_to_piece(tok_model.tokenizer.eos_id())
+                            else:
+                                tok_model.add_special_tokens({'eos_token': '<eos>'})
+                        else:
+                            tok_model.add_special_tokens({'eos_token': '</s>'})
 
         return encoder_tokenizer, decoder_tokenizer
 
