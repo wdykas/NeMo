@@ -658,28 +658,28 @@ class MegatronT0SSLPrimeModel(MegatronT0PrimeModel):
 
     def get_loss(self, batch):
         if self.trainer.training:
-            tokens_enc, tokens_dec, loss_mask, labels, enc_mask, dec_mask, task_ids, \
-            prompt_ids, tokens_prompt, ctx_ex_prompt, ctx_ex_mask, \
+            tokens_enc_1, tokens_dec, loss_mask, labels, enc_mask_1, dec_mask, task_ids, \
+            prompt_ids, tokens_prompt, ctx_ex_prompt_1, ctx_ex_mask_1, \
             tokens_enc_2, enc_mask_2, tokens_prompt_2, ctx_ex_prompt_2, ctx_ex_mask_2 \
                 = self.process_batch(batch)
         else:
-            tokens_enc, tokens_dec, loss_mask, labels, enc_mask, dec_mask, task_ids, \
-            prompt_ids, tokens_prompt, ctx_ex_prompt, ctx_ex_mask \
+            tokens_enc_1, tokens_dec, loss_mask, labels, enc_mask_1, dec_mask, task_ids, \
+            prompt_ids, tokens_prompt, ctx_ex_prompt_1, ctx_ex_mask_1 \
                 = self.process_batch(batch)
         prompt_embeds, encoder_input, enc_mask = self.embed_input(
-            tokens_enc, ctx_ex_prompt, tokens_prompt, enc_mask, ctx_ex_mask
+            tokens_enc_1, ctx_ex_prompt_1, tokens_prompt, enc_mask_1, ctx_ex_mask_1
         )
 
         if self.trainer.training:
             ssl_loss = self.compute_ssl_loss(
-                prompt_embeds, tokens_enc, ctx_ex_prompt, tokens_enc_2, ctx_ex_prompt_2,
-                enc_mask, enc_mask_2, ctx_ex_mask, ctx_ex_mask_2
+                prompt_embeds, tokens_enc_1, ctx_ex_prompt_1, tokens_enc_2, ctx_ex_prompt_2,
+                enc_mask_1, enc_mask_2, ctx_ex_mask_1, ctx_ex_mask_2
             )
             self.log('ssl_loss', ssl_loss)
 
         if self.float_type == torch.float32:
             tokens_loss = itemgetter("tokens_loss")(self.model.enc_dec_model(
-                enc_input_ids=tokens_enc, dec_input_ids=tokens_dec,
+                enc_input_ids=None, dec_input_ids=tokens_dec,
                 enc_attn_mask=enc_mask, dec_attn_mask=dec_mask,
                 tokentype_ids=None, labels=labels,
                 enc_input=encoder_input

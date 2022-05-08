@@ -70,6 +70,10 @@ class PromptEncoder(MegatronModule):
                 hidden_size, prompt_dropout, prompt_seq_len, num_layers, precision, trainer
             )
 
+    def freeze(self) -> None:
+        for param in self.parameters():
+            param.requires_grad = False
+
     def forward(self, prompt_condition=None, prompt_condition_mask=None) -> torch.Tensor:
         if self.prompt_gen_type in ["sequential", "linear"]:
             prompt_embeds = self.embedding(self.seq_indices).unsqueeze(0)

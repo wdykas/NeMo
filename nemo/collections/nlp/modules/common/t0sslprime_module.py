@@ -65,6 +65,10 @@ class SeqProjectionNetwork(NeuralModule, Exportable):
         x = self.output_layer(x)
         return x
 
+    def freeze(self) -> None:
+        for param in self.parameters():
+            param.requires_grad = False
+
 
 class SSLPromptLoss(NeuralModule, Exportable):
     def __init__(
