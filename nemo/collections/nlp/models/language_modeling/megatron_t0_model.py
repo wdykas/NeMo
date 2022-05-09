@@ -637,10 +637,24 @@ class MegatronT0SSLPrimeModel(MegatronT0PrimeModel):
             student_temp=cfg.ssl.student_temp,
             center_momentum=cfg.ssl.center_momentum
         )
-        self.ssl_proj_teacher = copy.deepcopy(self.ssl_proj_student)
+        self.ssl_proj_teacher = SeqProjectionNetwork(
+            hidden_size=self.hidden_size,
+            num_virtual_classes=cfg.ssl.num_virtual_classes,  # perhaps = num_task * num_prompts?
+            nlayers=cfg.ssl.nlayers,
+            use_ln=cfg.ssl.use_ln
+        )
         self.ssl_proj_teacher.freeze()
         #self.prompt_encoder.attribute = list(self.prompt_encoder.attribute)?
-        self.teacher_net = copy.deepcopy(self.prompt_encoder)
+        self.teacher_net = PromptEncoder(
+            prompt_seq_len=self.prompt_seq_len,
+            hidden_size=self.hidden_size,
+            prompt_dropout=cfg.prompt_encoder.dropout,
+            num_layers=cfg.prompt_encoder.num_layers,
+            reparametrize=cfg.prompt_encoder.reparametrize,
+            prompt_gen_type=cfg.prompt_encoder.prompt_gen_type,
+            precision=cfg.precision,
+            trainer=trainer
+        )
         self.teacher_net.freeze()
 
     def on_before_zero_grad(self, optimizer):
