@@ -75,7 +75,6 @@ class MegatronT5FineTuneModel(NLPModel):
             trainer=trainer,
             override_config_path=t5_cfg,
         )
-        self.setup_optimizer_param_groups()
 
     def training_step(self, batch, batch_idx):
         pass
@@ -108,6 +107,7 @@ class MegatronT5FineTuneModel(NLPModel):
         pass
 
     def configure_optimizers(self):
+        self.setup_optimizer_param_groups()
         self.setup_optimization()
 
         # Wrap the baseline optimizer with the optimizer class with master parameters

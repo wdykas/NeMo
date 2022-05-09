@@ -71,7 +71,7 @@ def main(cfg) -> None:
         cfg.model.data.num_data_shards = cfg.trainer.max_epochs
 
     trainer = Trainer(
-        plugins=plugins, num_sanity_val_steps=2,
+        plugins=plugins,
         reload_dataloaders_every_n_epochs=1 if cfg.model.data.num_data_shards > 1 else 0,
         **cfg.trainer, callbacks=[ModelSummary(max_depth=3)],
     )

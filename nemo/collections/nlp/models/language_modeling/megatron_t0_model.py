@@ -417,6 +417,10 @@ class MegatronT0PrimeModel(MegatronT0Model):
         self.pad_token_id = self.model.tokenizer.pad_id if self.model.tokenizer.pad_id is not None \
             else self.model.tokenizer.unk_id
 
+    def setup_optimizer_param_groups(self):
+        """ModelPT override. Optimizer will get self._optimizer_param_groups"""
+        self._optimizer_param_groups = _get_params_for_weight_decay_optimization([self.model.enc_dec_model, self.prompt_encoder])
+
     def get_prompt_embeddings(self, enc_input_id, ctx_ex_prompt, enc_mask, ctx_ex_mask, prompt_encoder=None):
         queries_for_embedding = enc_input_id.clone()
         queries_mask = enc_mask
@@ -644,7 +648,6 @@ class MegatronT0SSLPrimeModel(MegatronT0PrimeModel):
             use_ln=cfg.ssl.use_ln
         )
         self.ssl_proj_teacher.freeze()
-        #self.prompt_encoder.attribute = list(self.prompt_encoder.attribute)?
         self.teacher_net = PromptEncoder(
             prompt_seq_len=self.prompt_seq_len,
             hidden_size=self.hidden_size,
@@ -656,6 +659,10 @@ class MegatronT0SSLPrimeModel(MegatronT0PrimeModel):
             trainer=trainer
         )
         self.teacher_net.freeze()
+
+    def setup_optimizer_param_groups(self):
+        """ModelPT override. Optimizer will get self._optimizer_param_groups"""
+        self._optimizer_param_groups = _get_params_for_weight_decay_optimization([self.model.enc_dec_model, self.prompt_encoder, self.ssl_proj_student])
 
     def on_before_zero_grad(self, optimizer):
         # Exponential Moving Average update of teacher network
