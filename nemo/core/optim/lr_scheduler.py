@@ -862,7 +862,7 @@ def prepare_lr_scheduler(
 def compute_max_steps(
     max_epochs, accumulate_grad_batches, limit_train_batches, num_workers, num_nodes, num_samples, batch_size, drop_last
 ):
-    sampler_num_samples = num_samples / max(1, num_workers) * num_nodes
+    sampler_num_samples = num_samples / max(1, num_workers)
     if drop_last and num_workers > 1:
         logging.warning(
             "Please note that drop_last is broken in pytorch 1.6.0. We will fix when pytorch 1.7.0 is released"
