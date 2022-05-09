@@ -240,7 +240,10 @@ class ASRAudioText(AudioText):
                 for field in fields:
                     if field not in kwargs:
                         kwargs[field] = []
-                    kwargs[field].append(item[field])
+                    if field not in item:
+                        kwargs[field].append(None)
+                    else:
+                        kwargs[field].append(item[field])
 
         super().__init__(ids, audio_files, durations, texts, offsets, speakers, orig_srs, langs, *args, **kwargs)
 

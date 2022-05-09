@@ -1081,7 +1081,7 @@ class AudioAndEmbeddingToBPEDataset(AudioToBPEDataset):
         return_sample_id: bool = False,
         synthetic_generation: bool = False,
     ):
-        keep_fields = ["other_audio_filepath", "other_duration"]
+        keep_fields = ["other_audio_filepath", "other_duration", "other_offset"]
         super().__init__(
             manifest_filepath=manifest_filepath,
             tokenizer=tokenizer,
@@ -1202,11 +1202,14 @@ class AudioAndEmbeddingToBPEDataset(AudioToBPEDataset):
             #         fp.write(json.dumps(tmp) + "\n")
 
         else:
+            other_offset = sample.other_offset
+            if other_offset is None:
+                other_offset = 0
             features = self.featurizer.process(
                 sample.audio_file, offset=offset, duration=sample.duration, trim=self.trim, orig_sr=sample.orig_sr
             )
             speaker_features = AudioSegment.from_file(
-                sample.other_audio_filepath, duration=sample.other_duration, trim=self.trim, orig_sr=sample.orig_sr
+                sample.other_audio_filepath, offset = other_offset, duration=sample.other_duration, trim=self.trim, orig_sr=sample.orig_sr
             )
             speaker_features = torch.tensor(speaker_features.samples, dtype=torch.float)
         embed_len = torch.tensor(speaker_features.shape[0]).long()
