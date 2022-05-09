@@ -43,10 +43,10 @@ Args:
 MIN_DURATIONS = [4, 5, 6]
 
 
-def filter_manifest_line(manifest_line, signal, sr=16000):
+def filter_manifest_line(manifest_line, signal, sr=16000, to_slice=False, slice_output_folder=None):
     split_manifest = []
     speakers = []
-    audio_path = manifest_line['audio_filepath']
+    audio_filepath = manifest_line['audio_filepath']
     start = manifest_line.get('offset', 0)
     dur = manifest_line['duration']
     SPKR = manifest_line['label']
@@ -58,13 +58,26 @@ def filter_manifest_line(manifest_line, signal, sr=16000):
         while remaining_dur >= 0:
             segment_audio = signal[int(start * sr) : int(start * sr + temp_dur * sr)]
             if l.feature.rms(y=segment_audio).mean() > 0.01:
-                meta = {'audio_filepath': audio_path, 'offset': start, 'duration': temp_dur, 'label': SPKR}
+                if to_slice:
+                    
+                    audio_filepath_name = audio_filepath.split("/")[-1].split(".wav")[0] + "_" + str(start) + "_"+ str(temp_dur) + ".wav"
+                    lang_folder =  os.path.join(slice_output_folder, audio_filepath.split("/")[-2])
+                    os.makedirs(lang_folder, exist_ok=True)
+                    audio_filepath_seg = os.path.join(lang_folder, audio_filepath_name)
+
+                    os.system(f"sox {audio_filepath} {audio_filepath_seg} trim {start} {temp_dur}")
+                    meta = {'audio_filepath': audio_filepath_seg, 'offset': 0, 'duration': temp_dur, 'label': SPKR}
+                    
+                else:
+                     meta = {'audio_filepath': audio_filepath, 'offset': start, 'duration': temp_dur, 'label': SPKR}
                 split_manifest.append(meta)
                 speakers.append(SPKR)
 
             start = start + temp_dur
             temp_dur = random.choice(MIN_DURATIONS)
             remaining_dur = remaining_dur - temp_dur
+            
+            
 
     return split_manifest, speakers
 
@@ -79,7 +92,7 @@ def write_file(name, lines, idx):
 
 
 # def main(scp, id, out, split=False, create_chunks=False):
-def main(scp, out, split=False, create_chunks=False):
+def main(scp, out, split=False, create_chunks=False, to_slice=False, slice_output_folder=None):
     if os.path.exists(out):
         os.remove(out)
     scp_file = open(scp, 'r').readlines()
@@ -96,6 +109,9 @@ def main(scp, out, split=False, create_chunks=False):
 #         speaker = ''.join(speaker)
 #         meta = [{"audio_filepath": line, "offset": 0, "duration": float(dur), "label": speaker}]
 #         speaker = [speaker]
+
+
+    
             
         lang, audio_filepath, dur = line.split(",")
         y, sr = l.load(audio_filepath, sr=None)
@@ -103,7 +119,7 @@ def main(scp, out, split=False, create_chunks=False):
         speaker = [lang]
         
         if create_chunks:
-            meta, speaker = filter_manifest_line(meta[0], signal=y, sr=sr)
+            meta, speaker = filter_manifest_line(meta[0], signal=y, sr=sr, to_slice=to_slice, slice_output_folder=slice_output_folder)
         lines.extend(meta)
         speakers.extend(speaker)
 
@@ -139,7 +155,14 @@ if __name__ == "__main__":
         required=False,
         action='store_true',
     )
+    parser.add_argument(
+        "--to_slice",
+        help="bool if you would want to slice audio",
+        required=False,
+        action='store_true',
+    )
+    parser.add_argument("--slice_output_folder", help="manifest_file name", type=str)
     args = parser.parse_args()
 
 #     main(args.scp, args.id, args.out, args.split, args.create_chunks)
-    main(args.scp, args.out, args.split, args.create_chunks)
+    main(args.scp, args.out, args.split, args.create_chunks, args.to_slice, args.slice_output_folder)
