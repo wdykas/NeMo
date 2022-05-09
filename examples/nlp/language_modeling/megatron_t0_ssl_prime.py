@@ -31,8 +31,6 @@ from nemo.utils import logging
 from nemo.utils.exp_manager import StatelessTimer, exp_manager
 
 #os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
-import torch
-torch.autograd.set_detect_anomaly(True)
 
 @hydra_runner(config_path="conf", config_name="megatron_t0_ssl_prime_config")
 def main(cfg) -> None:
