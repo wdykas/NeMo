@@ -618,9 +618,10 @@ class MTBlockBottleneckModel(MTBottleneckModel):
         context_hiddens = self.latent2hidden(z)
 
         if context_hiddens.size(0) != tgt.size(0):
+            hidden_steps = context_hiddens.size(1)
             repeat_num = tgt.size(0) // context_hiddens.size(0)
-            context_hiddens = context_hiddens.repeat(1, repeat_num, 1).reshape(tgt.size(0), 1, -1)
-            enc_mask = enc_mask.repeat(1, repeat_num).reshape(tgt.size(0), 1)
+            context_hiddens = context_hiddens.repeat(1, repeat_num, 1).reshape(tgt.size(0), hidden_steps, -1)
+            enc_mask = enc_mask.repeat(1, repeat_num).reshape(tgt.size(0), hidden_steps)
 
         tgt_hiddens = self.decoder(
             input_ids=tgt, decoder_mask=tgt_mask, encoder_embeddings=context_hiddens, encoder_mask=enc_mask,
@@ -675,9 +676,10 @@ class MTBlockBottleneckModel(MTBottleneckModel):
 
             if context_hiddens.size(0) != self.new_tgt_batch_size:
                 #TODO: how to avoid cheating below (i.e. remove new_tgt_batch_size)
+                hidden_steps = context_hiddens.size(1)
                 repeat_num = self.new_tgt_batch_size // context_hiddens.size(0)
-                context_hiddens = context_hiddens.repeat(1, repeat_num, 1).reshape(self.new_tgt_batch_size, 1, -1)
-                enc_mask = enc_mask.repeat(1, repeat_num).reshape(self.new_tgt_batch_size, 1)
+                context_hiddens = context_hiddens.repeat(1, repeat_num, 1).reshape(self.new_tgt_batch_size, hidden_steps, -1)
+                enc_mask = enc_mask.repeat(1, repeat_num).reshape(self.new_tgt_batch_size, hidden_steps)
 
             best_translations = self.beam_search(
                 encoder_hidden_states=context_hiddens,

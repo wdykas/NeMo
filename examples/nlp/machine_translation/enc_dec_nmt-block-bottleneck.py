@@ -131,9 +131,7 @@ def main(cfg: MTBlockBottleneckConfig) -> None:
     # experiment logs, checkpoints, and auto-resume are managed by exp_manager and PyTorch Lightning
     exp_manager(trainer, cfg.exp_manager)
 
-    assert cfg.model.num_hierar_levels > 0
     assert cfg.model.encoder.arch == 'perceiver'
-    cfg.model.encoder.hidden_steps = 1
     # everything needed to train translation models is encapsulated in the NeMo MTEncdDecModel
     mt_model = MTBlockBottleneckModel(cfg.model, trainer=trainer)
 
