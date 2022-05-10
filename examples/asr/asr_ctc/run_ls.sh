@@ -1,5 +1,6 @@
 #!/bin/bash
 python speech_to_text_ctc_bpe_ts.py \
+do_training=False \
 model.tokenizer.type=bpe \
 model.sample_rate=16000 \
 model.tokenizer.dir=/home/yangzhang/code/ts_asr/tokenizer_conformer/tokenizer_spe_unigram_v128/ \
@@ -19,7 +20,7 @@ trainer.max_epochs=1 \
 model.test_ds.num_workers=0 \
 model.test_ds.batch_size=1 \
 model.test_ds.sample_rate=16000 \
-model.test_ds.manifest_filepath=[/mnt/data/LibriSpeech/dev_clean.json,/mnt/data/LibriSpeech/dev_clean_overlap_0.1.json,/mnt/data/LibriSpeech/dev_clean_overlap_0.2.json,/mnt/data/LibriSpeech/dev_clean_overlap_0.3.json,/mnt/data/LibriSpeech/dev_clean_overlap_0.4.json,/mnt/data/LibriSpeech/test_clean.json,/mnt/data/LibriSpeech/test_clean_overlap_0.1.json,/mnt/data/LibriSpeech/test_clean_overlap_0.2.json,/mnt/data/LibriSpeech/test_clean_overlap_0.3.json,/mnt/data/LibriSpeech/test_clean_overlap_0.4.json] \
+model.test_ds.manifest_filepath=[/mnt/data/LibriSpeech/dev_clean.json,/mnt/data/LibriSpeech/dev_clean_overlap_0.1.json,/mnt/data/LibriSpeech/dev_clean_overlap_0.2.json,/mnt/data/LibriSpeech/dev_clean_overlap_0.3.json,/mnt/data/LibriSpeech/dev_clean_overlap_0.4.json,/mnt/data/LibriSpeech/dev_clean_overlap_0.7.json,/mnt/data/LibriSpeech/dev_clean_overlap_0.8.json,/mnt/data/LibriSpeech/dev_clean_overlap_0.9.json,/mnt/data/LibriSpeech/dev_clean_overlap_1.0.json,/mnt/data/LibriSpeech/dev_clean_overlap_two_sided_0.1.json,/mnt/data/LibriSpeech/dev_clean_overlap_two_sided_0.2.json,/mnt/data/LibriSpeech/dev_clean_overlap_two_sided_0.3.json,/mnt/data/LibriSpeech/dev_clean_overlap_two_sided_0.4.json,/mnt/data/LibriSpeech/dev_clean_overlap_two_sided_0.7.json,/mnt/data/LibriSpeech/dev_clean_overlap_two_sided_0.8.json,/mnt/data/LibriSpeech/dev_clean_overlap_two_sided_0.9.json,/mnt/data/LibriSpeech/dev_clean_overlap_two_sided_1.0.json] \
 trainer.devices=[0] \
 trainer.log_every_n_steps=50 \
 model.encoder.d_model=256 \
@@ -28,7 +29,8 @@ model.encoder.n_layers=18 \
 model.spec_augment.time_masks=5 \
 trainer.num_sanity_val_steps=0 \
 trainer.val_check_interval=0.01 \
-+nemo_checkpoint_path=/home/yangzhang/code/ts_asr/stt_en_conformer_ctc_medium_v1.0.0/stt_en_conformer_ctc_medium.nemo
++nemo_checkpoint_path=/home/yangzhang/code/NeMo/examples/asr/asr_ctc/ngc_ckpt/2848988/Conformer-CTC-BPE/2022-04-26_02-14-41/checkpoints/Conformer-CTC-BPE.nemo
+
 
 # +nemo_checkpoint_path=/home/yangzhang/code/NeMo/examples/asr/asr_ctc/ngc_ckpt/2793511/Conformer-CTC-BPE/2022-04-09_00-46-34/checkpoints/Conformer-CTC-BPE.nemo
 
