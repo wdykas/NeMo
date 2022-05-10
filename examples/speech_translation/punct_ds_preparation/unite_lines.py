@@ -24,7 +24,7 @@ def main() -> None:
     current_block = ""
     with args.output_file.open('w') as out_f, args.input_file.open() as in_f:
         for i, line in enumerate(in_f):
-            if i >= borders[current_block_idx]:
+            if current_block_idx < len(borders) or i >= borders[current_block_idx]:
                 out_f.write(current_block + '\n')
                 current_block = ""
                 current_block_idx += 1
