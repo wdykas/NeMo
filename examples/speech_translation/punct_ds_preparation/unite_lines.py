@@ -10,8 +10,8 @@ def parse_args() -> argparse.Namespace:
         "--borders", nargs="+", type=int, help="Indices of first lines in blocks starting with 0.", required=True
     )
     args = parser.parse_args()
-    parser.input_file = parser.input_file.expanduser()
-    parser.output_file = parser.output_file.expanduser()
+    args.input_file = args.input_file.expanduser()
+    args.output_file = args.output_file.expanduser()
     return args
 
 
