@@ -257,8 +257,16 @@ def main() -> None:
                         text = ('U' if args.no_all_upper_label else 'u') + text[1:]
                 else:
                     text = text[0].upper() + text[1:]
-            if text[-1] not in '.?!':
-                text = RIGHT_PUNCTUATION_STRIP_PATTERN.sub('', text) + '.'
+            if args.save_labels_instead_of_text:
+                assert len(text) > 2, (
+                    f"If labels are predicted and label string is not empty, "
+                    f"then It has to contain at least 2 characters."
+                )
+                if text[-2] not in '.?!':
+                    text = text[:-2] + '.' + text[-1]
+            else:
+                if text[-1] not in '.?!':
+                    text = RIGHT_PUNCTUATION_STRIP_PATTERN.sub('', text) + '.'
             processed_texts[i] = text
     if args.fix_decimals and not args.save_labels_instead_of_text:
         for i, text in tqdm(
