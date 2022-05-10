@@ -34,6 +34,7 @@ from datasets import (
     interleave_datasets,
     arrow_dataset
 )
+from textattack.augmentation import CLAREAugmenter
 
 from nemo.core.classes import Dataset
 from nemo.utils.app_state import AppState
@@ -753,8 +754,37 @@ class T0PrimeDatasetBuilder(T0DatasetBuilder):
 
 class T0SSLPrimeDatasetBuilder(T0PrimeDatasetBuilder):
 
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+    def __init__(
+            self,
+            t0_type: str,
+            dir_path: str,
+            max_sampling_size: int,
+            split: str,
+            tokenizer: TokenizerSpec,
+            max_seq_length: int,
+            prompt_token_id: int,
+            prompt_seq_len: int,
+            max_seq_length_decoder: int = 128,
+            seed: int = 43,
+            use_cache: bool = True,
+            extension: str = 'json',
+            max_samples: int = None,
+            num_proc: int = None,
+            num_gpus: int = None,
+            num_nodes: int = None,
+            num_data_shards: int = 1,
+            split_template: bool = True,
+            num_in_context_ex: int = None,
+            augment_ssl_samples: bool = True,
+    ):
+        self.augment_ssl_samples = augment_ssl_samples
+        super().__init__(
+            t0_type, dir_path, max_sampling_size, split, tokenizer,
+            max_seq_length, prompt_token_id, prompt_seq_len,
+            max_seq_length_decoder, seed, use_cache,
+            extension, max_samples, num_proc, num_gpus, num_nodes,
+            num_data_shards, split_template, num_in_context_ex
+        )
 
     def choose_template(self, features):
         """
@@ -831,6 +861,12 @@ class T0SSLPrimeDatasetBuilder(T0PrimeDatasetBuilder):
         processed_batch['ssl_template'] = template
         processed_batch['ssl_enc_mask'] = enc_mask
         processed_batch['ssl_prompt_ids'] = prompt_ids
+
+        if self.augment_ssl_samples:
+            processed_batch['ssl_text_enc'] = self.text_augment(processed_batch['ssl_text_enc'])
+            processed_batch['aug_text_enc'] = self.text_augment(processed_batch['ssl_text_enc'])
+        else:
+            processed_batch['aug_text_enc'] = processed_batch['text_enc']
         return processed_batch
 
     def add_in_context_examples(self, processed_batch):
@@ -843,6 +879,9 @@ class T0SSLPrimeDatasetBuilder(T0PrimeDatasetBuilder):
         processed_batch['ssl_ctx_ex_prompt'] = ssl_batch_ctx_ex_prompt['ctx_ex_prompt']
         processed_batch['ssl_ctx_ex_mask'] = ssl_batch_ctx_ex_prompt['ctx_ex_mask']
         return processed_batch
+
+    def text_augment(self, text):
+        return text
 
 
 class T0HFDatasetBuilder(T0DatasetBuilder):
