@@ -116,6 +116,8 @@ class MTBottleneckModel(MTEncDecModel):
         pass
 
     def eval_epoch_end(self, outputs, mode, global_rank):
+        if not outputs:
+            return
         # call parent for logging
         super().eval_epoch_end(outputs, mode, global_rank)
 
@@ -481,6 +483,7 @@ class MTBlockBottleneckModel(MTBottleneckModel):
         self.block_size = max_len // max_num_blocks + math.ceil(max_len % max_num_blocks / max_num_blocks)
         self.beam_search.max_seq_length = self.block_size
         self.current_batch_size = None
+        self._block_position_embedding = torch.nn.Embedding(max_num_blocks, self.cfg.encoder.hidden_size)
 
     @torch.no_grad()
     def other_collate(self, batch):
@@ -618,11 +621,20 @@ class MTBlockBottleneckModel(MTBottleneckModel):
         # decoding cross attention context
         context_hiddens = self.latent2hidden(z)
 
+        repeat_num = 1
         if context_hiddens.size(0) != tgt.size(0):
             hidden_steps = context_hiddens.size(1)
             repeat_num = tgt.size(0) // context_hiddens.size(0)
             context_hiddens = context_hiddens.repeat(1, repeat_num, 1).reshape(tgt.size(0), hidden_steps, -1)
             enc_mask = enc_mask.repeat(1, repeat_num).reshape(tgt.size(0), hidden_steps)
+
+        position_ids = torch.arange(
+            start=0, end=repeat_num, dtype=torch.long, device=context_hiddens.device
+        )
+        position_ids = position_ids.unsqueeze(1).repeat(context_hiddens.size(0)//repeat_num, 1)
+        position_embeddings = self._block_position_embedding(position_ids)
+        context_hiddens = torch.cat((position_embeddings, context_hiddens), dim=1)
+        enc_mask = torch.cat((torch.ones_like(position_embeddings[:, :, 0]), enc_mask), dim=1)
 
         tgt_hiddens = self.decoder(
             input_ids=tgt, decoder_mask=tgt_mask, encoder_embeddings=context_hiddens, encoder_mask=enc_mask,
@@ -675,12 +687,21 @@ class MTBlockBottleneckModel(MTBottleneckModel):
             # decoding cross attention context
             context_hiddens = self.latent2hidden(z)
 
+            repeat_num = 1
             if context_hiddens.size(0) != self.new_tgt_batch_size:
                 #TODO: how to avoid cheating below (i.e. remove new_tgt_batch_size)
                 hidden_steps = context_hiddens.size(1)
                 repeat_num = self.new_tgt_batch_size // context_hiddens.size(0)
                 context_hiddens = context_hiddens.repeat(1, repeat_num, 1).reshape(self.new_tgt_batch_size, hidden_steps, -1)
                 enc_mask = enc_mask.repeat(1, repeat_num).reshape(self.new_tgt_batch_size, hidden_steps)
+
+            position_ids = torch.arange(
+                start=0, end=repeat_num, dtype=torch.long, device=context_hiddens.device
+            )
+            position_ids = position_ids.unsqueeze(1).repeat(context_hiddens.size(0) // repeat_num, 1)
+            position_embeddings = self._block_position_embedding(position_ids)
+            context_hiddens = torch.cat((position_embeddings, context_hiddens), dim=1)
+            enc_mask = torch.cat((torch.ones_like(position_embeddings[:, :, 0]), enc_mask), dim=1)
 
             best_translations = self.beam_search(
                 encoder_hidden_states=context_hiddens,

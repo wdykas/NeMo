@@ -402,6 +402,8 @@ class MTEncDecModel(EncDecNLPModel, Exportable):
         return self.eval_step(batch, batch_idx, 'val', dataloader_idx)
 
     def eval_epoch_end(self, outputs, mode, global_rank):
+        if not outputs:
+            return
         # if user specifies one validation dataloader, then PTL reverts to giving a list of dictionary instead of a list of list of dictionary
         if isinstance(outputs[0], dict):
             outputs = [outputs]
