@@ -23,6 +23,8 @@ from nemo.core.classes.common import typecheck
 from nemo.collections.nlp.modules.common.megatron.module import MegatronModule
 from nemo.collections.nlp.models.language_modeling.bert_lm_model import BERTLMModel
 from nemo.collections.nlp.modules.common.transformer.perceiver_encoders import ParallelPerceiverEncoder
+from nemo.collections.nlp.modules.common.megatron.transformer import ParallelMLP
+from nemo.collections.nlp.modules.common.megatron.utils import init_method_normal, scaled_init_method_normal
 
 __all__ = ['PromptEncoder']
 
@@ -54,7 +56,8 @@ class PromptEncoder(MegatronModule):
             "sequential": SeqPromptGenerator,
             "linear": LinearPromptGenerator,
             "bottleneck": BottleneckPromptGenerator,
-            "bert": BertPromptGenerator
+            "bert": BertPromptGenerator,
+            "adaptivepooling": AdaptivePoolingPromptGenerator
         }
         self.prompt_gen_type = prompt_gen_type
         if prompt_gen_type in ["bottleneck", "bert"]:
@@ -222,4 +225,56 @@ class BottleneckPromptGenerator(MegatronModule):
 
     def forward(self, prompt_embeds, prompt_embeds_mask) -> torch.Tensor:
         prompt_embeds, mask = self.encoder(prompt_embeds, prompt_embeds_mask)
+        return prompt_embeds
+
+
+class AdaptivePoolingPromptGenerator(MegatronModule):
+    def __init__(
+            self,
+            hidden_size: int,
+            prompt_dropout: float,
+            prompt_seq_len: int,
+            num_layers: int,
+            precision: int,
+            trainer: Trainer,
+            init_method_std: int = 0.02
+    ):
+        """
+        Initializes the PromptEncoder module.
+        Args:
+            prompt_seq_len: number of prompt embeddings to produce
+            hidden_size: hidden dimension
+            prompt_dropout: hidden dropout
+            num_layers: number of layers
+        """
+        super().__init__()
+        self.prompt_seq_len = prompt_seq_len
+        self.max_seq_len = prompt_seq_len * num_layers
+
+        self.encoder = nn.ModuleList()
+        for i in range(num_layers):
+            self.encoder.append(ParallelMLP(
+                init_method=init_method_normal(init_method_std),
+                output_layer_init_method=scaled_init_method_normal(init_method_std, num_layers),
+                hidden_size=hidden_size,
+                ffn_hidden_size=hidden_size,
+                bias_gelu_fusion=False
+            ))
+            self.encoder.append(nn.AdaptiveAvgPool1d(self.max_seq_len // (i+1)))
+        self.final_layer = ParallelMLP(
+                init_method=init_method_normal(init_method_std),
+                output_layer_init_method=scaled_init_method_normal(init_method_std, num_layers),
+                hidden_size=hidden_size,
+                ffn_hidden_size=hidden_size,
+                bias_gelu_fusion=False
+        )
+
+    def forward(self, prompt_embeds, prompt_embeds_mask) -> torch.Tensor:
+        for encoder_layer in self.encoder:
+            prompt_embeds = encoder_layer(prompt_embeds)
+            if isinstance(prompt_embeds, tuple):
+                prompt_embeds = prompt_embeds[0] + prompt_embeds[1]
+            prompt_embeds = prompt_embeds.transpose(1, 2)
+        prompt_embeds = self.final_layer(prompt_embeds)
+        prompt_embeds = prompt_embeds[0] + prompt_embeds[1]
         return prompt_embeds
