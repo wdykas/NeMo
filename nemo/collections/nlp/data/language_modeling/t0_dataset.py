@@ -173,6 +173,7 @@ class InterleavedDataset(torch.utils.data.Dataset):
         try:
             sample_idx = next(self.dataset_sample_iterator[dataset_idx])
         except StopIteration:
+            # TODO: stop when largest dataset reaches this point
             self.dataset_sample_iterator[dataset_idx].reset()
             sample_idx = next(self.dataset_sample_iterator[dataset_idx])
         return self.datasets[int(dataset_idx)][int(sample_idx)]
