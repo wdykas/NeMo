@@ -477,8 +477,9 @@ class MTBlockBottleneckModel(MTBottleneckModel):
         super().__init__(cfg=cfg, trainer=trainer)
 
         max_num_blocks = self.cfg.max_num_blocks
-        tokens_in_batch = self.cfg.train_ds.tokens_in_batch
-        self.block_size = tokens_in_batch // max_num_blocks + math.ceil(tokens_in_batch % max_num_blocks / max_num_blocks)
+        max_len = self.cfg.train_ds.max_seq_length
+        self.block_size = max_len // max_num_blocks + math.ceil(max_len % max_num_blocks / max_num_blocks)
+        self.beam_search.max_seq_length = self.block_size
         self.current_batch_size = None
 
     @torch.no_grad()
