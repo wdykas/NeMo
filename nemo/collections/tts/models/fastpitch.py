@@ -260,6 +260,7 @@ class FastPitchModel(SpectrogramGenerator, Exportable):
             "durs": NeuralType(('B', 'T_text'), TokenDurationType()),
             "pitch": NeuralType(('B', 'T_audio'), RegressionValuesType()),
             "speaker": NeuralType(('B'), Index(), optional=True),
+            "speaker_emb": NeuralType(('B', 'D'), RegressionValuesType(), optional=True),
             "pace": NeuralType(optional=True),
             "spec": NeuralType(('B', 'D', 'T_spec'), MelSpectrogramType(), optional=True),
             "attn_prior": NeuralType(('B', 'T_spec', 'T_text'), ProbsType(), optional=True),
@@ -274,6 +275,7 @@ class FastPitchModel(SpectrogramGenerator, Exportable):
         durs=None,
         pitch=None,
         speaker=None,
+        speaker_emb=None,
         pace=1.0,
         spec=None,
         attn_prior=None,
@@ -285,6 +287,7 @@ class FastPitchModel(SpectrogramGenerator, Exportable):
             durs=durs,
             pitch=pitch,
             speaker=speaker,
+            speaker_emb=speaker_emb,
             pace=pace,
             spec=spec,
             attn_prior=attn_prior,
@@ -294,13 +297,13 @@ class FastPitchModel(SpectrogramGenerator, Exportable):
 
     @typecheck(output_types={"spect": NeuralType(('B', 'D', 'T_spec'), MelSpectrogramType())})
     def generate_spectrogram(
-        self, tokens: 'torch.tensor', speaker: Optional[int] = None, pace: float = 1.0
+        self, tokens: 'torch.tensor', speaker: Optional[int] = None, speaker_emb: Optional['torch.tensor'] = None, pace: float = 1.0
     ) -> torch.tensor:
         if self.training:
             logging.warning("generate_spectrogram() is meant to be called in eval mode.")
         if isinstance(speaker, int):
             speaker = torch.tensor([speaker]).to(self.device)
-        spect, *_ = self(text=tokens, durs=None, pitch=None, speaker=speaker, pace=pace)
+        spect, *_ = self(text=tokens, durs=None, pitch=None, speaker=speaker, speaker_emb=speaker_emb, pace=pace)
         return spect
 
     def training_step(self, batch, batch_idx):

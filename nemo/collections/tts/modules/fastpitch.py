@@ -158,6 +158,9 @@ class FastPitchModule(NeuralModule):
         else:
             self.speaker_emb = None
 
+        self.speaker_proj = torch.nn.Linear(192, symbols_embedding_dim)
+        self.bn1 = torch.nn.BatchNorm1d(num_features=symbols_embedding_dim)
+
         self.max_token_duration = max_token_duration
         self.min_token_duration = 0
 
@@ -181,6 +184,7 @@ class FastPitchModule(NeuralModule):
             "durs": NeuralType(('B', 'T_text'), TokenDurationType()),
             "pitch": NeuralType(('B', 'T_audio'), RegressionValuesType()),
             "speaker": NeuralType(('B'), Index(), optional=True),
+            "speaker_emb": NeuralType(('B', 'D'), RegressionValuesType(), optional=True),
             "pace": NeuralType(optional=True),
             "spec": NeuralType(('B', 'D', 'T_spec'), MelSpectrogramType(), optional=True),
             "attn_prior": NeuralType(('B', 'T_spec', 'T_text'), ProbsType(), optional=True),
@@ -211,6 +215,7 @@ class FastPitchModule(NeuralModule):
         durs=None,
         pitch=None,
         speaker=None,
+        speaker_emb=None,
         pace=1.0,
         spec=None,
         attn_prior=None,
@@ -223,7 +228,9 @@ class FastPitchModule(NeuralModule):
             assert pitch is not None
 
         # Calculate speaker embedding
-        if self.speaker_emb is None or speaker is None:
+        if speaker_emb is not None:
+            spk_emb = self.speaker_proj(speaker_emb)
+        elif self.speaker_emb is None or speaker is None:
             spk_emb = 0
         else:
             spk_emb = self.speaker_emb(speaker).unsqueeze(1)
