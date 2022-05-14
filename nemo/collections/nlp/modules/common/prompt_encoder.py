@@ -16,12 +16,14 @@ from typing import Dict, List, Optional
 
 import torch
 from torch import nn
+import torch.nn.functional as F
 from pytorch_lightning import Trainer
 
+from omegaconf.dictconfig import DictConfig
 from nemo.core.classes import Exportable, NeuralModule
 from nemo.core.classes.common import typecheck
 from nemo.collections.nlp.modules.common.megatron.module import MegatronModule
-from nemo.collections.nlp.models.language_modeling.bert_lm_model import BERTLMModel
+from nemo.collections.nlp.models.language_modeling.megatron_bert_model import MegatronBertModel
 from nemo.collections.nlp.modules.common.transformer.perceiver_encoders import ParallelPerceiverEncoder
 from nemo.collections.nlp.modules.common.megatron.transformer import ParallelMLP
 from nemo.collections.nlp.modules.common.megatron.utils import init_method_normal, scaled_init_method_normal
@@ -36,7 +38,8 @@ class PromptEncoder(MegatronModule):
 
     def __init__(
             self, prompt_seq_len: int, hidden_size: int, prompt_dropout: float, num_layers: int,
-            reparametrize: bool, prompt_gen_type: str, precision: int, trainer: Optional[Trainer] = None
+            reparametrize: bool, prompt_gen_type: str, precision: int,
+            trainer: Optional[Trainer] = None, restore_from_path: str = None, prompt_enc_cfg: DictConfig = None
     ):
         """
         Initializes the PromptEncoder module.
@@ -60,7 +63,7 @@ class PromptEncoder(MegatronModule):
             "adaptivepooling": AdaptivePoolingPromptGenerator
         }
         self.prompt_gen_type = prompt_gen_type
-        if prompt_gen_type in ["bottleneck", "bert"]:
+        if prompt_gen_type in ["bottleneck", "bert", "adaptivepooling"]:
             assert self.reparametrize
         if prompt_gen_type in ["sequential", "linear"]:
             # ent embedding
@@ -70,7 +73,8 @@ class PromptEncoder(MegatronModule):
         if self.reparametrize:
             PromptGen = PromptGenModels[prompt_gen_type]
             self.prompt_generator = PromptGen(
-                hidden_size, prompt_dropout, prompt_seq_len, num_layers, precision, trainer
+                hidden_size, prompt_dropout, prompt_seq_len, num_layers, precision,
+                trainer, restore_from_path, prompt_enc_cfg
             )
 
     def freeze(self) -> None:
@@ -101,7 +105,10 @@ class LinearPromptGenerator(MegatronModule):
             prompt_seq_len: int,
             num_layers: int,
             precision: int,
-            trainer: Trainer
+            trainer: Trainer,
+            restore_from_path: str,
+            prompt_enc_cfg: DictConfig
+
     ):
         """
         Initializes the PromptEncoder module.
@@ -130,7 +137,9 @@ class SeqPromptGenerator(MegatronModule):
             prompt_seq_len: int,
             num_layers: int,
             precision: int,
-            trainer: Trainer
+            trainer: Trainer,
+            restore_from_path: str,
+            prompt_enc_cfg: DictConfig
     ):
         """
         Initializes the PromptEncoder module.
@@ -168,7 +177,9 @@ class BertPromptGenerator(MegatronModule):
             prompt_seq_len: int,
             num_layers: int,
             precision: int,
-            trainer: Trainer
+            trainer: Trainer,
+            restore_from_path: str,
+            prompt_enc_cfg: DictConfig,
     ):
         """
         Initializes the PromptEncoder module.
@@ -180,13 +191,68 @@ class BertPromptGenerator(MegatronModule):
         """
         super().__init__()
         self.prompt_seq_len = prompt_seq_len
-        self.encoder = BERTLMModel.restore_from(
-            "bertbaseuncased",
-            trainer=trainer
+        model = MegatronBertModel.restore_from(
+            restore_from_path,
+            trainer=trainer,
+            override_config_path=prompt_enc_cfg
         )
+        bert_model = model.bert_model
+        #TODO: I can't seem to load a nemo model. When this is fixed, below needs to be updated
+        if hasattr(prompt_enc_cfg, 'new_pos_emb_size'):
+            new_num_tokens = prompt_enc_cfg.new_pos_emb_size
+            old_embeddings = bert_model.embeddings.position_embeddings
+            old_num_tokens, old_embedding_dim = old_embeddings.weight.size()
+            old_pos_ids = bert_model.embeddings.position_ids
+
+            bert_model.position_ids = torch.arange(
+                new_num_tokens, dtype=torch.long, device=old_pos_ids.device
+            ).unsqueeze(0)
+            new_embeddings = nn.Embedding(new_num_tokens, old_embedding_dim)
+            new_embeddings.to(old_embeddings.weight.device, dtype=new_embeddings.weight.dtype)
+            n = min(old_num_tokens, new_num_tokens)
+            new_embeddings.weight.data[:n, :] = old_embeddings.weight.data[:n, :]
+            bert_model.embeddings.position_embeddings = new_embeddings
+
+        self.word_embeddings = bert_model.embeddings.word_embeddings
+        self.position_embeddings = bert_model.embeddings.position_embeddings
+        self.tokentype_embeddings = bert_model.embeddings.token_type_embeddings
+        self.embedding_dropout = bert_model.embeddings.dropout
+        self.position_ids = bert_model.position_ids
+        self.tokentype_ids = torch.zeros_like(self.position_ids)
+        self.encoder = bert_model.encoder
+
+    def get_extended_attention_mask(self, attention_mask, input_shape) -> torch.Tensor:
+        #TODO: remove when we are able to load nemo models
+        if attention_mask.dim() == 3:
+            extended_attention_mask = attention_mask[:, None, :, :]
+        elif attention_mask.dim() == 2:
+            extended_attention_mask = attention_mask[:, None, None, :]
+        else:
+            raise ValueError(
+                f"Wrong shape for input_ids (shape {input_shape}) or attention_mask (shape {attention_mask.shape})"
+            )
+
+        # Since attention_mask is 1.0 for positions we want to attend and 0.0 for
+        # masked positions, this operation will create a tensor which is 0.0 for
+        # positions we want to attend and -10000.0 for masked positions.
+        # Since we are adding it to the raw scores before the softmax, this is
+        # effectively the same as removing these entirely.
+        extended_attention_mask = extended_attention_mask.to(dtype=self.dtype)  # fp16 compatibility
+        extended_attention_mask = (1.0 - extended_attention_mask) * -10000.0
+        return extended_attention_mask
 
     def forward(self, prompt_embeds, prompt_embeds_mask) -> torch.Tensor:
-        prompt_embeds, mask = self.encoder(prompt_embeds, prompt_embeds_mask)
+        position_ids = self.position_ids[:, :prompt_embeds.size(1)].repeat(prompt_embeds.size(0), 1)
+        tokentype_ids = self.tokentype_ids[:, :prompt_embeds.size(1)].repeat(prompt_embeds.size(0), 1)
+        prompt_embeds = prompt_embeds + self.position_embeddings(position_ids) + self.tokentype_embeddings(tokentype_ids)
+        prompt_embeds = self.embedding_dropout(prompt_embeds)
+        prompt_embeds_mask = self.get_extended_attention_mask(
+            prompt_embeds_mask, prompt_embeds.size()[:-1]
+        )
+        outputs = self.encoder(
+            hidden_states=prompt_embeds, attention_mask=prompt_embeds_mask
+        )
+        prompt_embeds = outputs.last_hidden_state
         return prompt_embeds[:, :self.prompt_seq_len]
 
 
@@ -198,7 +264,9 @@ class BottleneckPromptGenerator(MegatronModule):
             prompt_seq_len: int,
             num_layers: int,
             precision: int,
-            trainer: Trainer
+            trainer: Trainer,
+            restore_from_path: str,
+            prompt_enc_cfg: DictConfig,
     ):
         """
         Initializes the PromptEncoder module.
@@ -215,6 +283,7 @@ class BottleneckPromptGenerator(MegatronModule):
                 hidden_size=hidden_size,
                 inner_size=hidden_size * 4,
                 num_attention_heads=16,
+                attn_score_dropout=prompt_dropout,
                 ffn_dropout=prompt_dropout,
                 hidden_act='gelu',
                 hidden_steps=prompt_seq_len,
@@ -237,6 +306,8 @@ class AdaptivePoolingPromptGenerator(MegatronModule):
             num_layers: int,
             precision: int,
             trainer: Trainer,
+            restore_from_path: str,
+            prompt_enc_cfg: DictConfig,
             init_method_std: int = 0.02
     ):
         """
@@ -250,6 +321,7 @@ class AdaptivePoolingPromptGenerator(MegatronModule):
         super().__init__()
         self.prompt_seq_len = prompt_seq_len
         self.max_seq_len = prompt_seq_len * num_layers
+        self.prompt_dropout = prompt_dropout
 
         self.encoder = nn.ModuleList()
         for i in range(num_layers):
@@ -269,11 +341,15 @@ class AdaptivePoolingPromptGenerator(MegatronModule):
                 bias_gelu_fusion=False
         )
 
+    def set_prompt_dropout(self, p):
+        self.prompt_dropout = p
+
     def forward(self, prompt_embeds, prompt_embeds_mask) -> torch.Tensor:
         for encoder_layer in self.encoder:
             prompt_embeds = encoder_layer(prompt_embeds)
             if isinstance(prompt_embeds, tuple):
                 prompt_embeds = prompt_embeds[0] + prompt_embeds[1]
+                prompt_embeds = F.dropout(prompt_embeds, p=self.prompt_dropout, training=self.training)
             prompt_embeds = prompt_embeds.transpose(1, 2)
         prompt_embeds = self.final_layer(prompt_embeds)
         prompt_embeds = prompt_embeds[0] + prompt_embeds[1]

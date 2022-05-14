@@ -19,10 +19,13 @@ from typing import Dict, Optional
 import torch
 from torch.utils.data import DataLoader
 from apex.transformer import tensor_parallel
+from omegaconf import OmegaConf, open_dict
 from omegaconf.dictconfig import DictConfig
 from pytorch_lightning.trainer.trainer import Trainer
 
+from nemo.collections.nlp.modules.common.lm_utils import get_lm_model
 from nemo.collections.nlp.data.language_modeling.t0_task_manager import get_task_name
+from nemo.collections.nlp.models.language_modeling.megatron_bert_model import MegatronBertModel
 from nemo.collections.nlp.data.language_modeling.t0_dataset import (
     T0DatasetBuilder,
     T0PrimeDatasetBuilder,
@@ -400,6 +403,31 @@ class MegatronT0PrimeModel(MegatronT0Model):
         if cfg.freeze:
             self.model.freeze()
 
+
+        prompt_encoder_restore_from_path = None
+        prompt_enc_cfg = None
+        self.get_prompt_gen_word_embeddings = False
+        if cfg.prompt_encoder.restore_from_path is not None:
+            # TODO: all this does not work, an HF model is still loaded
+            if 'bert' in cfg.prompt_encoder.restore_from_path:
+                self.get_prompt_gen_word_embeddings = True
+                prompt_encoder_restore_from_path = self.register_artifact('prompt_generator', cfg.prompt_encoder.restore_from_path)
+                prompt_enc_cfg = MegatronBertModel.restore_from(
+                    prompt_encoder_restore_from_path, trainer=trainer, return_config=True
+                )
+                OmegaConf.set_struct(prompt_enc_cfg, True)
+                with open_dict(prompt_enc_cfg):
+                    prompt_enc_cfg.precision = cfg.precision
+                    prompt_enc_cfg.masked_softmax_fusion = False
+                    prompt_enc_cfg.megatron_amp_O2 = self.megatron_amp_o2
+                    if hasattr(cfg, 'attention_dropout'):
+                        prompt_enc_cfg.attention_dropout = cfg.attention_dropout
+                    if hasattr(cfg, 'hidden_dropout'):
+                        prompt_enc_cfg.hidden_dropout = cfg.hidden_dropout
+                    if hasattr(cfg.data, 'num_in_context_ex') and cfg.data.num_in_context_ex > 0:
+                        prompt_enc_cfg.new_pos_emb_size = cfg.data.train_ds.max_seq_length * (cfg.data.num_in_context_ex + 1)
+                prompt_encoder_restore_from_path = self.register_artifact('prompt_generator', cfg.prompt_encoder.restore_from_path)
+
         self.prompt_encoder = PromptEncoder(
             prompt_seq_len=self.prompt_seq_len,
             hidden_size=self.hidden_size,
@@ -408,9 +436,16 @@ class MegatronT0PrimeModel(MegatronT0Model):
             reparametrize=cfg.prompt_encoder.reparametrize,
             prompt_gen_type=cfg.prompt_encoder.prompt_gen_type,
             precision=cfg.precision,
-            trainer=trainer
+            trainer=trainer,
+            restore_from_path=prompt_encoder_restore_from_path,
+            prompt_enc_cfg=prompt_enc_cfg,
         )
-        self.word_embeddings = self.model.enc_dec_model.encoder_embedding.word_embeddings
+        self.prompt_encoder.prompt_generator.dtype = self.float_type
+        self.input_word_embeddings = self.model.enc_dec_model.encoder_embedding.word_embeddings
+        if self.get_prompt_gen_word_embeddings:
+            self.prompt_word_embeddings = self.prompt_encoder.prompt_generator.word_embeddings
+        else:
+            self.prompt_word_embeddings = self.model.enc_dec_model.encoder_embedding.word_embeddings
         self.position_embeddings = self.model.enc_dec_model.encoder_embedding.position_embeddings
         self.model.tokenizer.add_special_tokens({'additional_special_tokens': [cfg.pseudo_token]})
         self.pseudo_token_id = self.model.tokenizer.token_to_id(cfg.pseudo_token)
@@ -421,17 +456,10 @@ class MegatronT0PrimeModel(MegatronT0Model):
         """ModelPT override. Optimizer will get self._optimizer_param_groups"""
         self._optimizer_param_groups = _get_params_for_weight_decay_optimization([self.model.enc_dec_model, self.prompt_encoder])
 
-    def get_prompt_embeddings(self, enc_input_id, ctx_ex_prompt, enc_mask, ctx_ex_mask, prompt_encoder=None):
-        queries_for_embedding = enc_input_id.clone()
-        queries_mask = enc_mask
-        if ctx_ex_prompt is not None:
-            queries_for_embedding = torch.cat((queries_for_embedding, ctx_ex_prompt.clone()), dim=1)
-            queries_mask = torch.cat((queries_mask, ctx_ex_mask), dim=1)
-        queries_for_embedding[(queries_for_embedding == self.pseudo_token_id)] = self.pad_token_id
-        query_embeddings = self.word_embeddings(queries_for_embedding)
+    def get_prompt_embeddings(self, queries_for_embedding, queries_mask, prompt_encoder=None):
 
         if self.cfg.prompt_encoder.task_dependent:
-            prompt_condition = query_embeddings
+            prompt_condition = self.prompt_word_embeddings(queries_for_embedding)
             prompt_condition_mask = queries_mask
         else:
             prompt_condition = None
@@ -460,7 +488,7 @@ class MegatronT0PrimeModel(MegatronT0Model):
                         prompt_condition=prompt_condition,
                         prompt_condition_mask=prompt_condition_mask
                     )
-        return prompt_embeds, query_embeddings
+        return prompt_embeds
 
     def embed_input(self, enc_input_id, ctx_ex_prompt, prompt_input_ids, enc_mask, ctx_ex_mask):
         """
@@ -476,12 +504,18 @@ class MegatronT0PrimeModel(MegatronT0Model):
             the token embedding for the LM model.
         """
         bz, seq_len = enc_input_id.shape
+        queries_for_embedding = enc_input_id.clone()
+        queries_mask = enc_mask
+        if ctx_ex_prompt is not None:
+            queries_for_embedding = torch.cat((queries_for_embedding, ctx_ex_prompt.clone()), dim=1)
+            queries_mask = torch.cat((queries_mask, ctx_ex_mask), dim=1)
+        queries_for_embedding[(queries_for_embedding == self.pseudo_token_id)] = self.pad_token_id
 
-        prompt_embeds, query_embeddings = self.get_prompt_embeddings(
-            enc_input_id, ctx_ex_prompt, enc_mask, ctx_ex_mask
+        prompt_embeds = self.get_prompt_embeddings(
+            queries_for_embedding, queries_mask
         )
-
-        query_embeddings = query_embeddings[:, :seq_len, :].clone().type(self.float_type)
+        query_embeddings = self.input_word_embeddings(queries_for_embedding)
+        query_embeddings = query_embeddings[:, :seq_len, :].type(self.float_type)
         encoder_position_ids = build_position_ids(enc_input_id)
         position_embeddings = self.position_embeddings(encoder_position_ids)
 
@@ -500,7 +534,7 @@ class MegatronT0PrimeModel(MegatronT0Model):
         )
         if self.float_type == torch.float32:
             tokens_loss = itemgetter("tokens_loss")(self.model.enc_dec_model(
-                enc_input_ids=tokens_enc, dec_input_ids=tokens_dec,
+                enc_input_ids=None, dec_input_ids=tokens_dec,
                 enc_attn_mask=enc_mask, dec_attn_mask=dec_mask,
                 tokentype_ids=None, labels=labels,
                 enc_input=encoder_input

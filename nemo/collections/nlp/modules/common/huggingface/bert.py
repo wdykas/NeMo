@@ -15,6 +15,7 @@
 # limitations under the License.
 
 from transformers import BertModel
+from transformers.models.bert import BertModel
 
 from nemo.collections.nlp.modules.common.bert_module import BertModule
 from nemo.core.classes import typecheck
