@@ -77,7 +77,7 @@ class AudioSegment(object):
         self._samples = samples
         self._sample_rate = sample_rate
         if self._samples.ndim >= 2:
-            self._samples = np.mean(self._samples, 1)
+            self._samples = np.mean(self._samples, 0)
 
         self._orig_sr = orig_sr if orig_sr is not None else sample_rate
 
@@ -137,6 +137,7 @@ class AudioSegment(object):
         :return: numpy array of samples
         """
         samples = None
+        
         if not isinstance(audio_file, str) or os.path.splitext(audio_file)[-1] in sf_supported_formats:
             try:
                 with sf.SoundFile(audio_file, 'r') as f:
