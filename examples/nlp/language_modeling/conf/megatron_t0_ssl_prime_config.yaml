@@ -49,7 +49,6 @@ model:
   attention_dropout: 0.0
 
   prompt_encoder:
-    restore_from_path: /home/jpilault/models/megatron_bertbaseuncased/bertbaseuncased.nemo
     seq_len: 96
     dropout: 0.0
     num_layers: 2
@@ -74,19 +73,19 @@ model:
     num_workers: 24
     num_data_shards: 1
     train_ds:
-      batch_size: 8
+      batch_size: 4
       shuffle: True
       pin_memory: True
       max_seq_length: 512
 
     validation_ds:
-      batch_size: 16
+      batch_size: 8
       shuffle: False
       pin_memory: True
       max_seq_length: 512
 
     test_ds:
-      batch_size: 16
+      batch_size: 8
       shuffle: False
       pin_memory: True
       max_seq_length: 512

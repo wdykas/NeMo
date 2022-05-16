@@ -49,7 +49,6 @@ model:
   attention_dropout: 0.0
 
   prompt_encoder:
-    restore_from_path: /home/jpilault/models/megatron_bertbaseuncased/bertbaseuncased.nemo
     seq_len: 96
     dropout: 0.0
     num_layers: 2
