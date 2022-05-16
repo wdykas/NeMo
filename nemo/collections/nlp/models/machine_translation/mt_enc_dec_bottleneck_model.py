@@ -484,6 +484,7 @@ class MTBlockBottleneckModel(MTBottleneckModel):
         self.beam_search.max_seq_length = self.block_size
         self.current_batch_size = None
         self._block_position_embedding = torch.nn.Embedding(max_num_blocks, self.cfg.encoder.hidden_size)
+        self.unlikelihood_loss_weight = getattr(self.cfg, 'unlikelihood_loss_weight', None)
 
     @torch.no_grad()
     def other_collate(self, batch):
@@ -524,6 +525,44 @@ class MTBlockBottleneckModel(MTBottleneckModel):
         batch = self.resize_batch(batch)
         batch = self.other_collate(batch)
         return super().training_step(batch, batch_idx)
+
+    def loss(
+            self, z, z_mean, z_logv, z_mask, tgt_log_probs, tgt, tgt_mask, tgt_labels, train=False, return_info=False
+    ):
+        loss = super().loss(z, z_mean, z_logv, z_mask, tgt_log_probs, tgt, tgt_mask, tgt_labels, train, return_info)
+        if return_info:
+            loss, info_dict = loss
+
+        if self.unlikelihood_loss_weight is not None and self.unlikelihood_loss_weight > 0 and train:
+            custom_loss = self.get_unlikelihood_loss(log_probs=tgt_log_probs, labels=tgt_labels)
+            loss += custom_loss * self.unlikelihood_loss_weight
+
+        if return_info:
+            return loss, info_dict
+        else:
+            return loss
+
+    def get_unlikelihood_loss(self, log_probs, labels):
+        bsz, seq_len = labels.size()
+        with torch.no_grad():
+            """
+                Loss that discourages repetition across blocks. For example for 3 blocks with sequences B1, B2, B3
+                B2 | context => negative targets the elements of B1 and B3
+            """
+            no_rep_cands = labels.reshape(self.current_batch_size, -1, seq_len)
+            num_blocks  = no_rep_cands.size(1)
+            no_rep_cands = no_rep_cands.unsqueeze(1).expand(-1, num_blocks, num_blocks, -1)
+            diag_mask = 1 - torch.eye(num_blocks, num_blocks).unsqueeze(0).unsqueeze(-1).to(self.device)
+            diag_mask= diag_mask.expand(self.current_batch_size, -1, -1, seq_len)
+            no_rep_cands = no_rep_cands * diag_mask + self.decoder_tokenizer.pad_id
+            no_rep_cands = no_rep_cands.reshape(bsz, num_blocks, seq_len)
+            no_rep_cands = no_rep_cands.masked_fill(no_rep_cands == labels.unsqueeze(1), self.decoder_tokenizer.pad_id)
+            no_rep_cands = no_rep_cands.reshape(bsz, 1, -1).expand(-1, seq_len, -1)
+            negative_targets = torch.zeros_like(log_probs).scatter_(-1, no_rep_cands.type(torch.int64), 1)
+        one_minus_probs = torch.clamp((1.0 - log_probs.exp()), min=1e-5)
+        custom_loss = -torch.log(one_minus_probs) * negative_targets
+        custom_loss = custom_loss.sum()
+        return custom_loss
 
     def eval_step(self, batch, batch_idx, mode, dataloader_idx=0):
         # TODO: remove other_collate when method moved to dataset

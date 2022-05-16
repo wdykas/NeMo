@@ -150,6 +150,7 @@ class MTBottleneckModelConfig(AAYNBaseConfig):
     recon_per_token: bool = True
     log_timing: bool = True
     use_residual_connections: bool = True
+    unlikelihood_loss_weight: Optional[float] = None
 
     encoder: NeMoTransformerBottleneckEncoderConfig = NeMoTransformerBottleneckEncoderConfig(
         library='nemo',
