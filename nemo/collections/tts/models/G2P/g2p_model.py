@@ -14,31 +14,31 @@
 
 import json
 import os
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Union
-from nemo.collections.asr.parts.mixins import ASRBPEMixin
-from abc import ABC, abstractmethod
 
 import torch
 from hydra.utils import instantiate
-from omegaconf import DictConfig, OmegaConf, open_dict, ListConfig
+from omegaconf import DictConfig, ListConfig, OmegaConf, open_dict
 from pytorch_lightning import Trainer
 from torch import nn
 from tqdm import tqdm
 from transformers import AutoConfig, AutoModel, AutoTokenizer
 
 from nemo.collections.asr.losses.ctc import CTCLoss
-from nemo.collections.common.losses.cross_entropy import CrossEntropyLoss
 from nemo.collections.asr.metrics.wer import word_error_rate
 from nemo.collections.asr.models import EncDecCTCModel
 from nemo.collections.asr.models.asr_model import ASRModel, ExportableEncDecModel
+from nemo.collections.asr.parts.mixins import ASRBPEMixin
+from nemo.collections.common.losses.cross_entropy import CrossEntropyLoss
 from nemo.collections.common.tokenizers.char_tokenizer import CharTokenizer
+from nemo.collections.nlp.models.nlp_model import NLPModel
 from nemo.collections.tts.data.datalayers import CTCG2PBPEDataset
 from nemo.core.classes.common import PretrainedModelInfo, typecheck
 from nemo.core.classes.modelPT import ModelPT
 from nemo.core.neural_types import LabelsType, LossType, MaskType, NeuralType, TokenIndex
 from nemo.utils import logging
-from nemo.collections.nlp.models.nlp_model import NLPModel
 
 __all__ = ['G2PModel']
 

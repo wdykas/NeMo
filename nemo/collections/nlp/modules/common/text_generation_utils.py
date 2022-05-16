@@ -23,7 +23,7 @@ from nemo.collections.nlp.modules.common.transformer.text_generation import Leng
 from nemo.utils import AppState
 
 try:
-    from apex.transformer import parallel_state
+    from apex.transformer import parallel_state, tensor_parallel
     from apex.transformer.pipeline_parallel.schedules.fwd_bwd_pipelining_without_interleaving import (
         forward_backward_pipelining_without_interleaving,
     )
@@ -140,8 +140,8 @@ def get_computeprob_response(tokenizer, response, inputs):
         new_token_ids.append(new_token_id)
         new_tokens.append(response['tokens'][batch_id][:token_len])
         new_texts.append(new_text)
-        log_probs.append(response['logprob'][batch_id][: (token_len - 1)])
-        full_logprobs.append(response['full_logprob'][batch_id][: (token_len - 1)])
+        log_probs.append(response['logprob'][batch_id][:token_len])
+        full_logprobs.append(response['full_logprob'][batch_id][:token_len])
         offsets.append(response['offsets'][batch_id][:-1])
     compute_prob_response['sentences'] = new_texts
     compute_prob_response['tokens'] = new_tokens
@@ -389,7 +389,7 @@ def synced_generate(
                 group = parallel_state.get_embedding_group()
                 full_logits = torch.empty(
                     tokens.size(0),
-                    context_length,
+                    context_length - 1,
                     model.padded_vocab_size,
                     dtype=torch.float32,
                     device=torch.device("cuda"),
@@ -447,7 +447,7 @@ def generate(
             )
         if task_ids is None:
             # Make a dummy tensor of -1s that won't be used during generation
-            task_ids = torch.neg(torch.ones(context_tokens_tensor.size(0)))
+            task_ids = torch.neg(torch.ones(context_tokens_tensor.size(0), dtype=torch.int64))
             task_ids = task_ids.to(device=context_tokens_tensor.get_device())
 
         send_generate_info(
@@ -516,10 +516,6 @@ def generate(
             else:
                 words = tokenizer.text_to_tokens(sentence)
                 resp_sentences_seg.append(words)
-        output_logits = output_logits.cpu().numpy().tolist()
-        if all_probs:
-            full_logits = full_logits.cpu().numpy().tolist()
-
         # offsets calculation
         all_offsets = []
         for item in resp_sentences_seg:
@@ -620,8 +616,8 @@ def sample_sequence_batch(
         # Generate enough tokens for the longest sequence
         maxlen = tokens_to_generate + context_lengths.max().item()
 
-        if maxlen > model.cfg.encoder_seq_length:
-            maxlen = model.cfg.encoder_seq_length
+        if maxlen > model.cfg.encoder_seq_length + 1:
+            maxlen = model.cfg.encoder_seq_length + 1
 
         lengths = torch.ones([batch_size]).long().cuda() * maxlen
 
@@ -662,6 +658,7 @@ def sample_sequence_batch(
 
             if parallel_state.is_pipeline_last_stage():
                 output = output[0]['logits'].float()
+                output = tensor_parallel.gather_from_tensor_model_parallel_region(output)
                 assert output is not None
                 output = output.float()
                 logits = output[:, -1].view(batch_size, -1).contiguous()
@@ -691,6 +688,9 @@ def sample_sequence_batch(
                 prev = torch.clamp(prev, max=tokenizer.vocab_size - 1)
                 new_tokens = switch(tokens[:, context_length].view(-1), prev, started)
 
+                # Replace sampled tokens w/ done token if EOD has already been sampled
+                new_tokens = switch(new_tokens, eod_id, is_done)
+
                 # Replace special soft prompt token ids with unk token ids
                 if isinstance(model, MegatronGPTPromptLearningModel):
                     pseudo_token_ids_start = model.pseudo_token_ids_start
@@ -703,22 +703,22 @@ def sample_sequence_batch(
                 tokens[:, context_length] = new_tokens
 
                 if output_logits is None:
-                    output_context = F.log_softmax(output[:, :context_length, :], 2)
+                    output = F.log_softmax(output[:, :context_length, :], 2)
                     indices = torch.unsqueeze(tokens[:, 1 : context_length + 1], 2)
-                    output_logits = torch.gather(output_context, 2, indices).squeeze(2)
+                    output_logits = torch.gather(output, 2, indices).squeeze(2)
                     all_generated_indices = indices[:, :, 0]
                     if all_probs:
-                        full_logits = output_context
+                        full_logits = output
                 else:
-                    output_context = F.log_softmax(output, 2)
+                    output = F.log_softmax(output, 2)
                     indices = torch.unsqueeze(new_tokens, 1).unsqueeze(2)
-                    new_output_logits = torch.gather(output_context, 2, indices).squeeze(2)
+                    new_output_logits = torch.gather(output, 2, indices).squeeze(2)
 
                     # TODO(rprenger) we're copying output_logits every time.  Should pre-allocate
                     output_logits = torch.cat([output_logits, new_output_logits], 1)
                     all_generated_indices = torch.cat([all_generated_indices, indices[:, :, 0]], 1)
                     if all_probs:
-                        full_logits = torch.cat([full_logits, output_context], 1)
+                        full_logits = torch.cat([full_logits, output], 1)
 
                 src = parallel_state.get_pipeline_model_parallel_last_rank()
                 group = parallel_state.get_embedding_group()
@@ -854,6 +854,7 @@ def tab_sample_sequence_batch(
 
             if parallel_state.is_pipeline_last_stage():
                 output = output[0]['logits'].float()
+                output = tensor_parallel.gather_from_tensor_model_parallel_region(output)
                 assert output is not None
                 output = output.float()
                 logits = output[:, -1].view(batch_size, -1).contiguous()
