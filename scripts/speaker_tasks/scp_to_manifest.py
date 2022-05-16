@@ -124,15 +124,21 @@ def main(scp, out, split=False, create_chunks=False, to_slice=False, slice_outpu
         speakers.extend(speaker)
 
     write_file(out, lines, range(len(lines)))
-    path = os.path.dirname(out)
+    
+    
+    
+
     if split:
+        path = os.path.dirname(out)
+        out_name = out.split(".json")[0]
+        
         sss = StratifiedShuffleSplit(n_splits=1, test_size=0.1, random_state=42)
         for train_idx, test_idx in sss.split(speakers, speakers):
             logging.info(len(train_idx))
 
-        out = os.path.join(path, 'train.json')
+        out = os.path.join(path, out_name + '_train.json')
         write_file(out, lines, train_idx)
-        out = os.path.join(path, 'dev.json')
+        out = os.path.join(path, out_name + '_dev.json')
         write_file(out, lines, test_idx)
 
 
