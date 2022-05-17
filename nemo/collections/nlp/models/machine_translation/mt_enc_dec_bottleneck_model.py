@@ -560,7 +560,7 @@ class MTBlockBottleneckModel(MTBottleneckModel):
         negative_targets = torch.zeros_like(log_probs).scatter_(-1, no_rep_cands.type(torch.int64), 1)
         return negative_targets
 
-    def seq_repetition_unlk(self, log_probs, labels):
+    def seq_repetition_unlk(self, log_probs, labels, output_mask):
         """
             Loss that discourages repetition on past predictions. For example, for sequence DABCCDEFFGD:
             DABCC | D | EFFGD => {A,B,C} are negative targets.
@@ -578,12 +578,18 @@ class MTBlockBottleneckModel(MTBottleneckModel):
 
     def get_unlikelihood_loss(self, log_probs, labels):
         with torch.no_grad():
-            #negative_targets = self.block_repetition_unlk(log_probs, labels)
-            negative_targets = self.seq_repetition_unlk(log_probs, labels)
+            output_mask = (labels != self.decoder_tokenizer.pad_id).to(log_probs.dtype)
+            #negative_targets = self.block_repetition_unlk(log_probs, labels, output_mask)
+            negative_targets = self.seq_repetition_unlk(log_probs, labels, output_mask)
 
         one_minus_probs = torch.clamp((1.0 - log_probs.exp()), min=1e-5)
-        custom_loss = -torch.log(one_minus_probs) * negative_targets
+        custom_loss = torch.log(one_minus_probs) * negative_targets
         custom_loss = custom_loss.sum()
+        if self.recon_per_token:
+            custom_loss = -torch.sum(custom_loss * output_mask)
+            custom_loss = custom_loss / (output_mask.sum() + self.loss_fn._eps)
+        else:
+            custom_loss = -(custom_loss * output_mask)
         return custom_loss
 
     def eval_step(self, batch, batch_idx, mode, dataloader_idx=0):
