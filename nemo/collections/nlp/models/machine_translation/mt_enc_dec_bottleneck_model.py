@@ -542,23 +542,45 @@ class MTBlockBottleneckModel(MTBottleneckModel):
         else:
             return loss
 
-    def get_unlikelihood_loss(self, log_probs, labels):
+    def block_repetition_unlk(self, log_probs, labels):
+        """
+            Loss that discourages repetition across blocks. For example for 3 blocks B1, B2, B3:
+            B2 | context => negative targets the elements of B1 and B3
+        """
         bsz, seq_len = labels.size()
+        no_rep_cands = labels.reshape(self.current_batch_size, -1, seq_len)
+        num_blocks = no_rep_cands.size(1)
+        no_rep_cands = no_rep_cands.unsqueeze(1).expand(-1, num_blocks, num_blocks, -1)
+        diag_mask = 1 - torch.eye(num_blocks, num_blocks).unsqueeze(0).unsqueeze(-1).to(self.device)
+        diag_mask = diag_mask.expand(self.current_batch_size, -1, -1, seq_len)
+        no_rep_cands = no_rep_cands * diag_mask + self.decoder_tokenizer.pad_id
+        no_rep_cands = no_rep_cands.reshape(bsz, num_blocks, seq_len)
+        no_rep_cands = no_rep_cands.masked_fill(no_rep_cands == labels.unsqueeze(1), self.decoder_tokenizer.pad_id)
+        no_rep_cands = no_rep_cands.reshape(bsz, 1, -1).expand(-1, seq_len, -1)
+        negative_targets = torch.zeros_like(log_probs).scatter_(-1, no_rep_cands.type(torch.int64), 1)
+        return negative_targets
+
+    def seq_repetition_unlk(self, log_probs, labels):
+        """
+            Loss that discourages repetition on past predictions. For example, for sequence DABCCDEFFGD:
+            DABCC | D | EFFGD => {A,B,C} are negative targets.
+        """
+        bsz, seq_len = labels.size()
+        labels = labels.reshape(self.current_batch_size, -1)
+        no_rep_cands = labels.unsqueeze(1).expand(-1, labels.size(1), labels.size(1))
+        no_rep_cands_ = (no_rep_cands.tril(-1) + self.decoder_tokenizer.pad_id)
+        no_rep_cands_ = no_rep_cands_ * no_rep_cands_.triu()
+        no_rep_cands = no_rep_cands.tril(-1) + no_rep_cands_.triu()
+        no_rep_cands = no_rep_cands.masked_fill(no_rep_cands == labels.unsqueeze(2), self.decoder_tokenizer.pad_id)
+        no_rep_cands = no_rep_cands.reshape(bsz, seq_len, -1)
+        negative_targets = torch.zeros_like(log_probs).scatter_(-1, no_rep_cands.type(torch.int64), 1)
+        return negative_targets
+
+    def get_unlikelihood_loss(self, log_probs, labels):
         with torch.no_grad():
-            """
-                Loss that discourages repetition across blocks. For example for 3 blocks with sequences B1, B2, B3
-                B2 | context => negative targets the elements of B1 and B3
-            """
-            no_rep_cands = labels.reshape(self.current_batch_size, -1, seq_len)
-            num_blocks  = no_rep_cands.size(1)
-            no_rep_cands = no_rep_cands.unsqueeze(1).expand(-1, num_blocks, num_blocks, -1)
-            diag_mask = 1 - torch.eye(num_blocks, num_blocks).unsqueeze(0).unsqueeze(-1).to(self.device)
-            diag_mask= diag_mask.expand(self.current_batch_size, -1, -1, seq_len)
-            no_rep_cands = no_rep_cands * diag_mask + self.decoder_tokenizer.pad_id
-            no_rep_cands = no_rep_cands.reshape(bsz, num_blocks, seq_len)
-            no_rep_cands = no_rep_cands.masked_fill(no_rep_cands == labels.unsqueeze(1), self.decoder_tokenizer.pad_id)
-            no_rep_cands = no_rep_cands.reshape(bsz, 1, -1).expand(-1, seq_len, -1)
-            negative_targets = torch.zeros_like(log_probs).scatter_(-1, no_rep_cands.type(torch.int64), 1)
+            #negative_targets = self.block_repetition_unlk(log_probs, labels)
+            negative_targets = self.seq_repetition_unlk(log_probs, labels)
+
         one_minus_probs = torch.clamp((1.0 - log_probs.exp()), min=1e-5)
         custom_loss = -torch.log(one_minus_probs) * negative_targets
         custom_loss = custom_loss.sum()
