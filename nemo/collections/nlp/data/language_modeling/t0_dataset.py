@@ -34,7 +34,7 @@ from datasets import (
     interleave_datasets,
     arrow_dataset
 )
-from textattack.augmentation import CLAREAugmenter
+from textattack.augmentation import CLAREAugmenter, EasyDataAugmenter, BackTranslationAugmenter
 
 from nemo.core.classes import Dataset
 from nemo.utils.app_state import AppState
@@ -61,6 +61,28 @@ try:
 except (ImportError, ModuleNotFoundError):
     HAVE_APEX = False
 
+AUGMENT_FUNC_NAMES = ['clare', 'eda', 'paraphrase']
+
+class TextAugmenter(object):
+    def __init__(self, augment_func_name: str, pct_words_to_swap: float):
+        if augment_func_name == 'clare':
+            self.augmenter = CLAREAugmenter(
+                pct_words_to_swap=pct_words_to_swap, transformations_per_example=1
+            )
+        elif augment_func_name == 'eda':
+            self.augmenter = EasyDataAugmenter(
+                pct_words_to_swap=pct_words_to_swap, transformations_per_example=4
+            )
+        elif augment_func_name == 'paraphrase':
+            self.augmenter = BackTranslationAugmenter(
+                pct_words_to_swap=pct_words_to_swap, transformations_per_example=1
+            )
+        else:
+            raise "Augmenter not added to this list yet."
+
+    def augment(self, text):
+        augmented_text = self.augmenter.augment(text)[0]
+        return augmented_text
 
 class Task(object):
     def __init__(self, file_path: str,  dt_name: str, subset: str):
@@ -776,9 +798,13 @@ class T0SSLPrimeDatasetBuilder(T0PrimeDatasetBuilder):
             num_data_shards: int = 1,
             split_template: bool = True,
             num_in_context_ex: int = None,
-            augment_ssl_samples: bool = True,
+            augment_ssl_samples: list = None,
     ):
-        self.augment_ssl_samples = augment_ssl_samples
+        self.augment_ssl_samples = [] if augment_ssl_samples is None else augment_ssl_samples
+        assert all([k.lower() in AUGMENT_FUNC_NAMES for k in self.augment_ssl_samples])
+        self.augmenters = [
+            TextAugmenter(augment_func_name=k, pct_words_to_swap=0.1) for k in self.augment_ssl_samples
+        ]
         super().__init__(
             t0_type, dir_path, max_sampling_size, split, tokenizer,
             max_seq_length, prompt_token_id, prompt_seq_len,
@@ -864,10 +890,13 @@ class T0SSLPrimeDatasetBuilder(T0PrimeDatasetBuilder):
         processed_batch['ssl_prompt_ids'] = prompt_ids
 
         if self.augment_ssl_samples:
-            processed_batch['ssl_text_enc'] = self.text_augment(processed_batch['ssl_text_enc'])
-            processed_batch['aug_text_enc'] = self.text_augment(processed_batch['ssl_text_enc'])
+            #TODO: do we need to augment both?
+            #TODO: how to make text_augment faster?
+            processed_batch['ssl_text_enc'], processed_batch['ssl_enc_mask']= self.text_augment(processed_batch['ssl_text_enc'])
+            processed_batch['aug_text_enc'], processed_batch['aug_enc_mask'] = self.text_augment(processed_batch['text_enc'])
         else:
             processed_batch['aug_text_enc'] = processed_batch['text_enc']
+            processed_batch['aug_enc_mask'] = processed_batch['enc_mask']
         return processed_batch
 
     def add_in_context_examples(self, processed_batch):
@@ -881,8 +910,22 @@ class T0SSLPrimeDatasetBuilder(T0PrimeDatasetBuilder):
         processed_batch['ssl_ctx_ex_mask'] = ssl_batch_ctx_ex_prompt['ctx_ex_mask']
         return processed_batch
 
-    def text_augment(self, text):
-        return text
+    def text_augment(self, batch_tokens):
+        """At the moment we need untokenize, augment and retokenize"""
+        augmented_batch_tokens = []
+        for tokens_ids in batch_tokens:
+            tokens_ids = tokens_ids.cpu().numpy().tolist()
+            tokens_ids = [id for id in tokens_ids if id not in self.tokenizer.additional_special_tokens_ids]
+            text = self.tokenizer.ids_to_text(tokens_ids)
+            for augmenter in self.augmenters:
+                text = augmenter.augment(text)
+            augmented_ids = self.tokenizer.text_to_ids(text)
+            augmented_batch_tokens.append(augmented_ids)
+        max_len = max([len(item) for item in augmented_batch_tokens])
+        augmented_batch_tokens = [item + [self.tokenizer.pad_id] * (max_len - len(item)) for item in augmented_batch_tokens]
+        augmented_batch_tokens = torch.LongTensor(augmented_batch_tokens)
+        mask = (augmented_batch_tokens != self.tokenizer.pad_id).long()
+        return augmented_batch_tokens, mask
 
 
 class T0HFDatasetBuilder(T0DatasetBuilder):

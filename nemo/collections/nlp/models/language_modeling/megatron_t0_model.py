@@ -797,7 +797,8 @@ class MegatronT0SSLPrimeModel(MegatronT0PrimeModel):
                 prompt_token_id=self.pseudo_token_id,
                 prompt_seq_len=self.prompt_seq_len,
                 split_template=self.cfg.data.split_template,
-                num_in_context_ex=getattr(self.cfg.data, "num_in_context_ex", None)
+                num_in_context_ex=getattr(self.cfg.data, "num_in_context_ex", None),
+                augment_ssl_samples=getattr(self.cfg.data, "augment_ssl_samples", None)
             )
         else:
             # Use Huggingface dataset
@@ -818,7 +819,8 @@ class MegatronT0SSLPrimeModel(MegatronT0PrimeModel):
                 prompt_token_id=self.pseudo_token_id,
                 prompt_seq_len=self.prompt_seq_len,
                 split_template=self.cfg.data.split_template,
-                num_in_context_ex=getattr(self.cfg.data, "num_in_context_ex", None)
+                num_in_context_ex=getattr(self.cfg.data, "num_in_context_ex", None),
+                augment_ssl_samples=getattr(self.cfg.data, "augment_ssl_samples", None)
             )
         return datasetbuilder
 
