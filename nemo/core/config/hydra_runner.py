@@ -101,7 +101,14 @@ def hydra_runner(
 
                 # no return value from run_hydra() as it may sometime actually run the task_function
                 # multiple times (--multirun)
+                # _run_hydra(
+                #     args_parser=_argparse_wrapper(args),
+                #     task_function=task_function,
+                #     config_path=config_path,
+                #     config_name=config_name,
+                # )
                 _run_hydra(
+                    args=parsed_args,
                     args_parser=_argparse_wrapper(args),
                     task_function=task_function,
                     config_path=config_path,
