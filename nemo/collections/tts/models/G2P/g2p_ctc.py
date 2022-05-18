@@ -174,19 +174,20 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):  # TODO: Check parent class NLP?
 
         self.decoder = EncDecCTCModel.from_config_dict(self._cfg.decoder)
 
-        if cfg.loss == "ctc":
+        if cfg.get("loss", "ctc") == "ctc":
             self.loss = CTCLoss(
                 num_classes=self.decoder.num_classes_with_blank - 1,
                 zero_infinity=True,
                 reduction=self._cfg.get("ctc_reduction", "mean_batch"),
             )
         elif cfg.loss == "ce":
-            loss = CrossEntropyLoss(logits_ndim=3)
+            self.loss = CrossEntropyLoss(logits_ndim=3)
         else:
             raise ValueError(f"{cfg.loss} is not supported, select from ['ctc', 'ce']")
 
     # @typecheck()
     def forward(self, input_ids, attention_mask, input_len):
+        # import pdb; pdb.set_trace()
         if self.mode == "t5":
             encoded_input = self.encoder(input_ids=input_ids, attention_mask=attention_mask)[0]
             encoded_len = torch.sum(attention_mask, 1)
@@ -246,7 +247,12 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):  # TODO: Check parent class NLP?
 
     def decode_ids_to_str(self, ids: List[int]) -> str:
         blank_id = len(self.labels_id2tkn)
-        return " ".join([self.labels_id2tkn[t] for t in ids if t != blank_id])
+        decoded = [self.labels_id2tkn[t] for t in ids if t != blank_id]
+        decoded = self.tokenizer.tokens_to_text(decoded)
+        decoded = decoded.replace(" ə ", " ˈə ")
+        if decoded.startswith("ə "):
+            decoded = "ˈə" + decoded[1:]
+        return decoded
 
     def ctc_decoder_predictions_tensor(self, predictions: List[List[int]], predictions_len=None) -> List[str]:
         """
@@ -268,6 +274,7 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):  # TODO: Check parent class NLP?
             Either a list of str which represent the CTC decoded strings per sample,
             or a list of Hypothesis objects containing additional information.
         """
+
         blank_id = len(self.labels_id2tkn)
         hypotheses = []
 
@@ -366,6 +373,8 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):  # TODO: Check parent class NLP?
                     input_len=input_len.to(device),
                 )
                 preds_str = self.ctc_decoder_predictions_tensor(greedy_predictions.tolist())
+                # import pdb;
+                # pdb.set_trace()
                 all_preds.extend(preds_str)
 
                 del greedy_predictions

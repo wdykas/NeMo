@@ -93,6 +93,7 @@ def main(cfg: TranscriptionConfig) -> TranscriptionConfig:
 
     #
     # if cfg.do_testing:
+    #     import pdb; pdb.set_trace()
     #     if not hasattr(cfg.model, 'test_ds'):
     #         logging.error(f'model.test_ds was not found in the config, skipping evaluation')
     #     elif model.prepare_test(trainer):

@@ -293,9 +293,9 @@ class _AudioTextDataset(Dataset):
             sample.audio_file, offset=offset, duration=sample.duration, trim=self.trim, orig_sr=sample.orig_sr
         )
         f, fl = features, torch.tensor(features.shape[0]).long()
-        import pdb
-
-        pdb.set_trace()
+        # import pdb
+        #
+        # pdb.set_trace()
 
         t, tl = self.manifest_processor.process_text_by_sample(sample=sample)
 
