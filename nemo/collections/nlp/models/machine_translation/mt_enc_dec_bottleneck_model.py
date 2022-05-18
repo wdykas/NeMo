@@ -584,6 +584,7 @@ class MTBlockBottleneckModel(MTBottleneckModel):
 
         one_minus_probs = torch.clamp((1.0 - log_probs.exp()), min=1e-5)
         custom_loss = torch.log(one_minus_probs) * negative_targets
+        custom_loss = custom_loss.sum(-1)
         if self.recon_per_token:
             custom_loss = -torch.sum(custom_loss * output_mask)
             custom_loss = custom_loss / (output_mask.sum() + self.loss_fn._eps)
