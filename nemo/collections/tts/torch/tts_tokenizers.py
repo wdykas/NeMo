@@ -226,6 +226,48 @@ class GermanCharsTokenizer(BaseCharsTokenizer):
         )
 
 
+class GermanPhonemesTokenizer(BaseCharsTokenizer):
+    # fmt: off
+    PUNCT_LIST = (  # Derived from LJSpeech and "/" additionally
+        ',', '.', '!', '?', '-',
+        ':', ';', '/', '"', '(',
+        ')', '[', ']', '{', '}',
+    )
+    # fmt: on
+
+    def __init__(
+        self,
+        punct=True,
+        apostrophe=True,
+        add_blank_at=None,
+        pad_with_space=False,
+        non_default_punct_list=None,
+        text_preprocessing_func=german_text_preprocessing,
+    ):
+        """Deutsch char-based tokenizer.
+        Args:
+            punct: Whether to reserve grapheme for basic punctuation or not.
+            apostrophe: Whether to use apostrophe or not.
+            add_blank_at: Add blank to labels in the specified order ("last") or after tokens (any non None),
+             if None then no blank in labels.
+            pad_with_space: Whether to pad text with spaces at the beginning and at the end or not.
+            non_default_punct_list: List of punctuation marks which will be used instead default.
+            text_preprocessing_func: Text preprocessing function for correct execution of the tokenizer.
+             Currently, it only applies lower() function.
+        """
+
+        de_alphabet = "abcdefghijklmnopqrstuvwxyzäöüßʊʃŋɜːɛɾəɪçɔøɡœɑÜ„1Q̃ɒʒÄɹÖʌ\xadXθà/ó̈ðéɐá"
+        super().__init__(
+            chars=de_alphabet,
+            punct=punct,
+            apostrophe=apostrophe,
+            add_blank_at=add_blank_at,
+            pad_with_space=pad_with_space,
+            non_default_punct_list=non_default_punct_list,
+            text_preprocessing_func=text_preprocessing_func,
+        )
+
+
 class EnglishPhonemesTokenizer(BaseTokenizer):
     # fmt: off
     PUNCT_LIST = (  # Derived from LJSpeech and "/" additionally
@@ -370,3 +412,4 @@ class EnglishPhonemesTokenizer(BaseTokenizer):
         finally:
             if hasattr(self.g2p, "phoneme_probability"):
                 self.g2p.phoneme_probability = self.phoneme_probability
+
