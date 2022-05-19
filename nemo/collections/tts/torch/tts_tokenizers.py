@@ -256,7 +256,7 @@ class GermanPhonemesTokenizer(BaseCharsTokenizer):
              Currently, it only applies lower() function.
         """
 
-        de_alphabet = "abcdefghijklmnopqrstuvwxyzäöüßʊʃŋɜːɛɾəɪçɔøɡœɑÜ„1Q̃ɒʒÄɹÖʌ\xadXθà/ó̈ðéɐá"
+        de_alphabet = "abcdefghijklmnopqrstuvwxyzäöüßʊʃŋɜːɛɾəɪçɔøɡœɑÜ„1Q̃ɒʒÄɹÖʌθàó̈ðéɐá"
         super().__init__(
             chars=de_alphabet,
             punct=punct,

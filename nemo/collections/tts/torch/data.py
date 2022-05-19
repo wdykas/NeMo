@@ -393,8 +393,8 @@ class TTSDataset(Dataset):
 
         # Let's keep audio name and all internal directories in rel_audio_path_as_text_id to avoid any collisions
         rel_audio_path = Path(sample["audio_filepath"]).relative_to(self.base_data_dir).with_suffix("")
-        logging.info("breakpoint reached")
-        logging.info(sample)
+        # logging.info("breakpoint reached")
+        # logging.info(sample["audio_filepath"])
         if sample["phoneme"] == 1:
             rel_audio_path_as_text_id = str(rel_audio_path).replace("/", "_") + "_phoneme"
         else:
