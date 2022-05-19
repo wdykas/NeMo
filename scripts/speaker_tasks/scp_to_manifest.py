@@ -51,7 +51,7 @@ def filter_manifest_line(manifest_line, signal, sr=16000, to_slice=False, slice_
     dur = manifest_line['duration']
     SPKR = manifest_line['label']
 
-    if dur >= 1.5:
+    if dur >= 4: #1.5
         remaining_dur = dur
         temp_dur = random.choice(MIN_DURATIONS)
         remaining_dur = remaining_dur - temp_dur
@@ -77,8 +77,6 @@ def filter_manifest_line(manifest_line, signal, sr=16000, to_slice=False, slice_
             temp_dur = random.choice(MIN_DURATIONS)
             remaining_dur = remaining_dur - temp_dur
             
-            
-
     return split_manifest, speakers
 
 
