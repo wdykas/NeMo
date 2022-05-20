@@ -395,8 +395,9 @@ class EnglishPhonemesTokenizer(BaseTokenizer):
                 )
 
         # Remove trailing spaces
-        while ps[-1] == space:
-            ps.pop()
+        if len(ps) != 0:
+            while ps[-1] == space:
+                ps.pop()
 
         if self.pad_with_space:
             ps = [space] + ps + [space]

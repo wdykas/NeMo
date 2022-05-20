@@ -1,20 +1,24 @@
+# This config contains the default values for training FastPitch model with aligner on LJSpeech dataset.
+# If you want to train model on other dataset, you can change config values according to your dataset.
+# Most dataset-specific arguments are in the head of the config file, see below.
+
 name: FastPitch
 
 train_dataset: ???
 validation_datasets: ???
+exp_dir_var: ???
 sup_data_path: ???
 sup_data_types: [ "align_prior_matrix", "pitch" ]
-exp_dir_var: ???
 
 # Default values from librosa.pyin
 pitch_fmin: 65.40639132514966
 pitch_fmax: 2093.004522404789
 
-# HUI-Audio-Corpus-German, Karlsson speaker stats (per frame), train (these values depend on pitch_fmin and pitch_fmax)
+# LJSpeech stats (per frame), train (these values depend on pitch_fmin and pitch_fmax)
 pitch_mean: 132.5526885986328
 pitch_std: 37.61381912231445
 
-# Default values for dataset with sample_rate=44100
+# Default values for dataset with sample_rate=22050
 sample_rate: 22050
 n_mel_channels: 80
 n_window_size: 1024
@@ -24,7 +28,9 @@ lowfreq: 0
 highfreq: 8000
 window: hann
 
-whitelist_path: "nemo_text_processing/text_normalization/de/data/whitelist.tsv"
+phoneme_dict_path: "scripts/tts_dataset_files/cmudict-0.7b_nv22.01"
+heteronyms_path: "scripts/tts_dataset_files/heteronyms-030921"
+whitelist_path: "nemo_text_processing/text_normalization/en/data/whitelist/lj_speech.tsv"
 
 model:
   learn_alignment: true
@@ -52,7 +58,7 @@ model:
 
   text_normalizer:
     _target_: nemo_text_processing.text_normalization.normalize.Normalizer
-    lang: de
+    lang: en
     input_case: cased
     whitelist: ${whitelist_path}
 
@@ -62,10 +68,19 @@ model:
     punct_post_process: true
 
   text_tokenizer:
-    _target_: nemo.collections.tts.torch.tts_tokenizers.GermanPhonemesTokenizer
+    _target_: nemo.collections.tts.torch.tts_tokenizers.EnglishPhonemesTokenizer
     punct: true
+    stresses: true
+    chars: true
     apostrophe: true
     pad_with_space: true
+    add_blank_at: true
+    g2p:
+      _target_: nemo.collections.tts.torch.g2ps.EnglishG2p
+      phoneme_dict: ${phoneme_dict_path}
+      heteronyms: ${heteronyms_path}
+      phoneme_probability: 0.5
+
 
   train_ds:
     dataset:
@@ -90,12 +105,13 @@ model:
       pitch_norm: true
       pitch_mean: ${model.pitch_mean}
       pitch_std: ${model.pitch_std}
+      use_beta_binomial_interpolator: true
 
     dataloader_params:
       drop_last: false
       shuffle: true
-      batch_size: 32
-      num_workers: 12
+      batch_size: 16
+      num_workers: 0
 
   validation_ds:
     dataset:
@@ -112,7 +128,7 @@ model:
       lowfreq: ${model.lowfreq}
       highfreq: ${model.highfreq}
       max_duration: 14
-      min_duration: 0.1
+      min_duration: null
       ignore_file: null
       trim: false
       pitch_fmin: ${model.pitch_fmin}
@@ -120,12 +136,13 @@ model:
       pitch_norm: true
       pitch_mean: ${model.pitch_mean}
       pitch_std: ${model.pitch_std}
+      use_beta_binomial_interpolator: true
 
     dataloader_params:
       drop_last: false
       shuffle: false
-      batch_size: 32
-      num_workers: 2
+      batch_size: 16
+      num_workers: 0
 
   preprocessor:
     _target_: nemo.collections.asr.modules.AudioToMelSpectrogramPreprocessor
@@ -195,22 +212,23 @@ model:
     dropout: 0.1
     n_layers: 2
 
-  optim:
+#   optim:
+#     name: lamb
+#     lr: 1e-1
+#     betas: [0.9, 0.98]
+#     weight_decay: 1e-6
+optim:
     name: adamw
     lr: 1e-1
     # optimizer arguments
     betas: [0.9, 0.98]
     weight_decay: 1e-6
-#     name: lamb
-#     lr: 1e-1
-#     betas: [0.9, 0.98]
-#     weight_decay: 1e-6
 
     sched:
       name: NoamAnnealing
       warmup_steps: 1000
       last_epoch: -1
-      d_model: 1 # Disable scaling based on model dim
+      d_model: 1  # Disable scaling based on model dim
 
 trainer:
   num_nodes: 1
@@ -219,12 +237,12 @@ trainer:
   strategy: ddp
   precision: 32
   max_epochs: 1000
+#   resume_from_checkpoint: "/tmp1/FastPitch--v_loss=0.6720-epoch=74-last.ckpt"
   accumulate_grad_batches: 1
   gradient_clip_val: 1000.0
-  checkpoint_callback: False # Provided by exp_manager
+  enable_checkpointing: False # Provided by exp_manager
   logger: false # Provided by exp_manager
   log_every_n_steps: 100
-  flush_logs_every_n_steps: 1000
   check_val_every_n_epoch: 5
 
 exp_manager:
@@ -234,5 +252,6 @@ exp_manager:
   create_checkpoint_callback: true
   checkpoint_callback_params:
     monitor: v_loss
+    save_top_k: 5
   resume_if_exists: false
   resume_ignore_no_checkpoint: false
