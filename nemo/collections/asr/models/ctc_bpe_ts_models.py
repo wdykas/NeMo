@@ -16,7 +16,10 @@ import copy
 import os
 from copyreg import dispatch_table
 from typing import Dict, Optional, Union
-
+from tqdm.auto import tqdm
+import tempfile
+from typing import List
+import json
 import torch
 from omegaconf import DictConfig, ListConfig, OmegaConf, open_dict
 
@@ -289,15 +292,16 @@ class TSEncDecCTCModelBPE(EncDecCTCModelBPE):
         Returns:
             A pytorch DataLoader for the given audio file(s).
         """
-        batch_size = min(config['batch_size'], len(config['paths2audio_files']))
+        with open(config['manifest_filepath'], 'r') as fp:
+            man_len = len(fp.readlines())
+        batch_size = min(config['batch_size'], man_len)
         dl_config = {
-            'manifest_filepath': os.path.join(config['temp_dir'], 'manifest.json'),
+            'manifest_filepath': config['manifest_filepath'],
             'sample_rate': self.preprocessor._sample_rate,
             'batch_size': batch_size,
             'shuffle': False,
             'num_workers': config.get('num_workers', min(batch_size, os.cpu_count() - 1)),
             'pin_memory': True,
-            'use_start_end_token': self.cfg.validation_ds.get('use_start_end_token', False),
         }
 
         temporary_datalayer = self._setup_dataloader_from_config(config=DictConfig(dl_config))
@@ -345,5 +349,113 @@ class TSEncDecCTCModelBPE(EncDecCTCModelBPE):
                     "training batches will be used. Please set the trainer and rebuild the dataset."
                 )
 
+    
+    @torch.no_grad()
+    def transcribe(
+        self,
+        manifest_filepath: str,
+        batch_size: int = 4,
+        logprobs: bool = False,
+        return_hypotheses: bool = False,
+        num_workers: int = None,
+    ) -> List[str]:
+        """
+        Uses greedy decoding to transcribe audio files. Use this method for debugging and prototyping.
 
+        Args:
+            paths2audio_files: (a list) of paths to audio files. \
+                Recommended length per file is between 5 and 25 seconds. \
+                But it is possible to pass a few hours long file if enough GPU memory is available.
+            batch_size: (int) batch size to use during inference.
+                Bigger will result in better throughput performance but would use more memory.
+            logprobs: (bool) pass True to get log probabilities instead of transcripts.
+            return_hypotheses: (bool) Either return hypotheses or text
+                With hypotheses can do some postprocessing like getting timestamp or rescoring
+            num_workers: (int) number of workers for DataLoader
+
+        Returns:
+            A list of transcriptions (or raw log probabilities if logprobs is True) in the same order as paths2audio_files
+        """
+        if manifest_filepath is None:
+            return {}
+
+        if return_hypotheses and logprobs:
+            raise ValueError(
+                "Either `return_hypotheses` or `logprobs` can be True at any given time."
+                "Returned hypotheses will contain the logprobs."
+            )
+
+        if num_workers is None:
+            num_workers = min(batch_size, os.cpu_count() - 1)
+
+        # We will store transcriptions here
+        hypotheses = []
+        # Model's mode and device
+        mode = self.training
+        device = next(self.parameters()).device
+        dither_value = self.preprocessor.featurizer.dither
+        pad_to_value = self.preprocessor.featurizer.pad_to
+
+        try:
+            self.preprocessor.featurizer.dither = 0.0
+            self.preprocessor.featurizer.pad_to = 0
+            # Switch model to evaluation mode
+            self.eval()
+            # Freeze the encoder and decoder modules
+            self.encoder.freeze()
+            self.decoder.freeze()
+            self.speaker_beam.freeze()
+            self.speaker_model.freeze()
+            logging_level = logging.get_verbosity()
+            logging.set_verbosity(logging.WARNING)
+            # Work in tmp directory - will store manifest file there
+            
+            config = {
+                'manifest_filepath': manifest_filepath,
+                'batch_size': batch_size,
+                'num_workers': num_workers,
+            }
+
+            temporary_datalayer = self._setup_transcribe_dataloader(config)
+            for test_batch in tqdm(temporary_datalayer, desc="Transcribing"):
+                signal, signal_len, transcript, transcript_len, speaker_embedding, embedding_lengths = test_batch
+                logits, logits_len, greedy_predictions = self.forward(
+                    input_signal=signal.to(device),
+                    input_signal_length=signal_len.to(device),
+                    speaker_embedding=speaker_embedding.to(device),
+                    embedding_lengths=embedding_lengths.to(device),
+                )
+
+                if logprobs:
+                    # dump log probs per file
+                    for idx in range(logits.shape[0]):
+                        lg = logits[idx][: logits_len[idx]]
+                        hypotheses.append(lg.cpu().numpy())
+                else:
+                    current_hypotheses = self._wer.ctc_decoder_predictions_tensor(
+                        greedy_predictions, predictions_len=logits_len, return_hypotheses=return_hypotheses,
+                    )
+
+                    if return_hypotheses:
+                        # dump log probs per file
+                        for idx in range(logits.shape[0]):
+                            current_hypotheses[idx].y_sequence = logits[idx][: logits_len[idx]]
+
+                    hypotheses += current_hypotheses
+
+                del greedy_predictions
+                del logits
+                del test_batch
+        finally:
+            # set mode back to its original value
+            self.train(mode=mode)
+            self.preprocessor.featurizer.dither = dither_value
+            self.preprocessor.featurizer.pad_to = pad_to_value
+            if mode is True:
+                self.encoder.unfreeze()
+                self.decoder.unfreeze()
+                self.speaker_beam.unfreeze()
+                self.speaker_model.unfreeze()
+            logging.set_verbosity(logging_level)
+        return hypotheses
 

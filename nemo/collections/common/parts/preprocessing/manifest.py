@@ -116,6 +116,7 @@ def __parse_item(line: str, manifest_file: str) -> Dict[str, Any]:
         lang=item.get('lang', None),
         other_audio_filepath=item.get('other_audio_filepath', None),
         other_duration=item.get('other_duration', None),
+        other_offset=item.get('other_offset', None),
     )
 
     return item
