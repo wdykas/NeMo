@@ -28,12 +28,12 @@ from nemo.utils import logging
 """
 python G2P/g2p_ctc_inference.py \
     pretrained_model=/mnt/sdb_4/g2p/chpts/conformer/2780434/g2p/G2PCTC/2022-04-04_22-55-15/checkpoints/G2PCTC.nemo \
-    manifest_filepath=/mnt/sdb_4/g2p/v2/phoneme_dev_clean.json \
+    manifest_filepath=manifest_filepath=/home/ebakhturina/g2p_scripts/misc_data/phonemes_ipa/dev_clean_ambiguous_checked_fields_updated_word_boundaries_ipa_path.json \
     batch_size=32 \
     num_workers=4 \
     target_field=pred_text
 
-python ../../tools/speech_data_explorer/data_explorer.py /mnt/sdb_4/g2p/v2/phoneme_dev_clean_phonemes.json --disable-caching-metrics
+python ../../tools/speech_data_explorer/data_explorer.py /mnt/sdb_4/g2p/v2/phoneme_dev_clean_phonemes.json --disable-caching-metrics --port 8052
 
 """
 

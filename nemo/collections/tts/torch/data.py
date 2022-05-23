@@ -900,7 +900,7 @@ class T5G2PDataset(Dataset):
                     continue
                 """
                 # TODO: change pred_text to something more sensible in manifest
-                self.data.append({"graphemes": item["text"], "phonemes": item["pred_text"]})
+                self.data.append({"graphemes": item["text_graphemes"], "phonemes": item["text"]})
 
         # print(f"=======> Filtered {num_filtered} entries.")
 
@@ -936,184 +936,6 @@ class T5G2PDataset(Dataset):
         return (input_ids, attention_mask, labels)  # grapheme IDs, attention mask, phoneme IDs
 
 
-class CTCG2PDataset(Dataset):
-    """
-    Creates a dataset to train a T5G2P model.
-    """
-
-    def __init__(
-        self,
-        manifest_filepath: str,
-        tokenizer: PreTrainedTokenizerBase,
-        labels: List[str] = None,
-        max_source_len: int = 512,
-        max_target_len: int = 512,
-        with_labels: bool = True,
-    ):
-        # TODO: docstring
-        super().__init__()
-
-        if not os.path.exists(manifest_filepath):
-            raise ValueError(f"{manifest_filepath} not found")
-
-        self.manifest = manifest_filepath
-        self.tokenizer = tokenizer
-        self.max_source_len = max_source_len
-        self.max_target_len = max_target_len
-        self.labels = labels
-        self.labels_tkn2id = {l: i for i, l in enumerate(labels)}
-        self.data = []
-        self.pad_token = 0
-        self.with_labels = with_labels
-        num_filtered = 0
-
-        num_removed = 0
-        # Load grapheme/phoneme sequence pairs into self.data
-
-        if with_labels:
-            long_input_file = f"/mnt/sdb_4/g2p/v2/{os.path.basename(manifest_filepath).replace('.json', 'errors.txt')}"
-            print(long_input_file)
-            long_input_file = open(long_input_file, "w")
-
-        with open(manifest_filepath, 'r') as f_in:
-            logging.info(f"Loading dataset from: {manifest_filepath}")
-            for i, line in enumerate(tqdm(f_in)):
-                # TODO: better filtering of max source/target length? tokenize first??
-                item = json.loads(line)
-                """
-                if len(item["text"]) > max_source_len:
-                    num_filtered += 1
-                    continue
-                if len(item["pred_text"]) > max_target_len:
-                    num_filtered += 1
-                    continue
-                """
-                if with_labels:
-                    # TODO: change pred_text to something more sensible in manifest
-                    import pdb
-
-                    pdb.set_trace()
-                    if (
-                        len(item["text"]) < len(item["pred_text"].split())
-                        or len(item["text"]) > max_source_len
-                        # or len(item["pred_text"]) > max_target_len
-                    ):
-                        num_removed += 1
-                        long_input_file.write(
-                            f'TEXT:{item["text"]}, PRED:{item["pred_text"]},text_longer_pred: {len(item["text"]) < len(item["pred_text"].split())}, long_text: {len(item["text"]) > max_source_len}\n'
-                        )
-                        continue
-                    target = self.map(item["pred_text"])
-                    target_len = len(target)
-                    self.data.append(
-                        {
-                            "graphemes": item["text"],
-                            "phonemes": item["pred_text"],
-                            "target": target,
-                            "target_len": target_len,
-                        }
-                    )
-                else:
-                    # TODO: change pred_text to something more sensible in manifest
-                    if len(item["text"]) > max_source_len:
-                        item["text"] = item["text"][:max_source_len]
-                    self.data.append(
-                        {"graphemes": item["text"],}
-                    )
-
-        # print(f"=======> Filtered {num_filtered} entries.")
-        logging.info(f"Removed {num_removed} examples from {manifest_filepath}")
-
-    def __len__(self):
-        return len(self.data)
-
-    def __getitem__(self, index):
-        return self.data[index]
-
-    def map(self, text: str) -> List[int]:
-        """ Creates a mapping from target labels to ids."""
-        tokens = []
-        for word_id, word in enumerate(text.split()):
-            tokens.append(self.labels_tkn2id[word])
-        return tokens
-
-    def _collate_fn(self, batch):
-        """
-        from nemo.collections.common.tokenizers import TokenizerSpec
-        if isinstance(self.tokenizer, TokenizerSpec):
-            input_ids, attention_mask = self.__get_input_ids(graphemes_batch, pad_token=0, return_mask=True)
-            labels = self.__get_input_ids(graphemes_batch, pad_token=-100, return_mask=False)
-            input_ids = torch.tensor(input_ids)
-            attention_mask = torch.tensor(attention_mask)
-            labels = torch.tensor(labels)
-        else:
-            # Encode inputs (graphemes)
-            input_encoding = self.tokenizer(
-                graphemes_batch, padding='longest', max_length=self.max_source_len, truncation=True, return_tensors='pt',
-            )
-            input_ids, attention_mask = input_encoding.input_ids, input_encoding.attention_mask
-
-            # Encode targets (phonemes)
-            target_encoding = self.tokenizer(
-                phonemes_batch, padding='longest', max_length=self.max_target_len, truncation=True,
-            )
-            labels = target_encoding.input_ids
-
-            # Need to replace padding tokens w/ -100 for loss to ignore them
-            labels = [
-                [(label if label != self.tokenizer.pad_token_id else -100) for label in labels_example]
-                for labels_example in labels
-            ]
-            labels = torch.tensor(labels)
-
-        :param batch:
-        :return:
-        """
-        graphemes_batch = [entry["graphemes"] for entry in batch]
-
-        from nemo.collections.common.tokenizers import TokenizerSpec
-
-        if isinstance(self.tokenizer, TokenizerSpec):
-            input_ids = [self.tokenizer.text_to_ids(sentence) for sentence in graphemes_batch]
-            input_ids_len = [len(entry) for entry in input_ids]
-            max_len = max(input_ids_len)
-            input_ids = [entry + [0] * (max_len - entry_len) for entry, entry_len in zip(input_ids, input_ids_len)]
-            attention_mask = [[1] * entry_len + [0] * (max_len - entry_len) for entry_len in input_ids_len]
-            input_ids = torch.tensor(input_ids)
-            attention_mask = torch.tensor(attention_mask)
-        else:
-            # Encode inputs (graphemes)
-            input_encoding = self.tokenizer(
-                graphemes_batch,
-                padding='longest',
-                max_length=self.max_source_len,
-                truncation=True,
-                return_tensors="pt",
-            )
-            input_ids, attention_mask = input_encoding.input_ids, input_encoding.attention_mask
-
-        input_len = torch.sum(attention_mask, 1)
-
-        # for inference
-        if not self.with_labels:
-            return (input_ids, attention_mask, input_len)
-
-        # Encode targets (phonemes)
-        targets = [torch.tensor(entry["target"]) for entry in batch]
-        target_lengths = [torch.tensor(entry["target_len"]) for entry in batch]
-        max_target_len = max(target_lengths)
-
-        padded_targets = []
-        for target, target_len in zip(targets, target_lengths):
-            pad = (0, max_target_len - target_len)
-            target_pad = torch.nn.functional.pad(target, pad, value=len(self.labels))
-            padded_targets.append(target_pad)
-
-        padded_targets = torch.stack(padded_targets)
-        target_lengths = torch.stack(target_lengths)
-        return (input_ids, attention_mask, input_len, padded_targets, target_lengths)
-
-
 class CTCG2PBPEDataset(Dataset):
     """
     Creates a dataset to train a T5G2P model.
@@ -1146,11 +968,10 @@ class CTCG2PBPEDataset(Dataset):
         self.pad_token = 0
         self.with_labels = with_labels
 
-        num_removed = 0
+        num_removed_or_truncated = 0
         with open(manifest_filepath, 'r') as f_in:
             logging.info(f"Loading dataset from: {manifest_filepath}")
             for i, line in enumerate(tqdm(f_in)):
-                # TODO: better filtering of max source/target length? tokenize first??
                 item = json.loads(line)
                 """
                 if len(item["text"]) > max_source_len:
@@ -1161,12 +982,11 @@ class CTCG2PBPEDataset(Dataset):
                     continue
                 """
                 if with_labels:
-                    # TODO: change pred_text to something more sensible in manifest
                     target_tokens = self.tokenizer_phonemes.text_to_ids(item["text"])
                     target_len = len(target_tokens)
 
                     if target_len > len(item["text_graphemes"]) or target_len > max_target_len:
-                        num_removed += 1
+                        num_removed_or_truncated += 1
                         continue
 
                     self.data.append(
@@ -1180,12 +1000,15 @@ class CTCG2PBPEDataset(Dataset):
                 else:
                     if len(item["text_graphemes"]) > max_source_len:
                         item["text_graphemes"] = item["text_graphemes"][:max_source_len]
+                        num_removed_or_truncated += 1
                     self.data.append(
                         {"graphemes": item["text_graphemes"],}
                     )
 
         # print(f"=======> Filtered {num_filtered} entries.")
-        logging.info(f"Removed {num_removed} examples from {manifest_filepath}")
+        logging.info(
+            f"Number of samples removed or truncated {num_removed_or_truncated} examples from {manifest_filepath}"
+        )
 
     def __len__(self):
         return len(self.data)
@@ -1234,31 +1057,43 @@ class CTCG2PBPEDataset(Dataset):
         """
         graphemes_batch = [entry["graphemes"] for entry in batch]
 
-        input_ids = [self.tokenizer_graphemes.text_to_ids(sentence) for sentence in graphemes_batch]
-        input_ids_len = [len(entry) for entry in input_ids]
-        max_len = max(input_ids_len)
-        input_ids = [entry + [0] * (max_len - entry_len) for entry, entry_len in zip(input_ids, input_ids_len)]
-        attention_mask = [[1] * entry_len + [0] * (max_len - entry_len) for entry_len in input_ids_len]
-        input_ids = torch.tensor(input_ids)
-        attention_mask = torch.tensor(attention_mask)
+        # Encode inputs (graphemes)
+        if isinstance(self.tokenizer_graphemes, PreTrainedTokenizerBase):
+            input_encoding = self.tokenizer_graphemes(
+                graphemes_batch,
+                padding='longest',
+                max_length=self.max_source_len,
+                truncation=True,
+                return_tensors='pt',
+            )
+            input_ids, attention_mask = input_encoding.input_ids, input_encoding.attention_mask
+            input_len = torch.sum(attention_mask, 1)
+        else:
+            input_ids = [self.tokenizer_graphemes.text_to_ids(sentence) for sentence in graphemes_batch]
+            input_len = [len(entry) for entry in input_ids]
+            max_len = max(input_len)
+            input_ids = [entry + [0] * (max_len - entry_len) for entry, entry_len in zip(input_ids, input_len)]
+            attention_mask = None  # not used with Conformer encoder
+            input_ids = torch.tensor(input_ids)
+            input_len = torch.tensor(input_len)
 
-        input_len = torch.sum(attention_mask, 1)
-
-        # for inference
+        # inference
         if not self.with_labels:
-            return (input_ids, attention_mask, input_len)
-
+            output = (input_ids, attention_mask, input_len)
         # Encode targets (phonemes)
-        targets = [torch.tensor(entry["target"]) for entry in batch]
-        target_lengths = [torch.tensor(entry["target_len"]) for entry in batch]
-        max_target_len = max(target_lengths)
+        else:
+            targets = [torch.tensor(entry["target"]) for entry in batch]
+            target_lengths = [torch.tensor(entry["target_len"]) for entry in batch]
+            max_target_len = max(target_lengths)
 
-        padded_targets = []
-        for target, target_len in zip(targets, target_lengths):
-            pad = (0, max_target_len - target_len)
-            target_pad = torch.nn.functional.pad(target, pad, value=len(self.labels))
-            padded_targets.append(target_pad)
+            padded_targets = []
+            for target, target_len in zip(targets, target_lengths):
+                pad = (0, max_target_len - target_len)
+                target_pad = torch.nn.functional.pad(target, pad, value=len(self.labels))
+                padded_targets.append(target_pad)
 
-        padded_targets = torch.stack(padded_targets)
-        target_lengths = torch.stack(target_lengths)
-        return (input_ids, attention_mask, input_len, padded_targets, target_lengths)
+            padded_targets = torch.stack(padded_targets)
+            target_lengths = torch.stack(target_lengths)
+            output = (input_ids, attention_mask, input_len, padded_targets, target_lengths)
+
+        return output

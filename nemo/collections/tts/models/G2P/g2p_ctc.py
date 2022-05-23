@@ -15,10 +15,9 @@
 import json
 import os
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 import torch
-from hydra.utils import instantiate
 from omegaconf import DictConfig, ListConfig, OmegaConf, open_dict
 from pytorch_lightning import Trainer
 from torch import nn
@@ -30,7 +29,6 @@ from nemo.collections.asr.metrics.wer import word_error_rate
 from nemo.collections.asr.models import EncDecCTCModel
 from nemo.collections.asr.models.asr_model import ASRModel, ExportableEncDecModel
 from nemo.collections.asr.parts.mixins import ASRBPEMixin
-from nemo.collections.common.losses.cross_entropy import CrossEntropyLoss
 from nemo.collections.common.tokenizers.char_tokenizer import CharTokenizer
 from nemo.collections.nlp.models.nlp_model import NLPModel
 from nemo.collections.tts.torch.data import CTCG2PBPEDataset
@@ -48,7 +46,7 @@ class CTCG2PConfig:
     validation_ds: Optional[Dict[Any, Any]] = None
 
 
-class CTCG2PModel(ModelPT, ASRBPEMixin):  # TODO: Check parent class NLP?
+class CTCG2PModel(ModelPT, ASRBPEMixin):  # ! ASR dependency here
     """
     CTC-based grapheme-to-phoneme model.
     """
@@ -71,18 +69,15 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):  # TODO: Check parent class NLP?
             self.world_size = trainer.num_nodes * trainer.num_gpus
 
         self.mode = cfg.model_name.lower()
-        supported_modes = ["byt5_ctc", "bert_ce", "conformer", "conformer_bpe"]
+        supported_modes = ["byt5", "conformer_bpe"]
         if self.mode not in supported_modes:
             raise ValueError(f"{self.mode} is not supported, choose from {supported_modes}")
 
-        if self.mode == "byt5_ctc":
-            ### T5
+        if self.mode == "byt5":
             # Load appropriate tokenizer from HuggingFace
-            print(f"----------> Using model: {cfg.model_name}")
-            self.tokenizer_grapheme = AutoTokenizer.from_pretrained(cfg.model_name)
-
-            self.max_source_len = cfg.get("max_source_len", self.tokenizer.model_max_length)
-            self.max_target_len = cfg.get("max_target_len", self.tokenizer.model_max_length)
+            self.tokenizer_grapheme = AutoTokenizer.from_pretrained(cfg.tokenizer_grapheme.pretrained)
+            self.max_source_len = cfg.get("max_source_len", self.tokenizer_grapheme.model_max_length)
+            self.max_target_len = cfg.get("max_target_len", self.tokenizer_grapheme.model_max_length)
         elif "conformer" in self.mode:
             self.max_source_len = cfg.get("max_source_len", 512)
             self.max_target_len = cfg.get("max_target_len", 512)
@@ -122,47 +117,41 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):  # TODO: Check parent class NLP?
                 [f.write(f'"{ch}"\n') for ch in chars]
 
             self.tokenizer_grapheme = CharTokenizer(vocab_file=vocab_file)
-            if cfg.tokenizer is not None:
-                # Setup phoneme tokenizer
-                self._setup_tokenizer(cfg.tokenizer)
 
-                # Initialize a dummy vocabulary
-                vocabulary = self.tokenizer.tokenizer.get_vocab()
-                cfg.decoder.vocabulary = ListConfig(list(vocabulary.keys()))
+        # Setup phoneme tokenizer
+        self._setup_tokenizer(cfg.tokenizer)
 
-        if "_ce" in self.mode:
-            pass
-        else:
-            # FOR CTC MODELS
-            # Ensure passed cfg is compliant with schema
-            schema = OmegaConf.structured(CTCG2PConfig)
-            # ModelPT ensures that cfg is a DictConfig, but do this second check in case ModelPT changes
-            if isinstance(cfg, dict):
-                cfg = OmegaConf.create(cfg)
-            elif not isinstance(cfg, DictConfig):
-                raise ValueError(f"cfg was type: {type(cfg)}. Expected either a dict or a DictConfig")
-            OmegaConf.merge(cfg, schema)
-
-            self.vocabulary = cfg.decoder.vocabulary
-            self.labels_tkn2id = {l: i for i, l in enumerate(cfg.decoder.vocabulary)}
-            self.labels_id2tkn = {i: l for i, l in enumerate(cfg.decoder.vocabulary)}
+        # Initialize vocabulary
+        vocabulary = self.tokenizer.tokenizer.get_vocab()
+        cfg.decoder.vocabulary = ListConfig(list(vocabulary.keys()))
+        self.vocabulary = cfg.decoder.vocabulary
+        self.labels_tkn2id = {l: i for i, l in enumerate(self.vocabulary)}
+        self.labels_id2tkn = {i: l for i, l in enumerate(self.vocabulary)}
 
         super().__init__(cfg, trainer)
 
-        if self.mode == "t5":
-            config = AutoConfig.from_pretrained(cfg.model_name)
-            if self._cfg.dropout is not None:
-                config.dropout_rate = self._cfg.dropout
+        self._setup_encoder()
+        self.decoder = EncDecCTCModel.from_config_dict(self._cfg.decoder)
+        self.loss = CTCLoss(
+            num_classes=self.decoder.num_classes_with_blank - 1,
+            zero_infinity=True,
+            reduction=self._cfg.get("ctc_reduction", "mean_batch"),
+        )
+
+    def _setup_encoder(self):
+        if self.mode == "byt5":
+            config = AutoConfig.from_pretrained(self._cfg.tokenizer_grapheme.pretrained)
+            if self._cfg.encoder.dropout is not None:
+                config.dropout_rate = self._cfg.encoder.dropout
                 print(f"\nDROPOUT: {config.dropout_rate}")
-            self.encoder = AutoModel.from_pretrained(cfg.model_name, config=config).encoder
+            self.encoder = AutoModel.from_pretrained(self._cfg.encoder.transformer, config=config).encoder
             # add encoder hidden dim size to the config
             if self.cfg.decoder.feat_in is None:
                 self._cfg.decoder.feat_in = self.encoder.config.d_model
         else:
             self.embedding = nn.Embedding(
-                embedding_dim=cfg.embedding.d_model, num_embeddings=self.tokenizer.vocab_size, padding_idx=0
+                embedding_dim=self._cfg.embedding.d_model, num_embeddings=self.tokenizer.vocab_size, padding_idx=0
             )
-            # setup encoder after init()
             self.encoder = EncDecCTCModel.from_config_dict(self._cfg.encoder)
             with open_dict(self._cfg):
                 if "feat_in" not in self._cfg.decoder or (
@@ -172,23 +161,9 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):  # TODO: Check parent class NLP?
                 if "feat_in" not in self._cfg.decoder or not self._cfg.decoder.feat_in:
                     raise ValueError("param feat_in of the decoder's config is not set!")
 
-        self.decoder = EncDecCTCModel.from_config_dict(self._cfg.decoder)
-
-        if cfg.get("loss", "ctc") == "ctc":
-            self.loss = CTCLoss(
-                num_classes=self.decoder.num_classes_with_blank - 1,
-                zero_infinity=True,
-                reduction=self._cfg.get("ctc_reduction", "mean_batch"),
-            )
-        elif cfg.loss == "ce":
-            self.loss = CrossEntropyLoss(logits_ndim=3)
-        else:
-            raise ValueError(f"{cfg.loss} is not supported, select from ['ctc', 'ce']")
-
     # @typecheck()
     def forward(self, input_ids, attention_mask, input_len):
-        # import pdb; pdb.set_trace()
-        if self.mode == "t5":
+        if self.mode == "byt5":
             encoded_input = self.encoder(input_ids=input_ids, attention_mask=attention_mask)[0]
             encoded_len = torch.sum(attention_mask, 1)
             # encoded_input = [B, seq_len, hid_dim]
@@ -234,7 +209,6 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):  # TODO: Check parent class NLP?
         preds_str = self.ctc_decoder_predictions_tensor(greedy_predictions.tolist())
         targets_str = [self.decode_ids_to_str(t) for t in targets.tolist()]
         per = word_error_rate(hypotheses=preds_str, references=targets_str)
-
         self.log(f"{split}_loss", val_loss)
         return {f"{split}_loss": val_loss, "per": per}
 
@@ -247,11 +221,8 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):  # TODO: Check parent class NLP?
 
     def decode_ids_to_str(self, ids: List[int]) -> str:
         blank_id = len(self.labels_id2tkn)
-        decoded = [self.labels_id2tkn[t] for t in ids if t != blank_id]
-        decoded = self.tokenizer.tokens_to_text(decoded)
-        decoded = decoded.replace(" ə ", " ˈə ")
-        if decoded.startswith("ə "):
-            decoded = "ˈə" + decoded[1:]
+        ids = [t for t in ids if t != blank_id]
+        decoded = self.tokenizer.ids_to_text(ids)
         return decoded
 
     def ctc_decoder_predictions_tensor(self, predictions: List[List[int]], predictions_len=None) -> List[str]:
@@ -373,8 +344,6 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):  # TODO: Check parent class NLP?
                     input_len=input_len.to(device),
                 )
                 preds_str = self.ctc_decoder_predictions_tensor(greedy_predictions.tolist())
-                # import pdb;
-                # pdb.set_trace()
                 all_preds.extend(preds_str)
 
                 del greedy_predictions

@@ -180,7 +180,6 @@ class EncDecCTCModel(ASRModel, ExportableEncDecModel, ASRModuleMixin):
                         current_hypotheses = self._wer.ctc_decoder_predictions_tensor(
                             greedy_predictions, predictions_len=logits_len, return_hypotheses=return_hypotheses,
                         )
-                        import pdb; pdb.set_trace()
                         if return_hypotheses:
                             # dump log probs per file
                             for idx in range(logits.shape[0]):
@@ -541,7 +540,9 @@ class EncDecCTCModel(ASRModel, ExportableEncDecModel, ASRModuleMixin):
         loss_value = self.loss(
             log_probs=log_probs, targets=transcript, input_lengths=encoded_len, target_lengths=transcript_len
         )
-        import pdb; pdb.set_trace()
+        import pdb
+
+        pdb.set_trace()
         self._wer.update(
             predictions=predictions, targets=transcript, target_lengths=transcript_len, predictions_lengths=encoded_len
         )

@@ -7,11 +7,14 @@ do_testing: False
 pretrained_model: null # .nemo
 
 model:
-  model_name: conformer # choose from {byt5_ctc, bert_ce, conformer, conformer_bpe}
-  dropout: null
+  model_name: conformer_bpe # choose from {byt5, conformer_bpe}
   max_source_len: 512
-#  max_target_len: 730
+  max_target_len: 512
 
+  graphemes_tokenizer:
+    _target_: nemo.collections.asr.modules.ConformerEncoder
+    vocab: [ " ", "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m",
+             "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z", "'" ] # if null, the vocab will be created during model init and fill out
   embedding:
     d_model: 300
   encoder:
@@ -51,40 +54,15 @@ model:
     _target_: nemo.collections.asr.modules.ConvASRDecoder
     feat_in: null # will be filled during training based on encoder model dim
     num_classes: -1
-    vocabulary: [ "AA0", "AA1", "AA2", "AE0", "AE1", "AE2", "AH0", "AH1", "AH2", "AO0", "AO1", "AO2", "AW0", "AW1",
-                  "AW2", "AY0", "AY1", "AY2", "B", "CH", "D", "DH", "EH0", "EH1", "EH2", "ER0", "ER1", "ER2", "EY0",
-                  "EY1", "EY2", "F", "G", "HH", "IH0", "IH1", "IH2", "IY0", "IY1", "IY2", "JH", "K", "L", "M", "N",
-                  "NG", "OW0", "OW1", "OW2", "OY0", "OY1", "OY2", "P", "R", "S", "SH", "T", "TH", "UH0", "UH1", "UH2",
-                  "UW0", "UW1", "UW2", "V", "W", "Y", "Z", "ZH" ] # used for ARP PHONEME MODEL and disregarded
-                  # if tokenizer.dir is not null
-
-  loss: ctc # select ctc or ce
-
-#  # for CE models
-#  language_model:
-#    pretrained_model_name: bert-base-uncased
-#    lm_checkpoint: null
-#    config_file: null # json file, precedence over config
-#    config: null
-#
-#  tokenizer:
-#    tokenizer_name: ${model.language_model.pretrained_model_name} # or sentencepiece
-#    vocab_file: null # path to vocab file
-#    tokenizer_model: null # only used if tokenizer is sentencepiece
-#    special_tokens: null
+    vocabulary: null # will be filled during training
 
   tokenizer:
     dir: null  # path to directory which contains either tokenizer.model (bpe) or vocab.txt (wpe)
     type: bpe  # Can be either bpe (SentencePiece tokenizer) or wpe (WordPiece tokenizer)
 
-  #  decoder:
-  #    _target_: nemo.collections.asr.modules.ConvASRDecoder
-  #    feat_in: null
-  #    num_classes: -1
-  #    vocabulary: ${model.labels}
   train_ds:
     dataset:
-      #_target_: "nemo.collections.tts.data.datalayers.T5G2PDataset"
+      _target_: "nemo.collections.tts.torch.data.CTCG2PDataset"
       manifest_filepath: ${train_dataset}
     dataloader_params:
       drop_last: false
@@ -94,7 +72,7 @@ model:
 
   validation_ds:
     dataset:
-      #_target_: "nemo.collections.tts.data.datalayers.T5G2PDataset"
+      _target_: "nemo.collections.tts.torch.data.CTCG2PDataset"
       manifest_filepath: ${validation_dataset}
     dataloader_params:
       drop_last: false
