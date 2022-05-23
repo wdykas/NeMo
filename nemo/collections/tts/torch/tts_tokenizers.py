@@ -214,7 +214,7 @@ class GermanCharsTokenizer(BaseCharsTokenizer):
              Currently, it only applies lower() function.
         """
 
-        de_alphabet = "abcdefghijklmnopqrstuvwxyzäöüß"
+        de_alphabet = "abcdefghijklmnopqrstuvwxyzäöüßʊʃŋɜːɛɾəɪçɔøɡœɑÜ„1Q̃ɒʒÄɹÖʌθàó̈ðéɐá"
         super().__init__(
             chars=de_alphabet,
             punct=punct,
