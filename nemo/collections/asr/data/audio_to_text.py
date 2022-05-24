@@ -635,6 +635,7 @@ class AudioAndEmbeddingToBPEDataset(AudioToBPEDataset):
         # os.makedirs(self.eval_dir, exist_ok=True)
         # with open(self.manifest_eval, 'w') as fp:
         #     pass
+        # import ipdb; ipdb.set_trace()
         # self.eval_individual_dir= '/home/yangzhang/code/ts_asr/data/ls_train_clean_aux_utterance'
         # self.manifest_eval_aux_utterance= self.eval_individual_dir + '/manifest.json'
         # os.makedirs(self.eval_individual_dir, exist_ok=True)

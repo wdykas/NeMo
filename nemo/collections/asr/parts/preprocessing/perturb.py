@@ -698,6 +698,7 @@ class RirNoiseSpeakerPerturbation(Perturbation):
         self.speaker_max_snr_db = speaker_max_snr_db
         self.max_gain_db = max_gain_db
         
+        
         # self._rir_perturber = ImpulsePerturbation(
         #     manifest_path=rir_manifest_path,
         #     audio_tar_filepaths=rir_tar_filepaths,
@@ -705,7 +706,7 @@ class RirNoiseSpeakerPerturbation(Perturbation):
         #     shift_impulse=True,
         # )
         # self._fg_noise_perturbers = {}
-        # self._bg_noise_perturbers = {}
+        self._bg_noise_perturbers = {}
         # if noise_manifest_paths is not None:
         #     for i in range(len(noise_manifest_paths)):
         #         if orig_sample_rate is None:
@@ -721,19 +722,19 @@ class RirNoiseSpeakerPerturbation(Perturbation):
         #         )
         # self._max_additions = max_additions
         # self._max_duration = max_duration
-        # if bg_noise_manifest_paths:
-        #     for i in range(len(bg_noise_manifest_paths)):
-        #         if bg_orig_sample_rate is None:
-        #             orig_sr = 16000
-        #         else:
-        #             orig_sr = bg_orig_sample_rate[i]
-        #         self._bg_noise_perturbers[orig_sr] = NoisePerturbation(
-        #             manifest_path=bg_noise_manifest_paths[i],
-        #             min_snr_db=bg_min_snr_db[i],
-        #             max_snr_db=bg_max_snr_db[i],
-        #             audio_tar_filepaths=bg_noise_tar_filepaths[i],
-        #             orig_sr=orig_sr,
-        #         )
+        if bg_noise_manifest_paths:
+            for i in range(len(bg_noise_manifest_paths)):
+                if bg_orig_sample_rate is None:
+                    orig_sr = 16000
+                else:
+                    orig_sr = bg_orig_sample_rate[i]
+                self._bg_noise_perturbers[orig_sr] = NoisePerturbation(
+                    manifest_path=bg_noise_manifest_paths[i],
+                    min_snr_db=bg_min_snr_db[i],
+                    max_snr_db=bg_max_snr_db[i],
+                    audio_tar_filepaths=bg_noise_tar_filepaths[i],
+                    orig_sr=orig_sr,
+                )
 
         # self._apply_noise_rir = apply_noise_rir
         # self._apply_foreground_noise = apply_foreground_noise
@@ -749,8 +750,8 @@ class RirNoiseSpeakerPerturbation(Perturbation):
 
         # if orig_sr not in self._bg_noise_perturbers:
         #     orig_sr = max(self._bg_noise_perturbers.keys())
-        # bg_perturber = self._bg_noise_perturbers[orig_sr]
-        # noise = bg_perturber.get_one_noise_sample(data.sample_rate)
+        bg_perturber = self._bg_noise_perturbers[data.orig_sr]
+        noise = bg_perturber.get_one_noise_sample(data.sample_rate)
 
         # if second_speaker:
         #     # data overlap with second_speaker
@@ -773,7 +774,7 @@ class RirNoiseSpeakerPerturbation(Perturbation):
         #         max_noise_dur=self._max_duration,
         #         max_additions=self._max_additions,
         #     )
-        # bg_perturber.perturb_with_input_noise(data, noise, data_rms=data.rms_db)
+        bg_perturber.perturb_with_input_noise(data, noise, data_rms=data.rms_db)
         # bg_perturber.perturb_with_input_noise(other_utterance, noise, data_rms=other_utterance.rms_db)
 
     def perturb_with_other_input(self, data, second_speaker, third_speaker, min_gain_ratio=0.3, max_gain_ratio=0.6):
