@@ -22,6 +22,8 @@ test_manifest="[\
 /mnt/data/ami/ami_manifest_ts_asr_dev.json,\
 /mnt/data/ch120/chaes_manifest_ts_asr_dev.json\
 ]"
+
+
 python speech_to_text_ctc_bpe_ts.py \
 do_training=True \
 model.tokenizer.type=bpe \
@@ -29,25 +31,27 @@ model.sample_rate=16000 \
 model.tokenizer.dir=/home/yangzhang/code/ts_asr/tokenizer_conformer/tokenizer_spe_unigram_v128/ \
 model.train_ds.manifest_filepath=/mnt/data/LibriSpeech/train_clean_100_360.json \
 trainer.max_epochs=10 \
-model.train_ds.augmentor.rir_noise_speaker.bg_min_snr_db=[10] \
-model.train_ds.augmentor.rir_noise_speaker.bg_max_snr_db=[10] \
-model.train_ds.augmentor.rir_noise_speaker.bg_noise_manifest_paths=[/mnt/data/rir_noises/noises_20s_tarred/tarred_audio_manifest.json] \
-model.train_ds.augmentor.rir_noise_speaker.bg_noise_tar_filepaths=[/mnt/data/rir_noises/noises_20s_tarred/audio_{0..255}.tar] \
 model.train_ds.augmentor.rir_noise_speaker.prob=1.0 \
 model.train_ds.augmentor.rir_noise_speaker.max_overlap=1.0 \
 model.train_ds.augmentor.rir_noise_speaker.two_sided_overlap=0.5 \
 model.train_ds.augmentor.rir_noise_speaker.max_padded_silence=0.1 \
 model.validation_ds.manifest_filepath=[/mnt/data/libricss/libricss_utterances_clean_overlap_ratio_0.0_sil0.1_0.5_dev.json] \
+model.train_ds.augmentor.rir_noise_speaker.bg_min_snr_db=[10] \
+model.train_ds.augmentor.rir_noise_speaker.bg_max_snr_db=[10] \
+model.train_ds.augmentor.rir_noise_speaker.bg_noise_manifest_paths=[/mnt/data/rir_noises/noises_20s_tarred/tarred_audio_manifest.json] \
+model.train_ds.augmentor.rir_noise_speaker.bg_noise_tar_filepaths=[/mnt/data/rir_noises/noises_20s_tarred/audio_{0..255}.tar] \
+model.train_ds.augmentor.rir_noise_speaker.speaker_min_snr_db=-10 \
+model.train_ds.augmentor.rir_noise_speaker.speaker_max_snr_db=10 \
 model.train_ds.max_duration=20 \
 model.train_ds.batch_size=4 \
-model.train_ds.num_workers=8 \
+model.train_ds.num_workers=0 \
 model.validation_ds.num_workers=0 \
 model.validation_ds.batch_size=1 \
 model.test_ds.num_workers=0 \
 model.test_ds.batch_size=1 \
 model.test_ds.sample_rate=16000 \
 model.test_ds.manifest_filepath=[/mnt/data/libricss/libricss_utterances_clean_overlap_ratio_0.0_sil0.1_0.5_dev.json] \
-trainer.devices=[0] \
+trainer.devices=[0,1] \
 trainer.log_every_n_steps=50 \
 model.encoder.d_model=256 \
 model.encoder.n_heads=4 \

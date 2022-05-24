@@ -750,8 +750,10 @@ class RirNoiseSpeakerPerturbation(Perturbation):
 
         # if orig_sr not in self._bg_noise_perturbers:
         #     orig_sr = max(self._bg_noise_perturbers.keys())
-        bg_perturber = self._bg_noise_perturbers[data.orig_sr]
-        noise = bg_perturber.get_one_noise_sample(data.sample_rate)
+        if self._bg_noise_perturbers:
+            bg_perturber = self._bg_noise_perturbers[data.orig_sr]
+            noise = bg_perturber.get_one_noise_sample(data.sample_rate)
+            bg_perturber.perturb_with_input_noise(data, noise, data_rms=data.rms_db)
 
         # if second_speaker:
         #     # data overlap with second_speaker
@@ -774,7 +776,6 @@ class RirNoiseSpeakerPerturbation(Perturbation):
         #         max_noise_dur=self._max_duration,
         #         max_additions=self._max_additions,
         #     )
-        bg_perturber.perturb_with_input_noise(data, noise, data_rms=data.rms_db)
         # bg_perturber.perturb_with_input_noise(other_utterance, noise, data_rms=other_utterance.rms_db)
 
     def perturb_with_other_input(self, data, second_speaker, third_speaker, min_gain_ratio=0.3, max_gain_ratio=0.6):

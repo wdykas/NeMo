@@ -63,6 +63,8 @@ model:
         min_overlap: 0.0
         two_sided_overlap: 0.0
         max_padded_silence: 0.0
+        speaker_min_snr_db: 0.0
+        speaker_max_snr_db: 0.0
     manifest_filepath: ???
     sample_rate: ${model.sample_rate}
     batch_size: 16 # you may increase batch_size if your memory allows
