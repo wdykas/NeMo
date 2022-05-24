@@ -137,6 +137,7 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):  # ! ASR dependency here
             zero_infinity=True,
             reduction=self._cfg.get("ctc_reduction", "mean_batch"),
         )
+        logging.info("\n\n----> DONE with init()\n\n")
 
     def _setup_encoder(self):
         if self.mode == "byt5":
@@ -165,7 +166,7 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):  # ! ASR dependency here
     def forward(self, input_ids, attention_mask, input_len):
         if self.mode == "byt5":
             encoded_input = self.encoder(input_ids=input_ids, attention_mask=attention_mask)[0]
-            encoded_len = torch.sum(attention_mask, 1)
+            encoded_len = input_len
             # encoded_input = [B, seq_len, hid_dim]
             # swap seq_len and hid_dim dimensions to get [B, hid_dim, seq_len]
             encoded_input = encoded_input.transpose(1, 2)
@@ -431,7 +432,7 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):  # ! ASR dependency here
         return torch.utils.data.DataLoader(dataset, collate_fn=dataset.collate_fn, **cfg.dataloader_params)
 
     def setup_training_data(self, cfg):
-        if not cfg or not os.path.exists(cfg.dataset.manifest_filepath):
+        if not cfg or cfg.dataset.manifest_filepath is None or not os.path.exists(cfg.dataset.manifest_filepath):
             logging.info(
                 f"Dataloader config or file_path for the train is missing, so no data loader for train is created!"
             )
@@ -440,7 +441,7 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):  # ! ASR dependency here
         self._train_dl = self._setup_dataloader_from_config(cfg, name="train")
 
     def setup_validation_data(self, cfg):
-        if not cfg or not os.path.exists(cfg.dataset.manifest_filepath):
+        if not cfg or cfg.dataset.manifest_filepath is None or not os.path.exists(cfg.dataset.manifest_filepath):
             logging.info(
                 f"Dataloader config or file_path for the validation is missing, so no data loader for validation is created!"
             )
@@ -449,7 +450,7 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):  # ! ASR dependency here
         self._validation_dl = self._setup_dataloader_from_config(cfg, name="validation")
 
     def setup_test_data(self, cfg):
-        if not cfg or not os.path.exists(cfg.dataset.manifest_filepath):
+        if not cfg or cfg.dataset.manifest_filepath is None or not os.path.exists(cfg.dataset.manifest_filepath):
             logging.info(
                 f"Dataloader config or file_path for the test is missing, so no data loader for test is created!"
             )
