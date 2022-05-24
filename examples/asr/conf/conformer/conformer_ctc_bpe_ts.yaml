@@ -29,6 +29,8 @@ name: "Conformer-CTC-BPE"
 do_training: True
 model:
   speaker_embeddings:
+    freeze_encoder: true
+    freeze_decoder: true
     feature_dim: 192
     model_path: titanet_large # .nemo local model path or pretrained model name (titanet_large, ecapa_tdnn or speakerverification_speakernet)
     parameters:

@@ -58,6 +58,11 @@ class TSEncDecCTCModelBPE(EncDecCTCModelBPE):
         self.speaker_beam = EncDecCTCModelBPE.from_config_dict(self._cfg.speaker_beam)
         if self._cfg.speaker_embeddings.model_path:
             self.speaker_model = EncDecSpeakerLabelModel.from_pretrained(self._cfg.speaker_embeddings.model_path)
+            if self._cfg.speaker_embeddings.freeze_encoder:
+                self.speaker_model.encoder.freeze()
+            if self._cfg.speaker_embeddings.freeze_decoder:
+                self.speaker_model.decoder.freeze()
+
 
     @classmethod
     def list_available_models(cls) -> Optional[PretrainedModelInfo]:
@@ -124,12 +129,10 @@ class TSEncDecCTCModelBPE(EncDecCTCModelBPE):
             processed_signal = self.spec_augmentation(input_spec=processed_signal, length=processed_signal_length)
         
         if self.speaker_model:
-            with torch.no_grad():
-                self.speaker_model.eval()
-                _, speaker_embedding = self.speaker_model.forward(
-                    input_signal=speaker_embedding, input_signal_length=embedding_lengths
-                )
-                speaker_embedding = speaker_embedding.detach()
+            _, speaker_embedding = self.speaker_model.forward(
+                input_signal=speaker_embedding, input_signal_length=embedding_lengths
+            )
+            
                 
         mask = self.speaker_beam(audio_signal=processed_signal, features =speaker_embedding)
         processed_signal = mask * processed_signal
