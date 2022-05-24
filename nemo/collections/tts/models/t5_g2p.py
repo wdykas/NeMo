@@ -24,7 +24,7 @@ from pytorch_lightning import Trainer
 from transformers import T5ForConditionalGeneration, T5Tokenizer
 
 from nemo.collections.asr.metrics.wer import word_error_rate
-from nemo.collections.tts.data.datalayers import T5G2PDataset
+from nemo.collections.tts.torch.data import T5G2PDataset
 from nemo.core.classes.common import PretrainedModelInfo, typecheck
 from nemo.core.classes.modelPT import ModelPT
 from nemo.core.neural_types import LabelsType, LossType, MaskType, NeuralType, TokenIndex
