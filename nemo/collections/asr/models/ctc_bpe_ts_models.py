@@ -62,6 +62,10 @@ class TSEncDecCTCModelBPE(EncDecCTCModelBPE):
                 self.speaker_model.encoder.freeze()
             if self._cfg.speaker_embeddings.freeze_decoder:
                 self.speaker_model.decoder.freeze()
+        if self._cfg.freeze_asr_encoder:
+            self.encoder.freeze()
+        if self._cfg.freeze_asr_decoder:
+            self.decoder.freeze()
 
 
     @classmethod

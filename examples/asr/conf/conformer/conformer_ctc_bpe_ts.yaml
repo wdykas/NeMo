@@ -28,6 +28,8 @@ name: "Conformer-CTC-BPE"
 
 do_training: True
 model:
+  freeze_asr_encoder: false
+  freeze_asr_decoder: false 
   speaker_embeddings:
     freeze_encoder: true
     freeze_decoder: true
