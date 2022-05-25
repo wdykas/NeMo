@@ -70,6 +70,7 @@ model:
         speaker_min_snr_db: 0.0
         speaker_max_snr_db: 0.0
     manifest_filepath: ???
+    synthetic_generation: true
     sample_rate: ${model.sample_rate}
     batch_size: 16 # you may increase batch_size if your memory allows
     shuffle: true

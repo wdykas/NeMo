@@ -23,7 +23,7 @@ test_manifest="[\
 /mnt/data/libricss/libricss_utterances_dev.json\
 ]"
 
-do_training=False
+do_training=True
 
 if [ do_training = "False" ]; then
 git checkout 8cec276f774bfacf14e549f2807f2275bde6010a
