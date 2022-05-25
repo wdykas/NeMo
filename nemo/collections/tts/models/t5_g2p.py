@@ -21,7 +21,7 @@ import torch
 from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
 from pytorch_lightning import Trainer
-from transformers import AutoModel, AutoTokenizer
+from transformers import AutoModel, AutoTokenizer, T5ForConditionalGeneration, T5Tokenizer
 
 from nemo.collections.asr.metrics.wer import word_error_rate
 from nemo.collections.tts.torch.data import T5G2PDataset
@@ -80,7 +80,7 @@ class T5G2PModel(ModelPT):  # TODO: Check parent class
         super().__init__(cfg, trainer)
 
         # Load pretrained T5 model from HuggingFace
-        self.model = AutoModel.from_pretrained(self.model_name)
+        self.model = T5ForConditionalGeneration.from_pretrained(self.model_name)
 
     @typecheck()
     def forward(self, input_ids, attention_mask, labels):
