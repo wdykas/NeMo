@@ -224,6 +224,10 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):  # ! ASR dependency here
         blank_id = len(self.labels_id2tkn)
         ids = [t for t in ids if t != blank_id]
         decoded = self.tokenizer.ids_to_text(ids)
+
+        # TODO figure out the cause for this
+        while decoded.endswith(" ˈ"):
+            decoded = decoded[:-2]
         return decoded
 
     def ctc_decoder_predictions_tensor(self, predictions: List[List[int]], predictions_len=None) -> List[str]:

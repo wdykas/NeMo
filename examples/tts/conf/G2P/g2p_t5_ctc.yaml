@@ -86,7 +86,7 @@ trainer:
 
 exp_manager:
   exp_dir: null
-  name: T5 #${name}
+  name: ${name}
   create_tensorboard_logger: True
   create_checkpoint_callback: True
   checkpoint_callback_params:

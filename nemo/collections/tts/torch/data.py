@@ -914,7 +914,6 @@ class T5G2PDataset(Dataset):
         graphemes_batch = [entry["graphemes"] for entry in batch]
         # TODO: Should I add a task prefix?
         phonemes_batch = [entry["phonemes"] for entry in batch]
-
         # Encode inputs (graphemes)
         input_encoding = self.tokenizer(
             graphemes_batch, padding='longest', max_length=self.max_source_len, truncation=True, return_tensors='pt',
@@ -1067,7 +1066,7 @@ class CTCG2PBPEDataset(Dataset):
                 return_tensors='pt',
             )
             input_ids, attention_mask = input_encoding.input_ids, input_encoding.attention_mask
-            input_len = torch.sum(attention_mask, 1)
+            input_len = torch.sum(attention_mask, 1) - 1
         else:
             input_ids = [self.tokenizer_graphemes.text_to_ids(sentence) for sentence in graphemes_batch]
             input_len = [len(entry) for entry in input_ids]
