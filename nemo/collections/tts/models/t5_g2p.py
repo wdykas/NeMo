@@ -21,7 +21,7 @@ import torch
 from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
 from pytorch_lightning import Trainer
-from transformers import T5ForConditionalGeneration, T5Tokenizer
+from transformers import AutoModel, AutoTokenizer
 
 from nemo.collections.asr.metrics.wer import word_error_rate
 from nemo.collections.tts.torch.data import T5G2PDataset
@@ -63,7 +63,7 @@ class T5G2PModel(ModelPT):  # TODO: Check parent class
         # Load appropriate tokenizer from HuggingFace
         self.model_name = cfg.get("model_name", "t5-small")  # One of: t5-small, t5-base, t5-large, t5-3b, t5-11b
         print(f"----------> Using model: {self.model_name}")
-        self._tokenizer = T5Tokenizer.from_pretrained(self.model_name)
+        self._tokenizer = AutoTokenizer.from_pretrained(self.model_name)
 
         self.max_source_len = cfg.get("max_source_len", self._tokenizer.model_max_length)
         self.max_target_len = cfg.get("max_target_len", self._tokenizer.model_max_length)
@@ -80,7 +80,7 @@ class T5G2PModel(ModelPT):  # TODO: Check parent class
         super().__init__(cfg, trainer)
 
         # Load pretrained T5 model from HuggingFace
-        self.model = T5ForConditionalGeneration.from_pretrained(self.model_name)
+        self.model = AutoModel.from_pretrained(self.model_name)
 
     @typecheck()
     def forward(self, input_ids, attention_mask, labels):
