@@ -261,7 +261,7 @@ class EncDecSpeakerLabelModel(ModelPT, ExportableEncDecModel):
         processed_signal, processed_signal_len = self.preprocessor(
             input_signal=input_signal, length=input_signal_length,
         )
-        if self.spec_augmentation is not None and self.encoder.training:
+        if self.spec_augmentation is not None and self.training:
             processed_signal = self.spec_augmentation(input_spec=processed_signal, length=processed_signal_len)
 
         encoded, length = self.encoder(audio_signal=processed_signal, length=processed_signal_len)
