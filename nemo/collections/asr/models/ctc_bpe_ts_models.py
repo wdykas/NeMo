@@ -129,15 +129,24 @@ class TSEncDecCTCModelBPE(EncDecCTCModelBPE):
                 input_signal=input_signal, length=input_signal_length,
             )
 
-        if self.spec_augmentation is not None and self.training:
+        if self.spec_augmentation is not None and self.encoder.training:
             processed_signal = self.spec_augmentation(input_spec=processed_signal, length=processed_signal_length)
         
         if self.speaker_model:
+            
+            if self._cfg.speaker_embeddings.freeze_encoder:
+                self.speaker_model.encoder.freeze()
+            if self._cfg.speaker_embeddings.freeze_decoder:
+                self.speaker_model.decoder.freeze()
             _, speaker_embedding = self.speaker_model.forward(
                 input_signal=speaker_embedding, input_signal_length=embedding_lengths
             )
             
-                
+        
+        if self._cfg.freeze_asr_encoder:
+            self.encoder.freeze()
+        if self._cfg.freeze_asr_decoder:
+            self.decoder.freeze()  
         mask = self.speaker_beam(audio_signal=processed_signal, features =speaker_embedding)
         processed_signal = mask * processed_signal
         encoded, encoded_len = self.encoder(audio_signal=processed_signal, length=processed_signal_length)
