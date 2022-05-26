@@ -15,10 +15,10 @@
 import json
 import os
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 import torch
-from omegaconf import DictConfig, ListConfig, OmegaConf, open_dict
+from omegaconf import DictConfig, ListConfig, open_dict
 from pytorch_lightning import Trainer
 from torch import nn
 from tqdm import tqdm
@@ -197,7 +197,7 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):  # ! ASR dependency here
         return super().training_epoch_end(outputs)
 
     # ===== Validation Functions ===== #
-    def validation_step(self, batch, batch_idx, split="val"):
+    def validation_step(self, batch, batch_idx, dataloader_idx=0, split="val"):
         input_ids, attention_mask, input_len, targets, target_lengths = batch
 
         log_probs, greedy_predictions, encoded_len = self.forward(
@@ -213,12 +213,12 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):  # ! ASR dependency here
         self.log(f"{split}_loss", val_loss)
         return {f"{split}_loss": val_loss, "per": per}
 
-    def test_step(self, batch, batch_idx):
+    def test_step(self, batch, batch_idx, dataloader_idx=0):
         """
         Lightning calls this inside the test loop with the data from the test dataloader
         passed in as `batch`.
         """
-        return self.validation_step(batch, batch_idx, split="test")
+        return self.validation_step(batch, batch_idx, dataloader_idx, split="test")
 
     def decode_ids_to_str(self, ids: List[int]) -> str:
         blank_id = len(self.labels_id2tkn)
@@ -271,7 +271,7 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):  # ! ASR dependency here
             hypotheses.append(text)
         return hypotheses
 
-    def validation_epoch_end(self, outputs, split="val"):
+    def multi_validation_epoch_end(self, outputs, dataloader_idx=0, split="val"):
         """
         Called at the end of validation to aggregate outputs (reduces across batches, not workers).
         """
@@ -282,10 +282,16 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):  # ! ASR dependency here
         # TODO: Add better PER calculation and logging.
         avg_per = sum([x["per"] for x in outputs]) / len(outputs)
         self.log(f"{split}_per", avg_per)
-        logging.info(f"---------------> PER: {round(avg_per*100, 2)}%")
 
-    def test_epoch_end(self, outputs):
-        self.validation_epoch_end(outputs, split="test")
+        if split == "test":
+            dataloader_name = self._test_names[dataloader_idx].upper()
+        else:
+            dataloader_name = self._validation_names[dataloader_idx].upper()
+
+        logging.info(f"--> PER: {round(avg_per*100, 2)}% {dataloader_name}")
+
+    def multi_test_epoch_end(self, outputs, dataloader_idx=0):
+        self.multi_validation_epoch_end(outputs, dataloader_idx, split="test")
 
     def _setup_infer_dataloader(
         self, manifest_filepath: str, batch_size: int, num_workers: int
@@ -423,8 +429,11 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):  # ! ASR dependency here
         if "dataloader_params" not in cfg or not isinstance(cfg.dataloader_params, DictConfig):
             raise ValueError(f"No dataloader_params for {name}")
 
+        if not os.path.exists(cfg.manifest_filepath):
+            raise ValueError(f"{cfg.manifest_filepath} not found")
+
         dataset = CTCG2PBPEDataset(
-            manifest_filepath=cfg.dataset.manifest_filepath,
+            manifest_filepath=cfg.manifest_filepath,
             tokenizer_graphemes=self.tokenizer_grapheme,
             tokenizer_phonemes=self.tokenizer,
             labels=self.vocabulary,
@@ -436,7 +445,7 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):  # ! ASR dependency here
         return torch.utils.data.DataLoader(dataset, collate_fn=dataset.collate_fn, **cfg.dataloader_params)
 
     def setup_training_data(self, cfg):
-        if not cfg or cfg.dataset.manifest_filepath is None or not os.path.exists(cfg.dataset.manifest_filepath):
+        if not cfg or cfg.manifest_filepath is None:
             logging.info(
                 f"Dataloader config or file_path for the train is missing, so no data loader for train is created!"
             )
@@ -444,8 +453,18 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):  # ! ASR dependency here
             return
         self._train_dl = self._setup_dataloader_from_config(cfg, name="train")
 
-    def setup_validation_data(self, cfg):
-        if not cfg or cfg.dataset.manifest_filepath is None or not os.path.exists(cfg.dataset.manifest_filepath):
+    def setup_multiple_validation_data(self, val_data_config: Union[DictConfig, Dict] = None):
+        if val_data_config is None:
+            val_data_config = self._cfg.validation_ds
+        return super().setup_multiple_validation_data(val_data_config)
+
+    def setup_multiple_test_data(self, test_data_config: Union[DictConfig, Dict] = None):
+        if test_data_config is None:
+            test_data_config = self._cfg.test_ds
+        return super().setup_multiple_test_data(test_data_config)
+
+    def setup_validation_data(self, cfg: Optional[DictConfig]):
+        if not cfg or cfg.manifest_filepath is None:
             logging.info(
                 f"Dataloader config or file_path for the validation is missing, so no data loader for validation is created!"
             )
@@ -453,8 +472,8 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):  # ! ASR dependency here
             return
         self._validation_dl = self._setup_dataloader_from_config(cfg, name="validation")
 
-    def setup_test_data(self, cfg):
-        if not cfg or cfg.dataset.manifest_filepath is None or not os.path.exists(cfg.dataset.manifest_filepath):
+    def setup_test_data(self, cfg: Optional[DictConfig]):
+        if not cfg or cfg.manifest_filepath is None:
             logging.info(
                 f"Dataloader config or file_path for the test is missing, so no data loader for test is created!"
             )

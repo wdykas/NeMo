@@ -63,7 +63,7 @@ model:
   train_ds:
     dataset:
       _target_: "nemo.collections.tts.torch.data.CTCG2PDataset"
-      manifest_filepath: ${train_dataset}
+    manifest_filepath: ${train_dataset}
     dataloader_params:
       drop_last: false
       shuffle: true
@@ -73,7 +73,7 @@ model:
   validation_ds:
     dataset:
       _target_: "nemo.collections.tts.torch.data.CTCG2PDataset"
-      manifest_filepath: ${validation_dataset}
+    manifest_filepath: ${validation_dataset}
     dataloader_params:
       drop_last: false
       shuffle: false
@@ -83,7 +83,7 @@ model:
   test_ds:
     dataset:
       #_target_: "nemo.collections.tts.data.datalayers.T5G2PDataset"
-      manifest_filepath: null
+    manifest_filepath: null
     dataloader_params:
       drop_last: false
       shuffle: false
