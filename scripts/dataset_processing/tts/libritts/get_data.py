@@ -27,13 +27,16 @@ import subprocess
 import tarfile
 import urllib.request
 from pathlib import Path
-
+import wget
 from tqdm import tqdm
+
+from nemo_text_processing.text_normalization.normalize import Normalizer
 
 parser = argparse.ArgumentParser(description='Download LibriTTS and create manifests')
 parser.add_argument("--data-root", required=True, type=Path)
 parser.add_argument("--data-sets", default="dev_clean", type=str)
 parser.add_argument("--num-workers", default=4, type=int)
+parser.add_argument("--whitelist", default=None, type=str)
 args = parser.parse_args()
 
 URLS = {
@@ -63,7 +66,7 @@ def __extract_file(filepath, data_dir):
         print(f"Error while extracting {filepath}. Already extracted?")
 
 
-def __process_transcript(file_path: str):
+def __process_transcript(file_path: str, normalizer_call):
     entries = []
     with open(file_path, encoding="utf-8") as fin:
         text = fin.readlines()[0].strip()
@@ -72,11 +75,13 @@ def __process_transcript(file_path: str):
         wav_file = file_path.replace(".normalized.txt", ".wav")
         speaker_id = file_path.split('/')[-3]
         assert os.path.exists(wav_file), f"{wav_file} not found!"
+        norm_text = normalizer_call(text)
         duration = subprocess.check_output(f"soxi -D {wav_file}", shell=True)
         entry = {
             'audio_filepath': os.path.abspath(wav_file),
             'duration': float(duration),
             'text': text,
+            'normalized_text': norm_text,
             'speaker': int(speaker_id),
         }
 
@@ -85,7 +90,24 @@ def __process_transcript(file_path: str):
     return entries
 
 
-def __process_data(data_folder, manifest_file, num_workers):
+def __process_data(data_folder, manifest_file, num_workers, whitelist_path=None):
+    if whitelist_path is None:
+        wget.download(
+            "https://raw.githubusercontent.com/NVIDIA/NeMo/main/nemo_text_processing/text_normalization/en/data/whitelist/lj_speech.tsv",
+            out=str(data_folder),
+        )
+        print('Using whitelist')
+        whitelist_path = data_folder + "/lj_speech.tsv"
+
+    text_normalizer = Normalizer(
+        lang="en",
+        input_case="cased",
+        whitelist=whitelist_path,
+        overwrite_cache=True,
+        cache_dir=data_folder + "/cache_dir",
+    )
+    text_normalizer_call_kwargs = {"punct_pre_process": True, "punct_post_process": True}
+    normalizer_call = functools.partial(text_normalizer.normalize, **text_normalizer_call_kwargs)
     files = []
     entries = []
 
@@ -95,7 +117,7 @@ def __process_data(data_folder, manifest_file, num_workers):
             files.append(os.path.join(root, filename))
 
     with multiprocessing.Pool(num_workers) as p:
-        processing_func = functools.partial(__process_transcript)
+        processing_func = functools.partial(__process_transcript, normalizer_call=normalizer_call)
         results = p.imap(processing_func, files)
         for result in tqdm(results, total=len(files)):
             entries.extend(result)
@@ -109,9 +131,10 @@ def main():
     data_root = args.data_root
     data_sets = args.data_sets
     num_workers = args.num_workers
+    whitelist = args.whitelist
 
     if data_sets == "ALL":
-        data_sets = "dev_clean,dev_other,train_clean_100,train_clean_360,train_other_500,test_clean,test_other"
+        data_sets = "dev_clean,train_clean_100,train_clean_360,train_other_500"#,dev_other,test_clean,test_other"
     if data_sets == "mini":
         data_sets = "dev_clean,train_clean_100"
     for data_set in data_sets.split(','):
@@ -123,6 +146,7 @@ def main():
             str(data_root / "LibriTTS" / data_set.replace("_", "-")),
             str(data_root / "LibriTTS" / f"{data_set}.json"),
             num_workers=num_workers,
+            whitelist_path=whitelist,
         )
 
 
