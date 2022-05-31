@@ -287,23 +287,26 @@ class MegatronGPTModel(NLPModel, TextGeneration):
             self._optimizer.allreduce_main_grads()  # @sangkug we think this is fine
             torch.cuda.synchronize(); toc = time.time()
 
-            if (parallel_state.get_pipeline_model_parallel_world_size() == 1) or \
-               (parallel_state.get_pipeline_model_parallel_world_size() > 1 and \
-                parallel_state.get_pipeline_model_parallel_rank() == 0):
+            if batch_idx == 9:
+                if (parallel_state.get_pipeline_model_parallel_world_size() == 1) or \
+                   (parallel_state.get_pipeline_model_parallel_world_size() > 1 and \
+                    parallel_state.get_pipeline_model_parallel_rank() == 0):
 
-                print("[DP_AR] PP{}/TP{}: {}ms".format(
-                    parallel_state.get_pipeline_model_parallel_rank(),
-                    parallel_state.get_tensor_model_parallel_rank(),
-                    (toc - tic) * 1000
-                ))
+                    print("[DP_AR] PP{}/TP{}: {}ms".format(
+                        parallel_state.get_pipeline_model_parallel_rank(),
+                        parallel_state.get_tensor_model_parallel_rank(),
+                        (toc - tic) * 1000
+                    ))
 
-            if (parallel_state.get_pipeline_model_parallel_world_size() > 1 and
+            if batch_idx == 9 and \
+               (parallel_state.get_pipeline_model_parallel_world_size() > 1 and
                 parallel_state.get_pipeline_model_parallel_rank() == 0):
                 torch.cuda.synchronize(); tic = time.time()
 
             self.allreduce_first_last_embeddings()
 
-            if (parallel_state.get_pipeline_model_parallel_world_size() > 1 and
+            if batch_idx == 9 and \
+               (parallel_state.get_pipeline_model_parallel_world_size() > 1 and
                 parallel_state.get_pipeline_model_parallel_rank() == 0):
                 torch.cuda.synchronize(); toc = time.time()
 
