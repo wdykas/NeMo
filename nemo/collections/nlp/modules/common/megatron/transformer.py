@@ -700,9 +700,9 @@ class ParallelAttention(MegatronModule):
         # # The correct behavior should be paying zero attention to them
         # issue is created at https://github.com/NVIDIA/apex/issues/1390
         # following is a work around:
-        # all_k_masked = attention_mask.all(axis=-1)
-        # zero_attention_mask = (1.0 - all_k_masked.float())[:, :, :, None]
-        # attention_probs = attention_probs * zero_attention_mask
+        all_k_masked = attention_mask.all(axis=-1)
+        zero_attention_mask = (1.0 - all_k_masked.float())[:, :, :, None]
+        attention_probs = attention_probs * zero_attention_mask
 
         # This is actually dropping out entire tokens to attend to, which might
         # seem a bit unusual, but is taken from the original Transformer paper.
