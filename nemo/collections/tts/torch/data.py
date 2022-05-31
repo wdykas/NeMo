@@ -151,6 +151,7 @@ class TTSDataset(Dataset):
             self.text_tokenizer_pad_id = text_tokenizer_pad_id
             self.tokens = tokens
         self.cache_text = True if self.phoneme_probability is None else False
+        print("cache_text {} phoneme_probability {}".format(self.cache_text, self.phoneme_probability))
 
         # Initialize text normalizer is specified
         self.text_normalizer = text_normalizer
@@ -389,6 +390,8 @@ class TTSDataset(Dataset):
 
     def __getitem__(self, index):
         sample = self.data[index]
+        if self.use_beta_binomial_interpolator == True:
+            print("self.use_beta_binomial_interpolator {} {}".format(self.use_beta_binomial_interpolator, sample["audio_filepath"]))
 
         # Let's keep audio name and all internal directories in rel_audio_path_as_text_id to avoid any collisions
         rel_audio_path = Path(sample["audio_filepath"]).relative_to(self.base_data_dir).with_suffix("")
