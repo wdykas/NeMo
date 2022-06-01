@@ -292,7 +292,7 @@ class MegatronGPTModel(NLPModel, TextGeneration):
                    (parallel_state.get_pipeline_model_parallel_world_size() > 1 and \
                     parallel_state.get_pipeline_model_parallel_rank() == 0):
 
-                    print("[DP_AR] PP{}/TP{}: {}ms".format(
+                    print("\n[DP_AR] PP{}/TP{}: {}ms\n".format(
                         parallel_state.get_pipeline_model_parallel_rank(),
                         parallel_state.get_tensor_model_parallel_rank(),
                         (toc - tic) * 1000
@@ -310,7 +310,7 @@ class MegatronGPTModel(NLPModel, TextGeneration):
                 parallel_state.get_pipeline_model_parallel_rank() == 0):
                 torch.cuda.synchronize(); toc = time.time()
 
-                print("[EMBD_AR] PP{}/TP{}: {}ms".format(
+                print("\n[EMBD_AR] PP{}/TP{}: {}ms\n".format(
                     parallel_state.get_pipeline_model_parallel_rank(),
                     parallel_state.get_tensor_model_parallel_rank(),
                     (toc - tic) * 1000
