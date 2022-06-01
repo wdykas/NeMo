@@ -87,6 +87,7 @@ class MegatronGPTPromptLearningModel(MegatronBaseModel, TextGeneration):
         # amp o2 not supported
         with open_dict(frozen_model_cfg):
             frozen_model_cfg.megatron_amp_O2 = False
+            frozen_model_cfg.activations_checkpoint_method = None
 
         # Load pretrained GPT model and tokenizer
         if cfg.get('language_model_path', None):
