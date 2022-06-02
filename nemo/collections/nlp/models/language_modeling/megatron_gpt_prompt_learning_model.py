@@ -41,6 +41,7 @@ from nemo.collections.nlp.modules.common.text_generation_utils import (
 from nemo.collections.nlp.modules.common.transformer.text_generation import LengthParam, SamplingParam, TextGeneration
 from nemo.collections.nlp.parts.nlp_overrides import NLPSaveRestoreConnector
 from nemo.collections.nlp.parts.utils_funcs import get_last_rank
+from nemo.core import optim
 from nemo.utils import logging
 
 try:
@@ -346,9 +347,6 @@ class MegatronGPTPromptLearningModel(MegatronBaseModel, TextGeneration):
         """
 
         virtual_prompt_params = {'params': []}
-        frozen_model_params = {'params': [], 'lr': 0.0, 'sched': {'min_lr': 0.0}}
-
-        frozen_model_params['params'].extend([param for param in self.frozen_model.parameters()])
 
         if self.frozen_model.model.pre_process:
             virtual_prompt_params['params'].extend([param for param in self.prompt_table.parameters()])
@@ -356,7 +354,22 @@ class MegatronGPTPromptLearningModel(MegatronBaseModel, TextGeneration):
             if self.virtual_prompt_source == VirtualPromptSource.PROMPT_ENCODER:
                 virtual_prompt_params['params'].extend([param for param in self.prompt_encoder.parameters()])
 
-        self._optimizer_param_groups = virtual_prompt_params, frozen_model_params
+        self._optimizer_param_groups = [virtual_prompt_params]
+
+    def configure_optimizers(self):
+        self.setup_optimization()
+
+        # Using SGD to minimize optimizer state info in memory for frozen model
+        sgd_optimizer = optim.get_optimizer('sgd')
+
+        # Frozen model lr = 0.0, so model stays frozen but 
+        # still has gradients that work with pipeline parallel + DDP
+        self._frozen_model_optimizer = sgd_optimizer(self.frozen_model.parameters(), lr=0.0)
+
+        if self._scheduler is None:
+            return [self._optimizer, self._frozen_model_optimizer]
+        else:
+            return [self._optimizer, self._frozen_model_optimizer], [self._scheduler]
 
     def forward(
         self,
@@ -557,7 +570,7 @@ class MegatronGPTPromptLearningModel(MegatronBaseModel, TextGeneration):
 
         return loss_mean
 
-    def training_step(self, batch, batch_idx):
+    def training_step(self, batch, batch_idx, optimizer_idx):
         """
             Our dataloaders produce a micro-batch and then we fetch
             a number of microbatches depending on the global batch size and model parallel size
@@ -566,14 +579,10 @@ class MegatronGPTPromptLearningModel(MegatronBaseModel, TextGeneration):
             Microbatches are then moved to GPU during the pipeline.
             The list of microbatches is then piped through the pipeline using Apex fwd/bwd functions.
         """
-        # input_ids, labels, loss_mask, position_ids, attention_mask, taskname_ids = batch
-        # output = self.forward(input_ids, position_ids, attention_mask, taskname_ids, labels, inference=False)
-        # output_tensor, encoder_hidden_states = output
-        # loss = self.frozen_model.loss_func(loss_mask, output_tensor)
-        # self.log('train_loss', loss)
-
         # we zero grads here because we also call backward in the apex fwd/bwd functions
         self._optimizer.zero_grad()
+        self._frozen_model_optimizer.zero_grad()
+        
         loss_mean = self.step(batch, batch_idx, forward_only=False)
 
         # TODO: if we're not using pipeline, then we should do async allreduce (better perf)
