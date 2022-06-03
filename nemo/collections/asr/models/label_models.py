@@ -39,6 +39,7 @@ from nemo.core.classes import ModelPT
 from nemo.core.classes.common import PretrainedModelInfo, typecheck
 from nemo.core.neural_types import *
 from nemo.utils import logging
+from torchmetrics import AUROC
 
 __all__ = ['EncDecSpeakerLabelModel']
 
@@ -118,6 +119,7 @@ class EncDecSpeakerLabelModel(ModelPT, ExportableEncDecModel):
                 self.loss = CELoss()
         self.task = None
         self._accuracy = TopKClassificationAccuracy(top_k=[1])
+        self._auroc = AUROC(num_classes=107) # todo
         self.labels = None
         if hasattr(self._cfg, 'spec_augment') and self._cfg.spec_augment is not None:
             self.spec_augmentation = EncDecSpeakerLabelModel.from_config_dict(self._cfg.spec_augment)
@@ -306,6 +308,7 @@ class EncDecSpeakerLabelModel(ModelPT, ExportableEncDecModel):
         loss_value = self.loss(logits=logits, labels=labels)
         acc_top_k = self._accuracy(logits=logits, labels=labels)
         correct_counts, total_counts = self._accuracy.correct_counts_k, self._accuracy.total_counts_k
+        self._auroc.update(preds=logits, target=labels)
 
         return {
             'val_loss': loss_value,
@@ -329,9 +332,13 @@ class EncDecSpeakerLabelModel(ModelPT, ExportableEncDecModel):
         for top_k, score in zip(self._accuracy.top_k, topk_scores):
             self.log('val_epoch_accuracy_top@{}'.format(top_k), score)
 
+        auroc = self._auroc.compute()
+        self._auroc.reset()
+
         return {
             'val_loss': val_loss_mean,
             'val_acc_top_k': topk_scores,
+            'val_auroc': auroc
         }
 
     def test_step(self, batch, batch_idx, dataloader_idx: int = 0):
@@ -340,6 +347,8 @@ class EncDecSpeakerLabelModel(ModelPT, ExportableEncDecModel):
         loss_value = self.loss(logits=logits, labels=labels)
         acc_top_k = self._accuracy(logits=logits, labels=labels)
         correct_counts, total_counts = self._accuracy.correct_counts_k, self._accuracy.total_counts_k
+        self._auroc.update(preds=logits, target=labels)
+        
 
         return {
             'test_loss': loss_value,
@@ -358,6 +367,9 @@ class EncDecSpeakerLabelModel(ModelPT, ExportableEncDecModel):
         topk_scores = self._accuracy.compute()
         self._accuracy.reset()
 
+        auroc = self._auroc.compute()
+        self._auroc.reset()
+
         logging.info("test_loss: {:.3f}".format(test_loss_mean))
         self.log('test_loss', test_loss_mean)
         for top_k, score in zip(self._accuracy.top_k, topk_scores):
@@ -366,6 +378,7 @@ class EncDecSpeakerLabelModel(ModelPT, ExportableEncDecModel):
         return {
             'test_loss': test_loss_mean,
             'test_acc_top_k': topk_scores,
+            'test_auroc': auroc
         }
 
     def setup_finetune_model(self, model_config: DictConfig):
