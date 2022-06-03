@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from omegaconf.omegaconf import OmegaConf, open_dict
 import re
 from typing import Any, Dict, Optional
 
@@ -110,6 +111,47 @@ class MegatronLMEncoderDecoderModel(MegatronBaseModel):
             raise ValueError('precision must be in [32, 16, "bf16"]')
 
         self.enc_dec_model.model_type = ModelType.encoder_and_decoder
+    
+    def _maybe_update_cfg(self):
+        """
+        Update the config to have separate encoder and decoder configurations for compatibility with models trained before separate encoder and decoder configs.
+        """
+        if hasattr(self.cfg, 'encoder') and hasattr(self.cfg, 'decoder'):
+            return
+        elif hasattr(self.cfg, 'encoder') and not hasattr(self.cfg, 'decoder'):
+            raise ValueError(f"Config has an encoder configuration, but not decoder config. Unsure how to proceed.")
+        elif hasattr(self.cfg, 'decoder') and not hasattr(self.cfg, 'encoder'):
+            raise ValueError(f"Config has a decoder configuration, but not encoder config. Unsure how to proceed.")
+        OmegaConf.set_struct(self.cfg, True)
+        with open_dict(self.cfg):
+            self.cfg.encoder.num_layers = self.cfg.num_layers
+            self.cfg.encoder.hidden_size = self.cfg.hidden_size
+            self.cfg.encoder.ffn_hidden_size = self.cfg.ffn_hidden_size
+            self.cfg.encoder.num_attention_heads = self.cfg.num_attention_heads
+            self.cfg.encoder.init_method_std = self.cfg.init_method_std
+            self.cfg.encoder.hidden_dropout = self.cfg.hidden_dropout
+            self.cfg.encoder.attention_dropout = self.cfg.attention_dropout
+            self.cfg.encoder.position_embedding_type = self.cfg.position_embedding_type
+            self.cfg.encoder.relative_attention_num_buckets = self.cfg.relative_attention_num_buckets
+            self.cfg.encoder.relative_attention_max_distance = self.cfg.relative_attention_max_distance
+            self.cfg.encoder.kv_channels = self.cfg.kv_channels
+            self.cfg.encoder.apply_query_key_layer_scaling = self.cfg.apply_query_key_layer_scaling
+            self.cfg.encoder.layernorm_epsilon = self.cfg.layernorm_epsilon
+            self.cfg.encoder.persist_layer_norm = self.cfg.persist_layer_norm
+            self.cfg.encoder.gradient_as_bucket_view = self.cfg.gradient_as_bucket_view
+            self.cfg.encoder.bias_gelu_fusion = self.cfg.bias_gelu_fusion
+            self.cfg.encoder.masked_softmax_fusion = self.cfg.masked_softmax_fusion
+            self.cfg.encoder.bias_dropout_add_fusion = self.cfg.bias_dropout_add_fusion
+            self.cfg.encoder.bias = self.cfg.bias
+            self.cfg.encoder.normalization = self.cfg.normalization
+            self.cfg.encoder.arch = self.cfg.encoder_arch
+            self.cfg.encoder.activation = self.cfg.activation
+            self.cfg.encoder.headscale = self.cfg.headscale
+            self.cfg.encoder.transformer_block_type = self.cfg.transformer_block_type
+
+            # Assign decoder to decoder since they were the same before
+            self.cfg.decoder = self.cfg.encoder
+            self.cfg.decoder.arch = self.cfg.decoder_arch
 
     def setup_optimizer_param_groups(self):
         """ModelPT override. Optimizer will get self._optimizer_param_groups"""
@@ -119,29 +161,11 @@ class MegatronLMEncoderDecoderModel(MegatronBaseModel):
         # TODO: create get_encoder_decoder_model()here for different losses (e..g, nll, vae, mim)
 
         model = MegatronTokenLevelEncoderDecoderModule(
-            encoder_arch=self.cfg.encoder_arch,
-            decoder_arch=self.cfg.decoder_arch,
+            encoder_cfg=self.cfg.encoder,
+            decoder_cfg=self.cfg.decoder,
             vocab_size=self.padded_vocab_size,
-            hidden_size=self.cfg.hidden_size,
-            max_position_embeddings=self.cfg.max_position_embeddings,
-            num_layers=self.cfg.num_layers,
-            num_attention_heads=self.cfg.num_attention_heads,
-            apply_query_key_layer_scaling=self.cfg.get('apply_query_key_layer_scaling', True),
-            kv_channels=self.cfg.get('kv_channels', None),
-            ffn_hidden_size=self.cfg.ffn_hidden_size,
-            num_tokentypes=0,
-            parallel_output=True,
-            pre_process=pre_process,
-            post_process=post_process,
-            init_method_std=self.cfg.get('init_method_std', 0.02),
             fp16_cross_entropy=self.cfg.get('fp16_lm_cross_entropy', False),
             use_cpu_initialization=self.cfg.get('use_cpu_initialization', False),
-            hidden_dropout=self.cfg.get('hidden_dropout', 0.1),
-            attention_dropout=self.cfg.get('attention_dropout', 0.1),
-            position_embedding_type=self.cfg.get('position_embedding_type', 'learned_absolute'),
-            relative_attention_num_buckets=self.cfg.get('relative_attention_num_buckets', 32),
-            relative_attention_max_distance=self.cfg.get('relative_attention_max_distance', 128),
-            precision=self.cfg.get('precision', 16),
             fp32_residual_connection=self.cfg.get('fp32_residual_connection', False),
             activations_checkpoint_method=self.cfg.get('activations_checkpoint_method', None),
             activations_checkpoint_num_layers=self.cfg.get('activations_checkpoint_num_layers', 1),
