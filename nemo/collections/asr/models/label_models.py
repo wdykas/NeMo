@@ -88,6 +88,7 @@ class EncDecSpeakerLabelModel(ModelPT, ExportableEncDecModel):
 
     def __init__(self, cfg: DictConfig, trainer: Trainer = None):
         self.world_size = 1
+        # self.cal_labels_occurrence = False
         if trainer is not None:
             self.world_size = trainer.num_nodes * trainer.num_devices
 
@@ -103,7 +104,18 @@ class EncDecSpeakerLabelModel(ModelPT, ExportableEncDecModel):
             self.loss = AngularSoftmaxLoss(scale=scale, margin=margin)
         else:
             logging.info("loss is Softmax-CrossEntropy")
-            self.loss = CELoss()
+            if 'weight' in cfg.loss and cfg.loss.weight:
+                if cfg.loss.weight == 'auto':
+                    self.cal_labels_occurrence = True
+                    # Goal is to give more weight to the classes with less samples so as to match the ones with the higher frequencies
+                    weight = [sum(self.labels_occurrence) / (len(self.labels_occurrence) * i) for i in self.labels_occurrence]
+
+                else:
+                    weight = cfg.loss.weight
+
+                self.loss = CELoss(weight=weight)
+            else:
+                self.loss = CELoss()
         self.task = None
         self._accuracy = TopKClassificationAccuracy(top_k=[1])
         self.labels = None
@@ -171,7 +183,9 @@ class EncDecSpeakerLabelModel(ModelPT, ExportableEncDecModel):
                 min_duration=config.get('min_duration', None),
                 trim=config.get('trim_silence', False),
                 normalize_audio=config.get('normalize_audio', False),
+                cal_labels_occurrence=True, 
             )
+            self.labels_occurrence = dataset.labels_occurrence
 
         if hasattr(dataset, 'fixed_seq_collate_fn'):
             collate_fn = dataset.fixed_seq_collate_fn

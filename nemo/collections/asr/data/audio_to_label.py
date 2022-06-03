@@ -26,6 +26,7 @@ from nemo.core.classes import Dataset, IterableDataset
 from nemo.core.neural_types import AudioSignal, LabelsType, LengthsType, NeuralType, RegressionValuesType
 from nemo.utils import logging
 
+
 # List of valid file formats (prioritized by order of importance)
 VALID_FILE_FORMATS = ';'.join(['wav', 'mp3', 'flac'] + [fmt.lower() for fmt in valid_sf_formats.keys()])
 
@@ -268,13 +269,16 @@ target_label_n, "offset": offset_in_sec_n}
         max_duration: Optional[float] = None,
         trim: bool = False,
         is_regression_task: bool = False,
+        cal_labels_occurrence: bool = False
     ):
+
         super().__init__()
         self.collection = collections.ASRSpeechLabel(
             manifests_files=manifest_filepath.split(','),
             min_duration=min_duration,
             max_duration=max_duration,
             is_regression_task=is_regression_task,
+            cal_labels_occurrence=cal_labels_occurrence,
         )
 
         self.featurizer = featurizer
@@ -285,9 +289,19 @@ target_label_n, "offset": offset_in_sec_n}
             self.labels = labels if labels else self.collection.uniq_labels
             self.num_classes = len(self.labels) if self.labels is not None else 1
             self.label2id, self.id2label = {}, {}
+
+            self.id2occurrence = {}
+            self.labels_occurrence = []
+
             for label_id, label in enumerate(self.labels):
                 self.label2id[label] = label_id
                 self.id2label[label_id] = label
+                if cal_labels_occurrence:
+                    self.id2occurrence[label_id] = self.collection.labels_occurrence[label]
+            
+            if cal_labels_occurrence:
+                self.labels_occurrence = [self.id2occurrence[k] for k in sorted(self.id2occurrence)]
+
 
             for idx in range(len(self.labels[:5])):
                 logging.debug(" label id {} and its mapped label {}".format(idx, self.id2label[idx]))
@@ -396,6 +410,7 @@ class AudioToSpeechLabelDataset(_AudioLabelDataset):
         shift_length_in_sec: Optional[float] = 1,
         normalize_audio: bool = False,
         is_regression_task: bool = False,
+        cal_labels_occurrence: bool = False,
     ):
         self.window_length_in_sec = window_length_in_sec
         self.shift_length_in_sec = shift_length_in_sec
@@ -412,6 +427,7 @@ class AudioToSpeechLabelDataset(_AudioLabelDataset):
             max_duration=max_duration,
             trim=trim,
             is_regression_task=is_regression_task,
+            cal_labels_occurrence=cal_labels_occurrence,
         )
 
     def fixed_seq_collate_fn(self, batch):
