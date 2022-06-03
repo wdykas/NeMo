@@ -828,20 +828,31 @@ class RirNoiseSpeakerPerturbation(Perturbation):
                 data_num_samples = pad_samples + len(data._samples)
             else:
                 data_num_samples = len(data._samples)
-            max_overlap_in_samples = int(round(self.max_overlap * data_num_samples))
-            overlap_num_samples = min(max_overlap_in_samples, len(second_speaker._samples))
+
+            overlap = self._rng.uniform(0, self.max_overlap)
             if self._rng.random() < 0.5:
                 if self.max_padded_silence > 0:
                     padded_data = np.zeros(pad_samples  + len(data._samples), dtype=data._samples.dtype)
                     padded_data[pad_samples:pad_samples + len(data._samples)] = data._samples
                     data._samples = padded_data
-                data._samples[:overlap_num_samples] += second_speaker._samples[-overlap_num_samples:]
+                
+                max_overlap_in_samples = int(round(overlap * len(data._samples)))
+                new_data = np.zeros(len(data._samples) - max_overlap_in_samples + max(max_overlap_in_samples, len(second_speaker._samples)), dtype=data._samples.dtype)
+                new_data[:len(data._samples)] = data._samples
+                new_data[-len(second_speaker._samples):] += second_speaker._samples
+
+                data._samples = new_data
             else:
                 if self.max_padded_silence > 0:
                     padded_data = np.zeros(pad_samples  + len(data._samples), dtype=data._samples.dtype)
                     padded_data[:len(data._samples)] = data._samples
                     data._samples = padded_data
-                data._samples[-overlap_num_samples:] += second_speaker._samples[:overlap_num_samples]
+                
+                max_overlap_in_samples = int(round(overlap * len(second_speaker._samples)))
+                new_data = np.zeros(len(second_speaker._samples) - max_overlap_in_samples + max(max_overlap_in_samples, len(data._samples)), dtype=data._samples.dtype)
+                new_data[:len(second_speaker._samples)] = second_speaker._samples
+                new_data[-len(data._samples):] += data._samples
+                data._samples = new_data
 
         # data_rms = data.rms_db
         # gain_ratio = self._rng.uniform(min_gain_ratio, max_gain_ratio)

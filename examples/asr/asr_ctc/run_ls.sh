@@ -25,9 +25,6 @@ test_manifest="[\
 
 do_training=True
 
-if [ do_training = "False" ]; then
-git checkout 8cec276f774bfacf14e549f2807f2275bde6010a
-fi
 python speech_to_text_ctc_bpe_ts.py \
 do_training=$do_training \
 model.tokenizer.type=bpe \
@@ -37,7 +34,7 @@ model.train_ds.manifest_filepath=/mnt/data/LibriSpeech/train_clean_100_360.json 
 trainer.max_epochs=10 \
 model.train_ds.augmentor.rir_noise_speaker.prob=1.0 \
 model.train_ds.augmentor.rir_noise_speaker.max_overlap=1.0 \
-model.train_ds.augmentor.rir_noise_speaker.two_sided_overlap=0.5 \
+model.train_ds.augmentor.rir_noise_speaker.two_sided_overlap=0 \
 model.train_ds.augmentor.rir_noise_speaker.max_padded_silence=0.1 \
 model.validation_ds.manifest_filepath=[/mnt/data/libricss/libricss_utterances_clean_overlap_ratio_0.0_sil0.1_0.5_dev.json] \
 model.train_ds.augmentor.rir_noise_speaker.bg_min_snr_db=[10] \
@@ -50,7 +47,7 @@ model.speaker_embeddings.freeze_decoder=True \
 model.speaker_embeddings.freeze_encoder=True \
 model.freeze_asr_decoder=False \
 model.freeze_asr_encoder=False \
-model.train_ds.max_duration=20 \
+model.train_ds.max_duration=10 \
 model.train_ds.batch_size=4 \
 model.train_ds.num_workers=8 \
 model.validation_ds.num_workers=2 \
@@ -66,10 +63,8 @@ model.encoder.n_heads=4 \
 model.encoder.n_layers=18 \
 model.spec_augment.time_masks=5 \
 trainer.val_check_interval=0.1 \
-+nemo_checkpoint_path=/home/yangzhang/code/NeMo/examples/asr/asr_ctc/ngc_ckpt/2848988/Conformer-CTC-BPE/2022-04-26_02-14-41/checkpoints/Conformer-CTC-BPE.nemo
-# +nemo_checkpoint_path=/home/yangzhang/code/ts_asr/stt_en_conformer_ctc_medium_v1.0.0/stt_en_conformer_ctc_medium.nemo
-
-git checkout HEAD
++nemo_checkpoint_path=/home/yangzhang/code/ts_asr/stt_en_conformer_ctc_medium_v1.0.0/stt_en_conformer_ctc_medium.nemo
+# +nemo_checkpoint_path=/home/yangzhang/code/NeMo/examples/asr/asr_ctc/ngc_ckpt/2848988/Conformer-CTC-BPE/2022-04-26_02-14-41/checkpoints/Conformer-CTC-BPE.nemo
 
 # model.test_ds.manifest_filepath=[/mnt/data/LibriSpeech/dev_clean.json,/mnt/data/LibriSpeech/dev_clean_overlap_0.1.json,/mnt/data/LibriSpeech/dev_clean_overlap_0.2.json,/mnt/data/LibriSpeech/dev_clean_overlap_0.3.json,/mnt/data/LibriSpeech/dev_clean_overlap_0.4.json,/mnt/data/LibriSpeech/dev_clean_overlap_0.7.json,/mnt/data/LibriSpeech/dev_clean_overlap_0.8.json,/mnt/data/LibriSpeech/dev_clean_overlap_0.9.json,/mnt/data/LibriSpeech/dev_clean_overlap_1.0.json,/mnt/data/LibriSpeech/dev_clean_overlap_two_sided_0.1.json,/mnt/data/LibriSpeech/dev_clean_overlap_two_sided_0.2.json,/mnt/data/LibriSpeech/dev_clean_overlap_two_sided_0.3.json,/mnt/data/LibriSpeech/dev_clean_overlap_two_sided_0.4.json,/mnt/data/LibriSpeech/dev_clean_overlap_two_sided_0.7.json,/mnt/data/LibriSpeech/dev_clean_overlap_two_sided_0.8.json,/mnt/data/LibriSpeech/dev_clean_overlap_two_sided_0.9.json,/mnt/data/LibriSpeech/dev_clean_overlap_two_sided_1.0.json] \
 #model.test_ds.manifest_filepath=[/mnt/data/libricss/input_manifest_utterances_clean_overlap_ratio_0.0_sil0.1_0.5.json,/mnt/data/libricss/input_manifest_utterances_clean_overlap_ratio_0.0_sil2.9_3.0.json,/mnt/data/libricss/input_manifest_utterances_clean_overlap_ratio_10.0_sil0.1_1.0.json,/mnt/data/libricss/input_manifest_utterances_clean_overlap_ratio_20.0_sil0.1_1.0.json,/mnt/data/libricss/input_manifest_utterances_clean_overlap_ratio_30.0_sil0.1_1.0.json,/mnt/data/libricss/input_manifest_utterances_clean_overlap_ratio_40.0_sil0.1_1.0.json] \
