@@ -79,9 +79,9 @@ MIN_NUM_WORDS_FOR_FRACTION_CRITERIA = 15
 
 GOOGLE_NORMALIZATION_DATASET_MIN_NUM_WORDS_IN_SENTENCE = 6
 
-EUROPARL_RAW_REPORTED_SPEECH = re.compile("^[^.\n]+ - (?:\\([^)]+\\) )?", flags=re.MULTILINE)
+EUROPARL_RAW_REPORTED_SPEECH = re.compile("^[^.\n]+\\. - (?:\\([^)]+\\) )?", flags=re.MULTILINE)
 EUROPARL_RAW_LANG_DISCLAIMER = re.compile("^\\([^)]+\\) ?", flags=re.MULTILINE)
-EUROPARL_RAW_SPEAKER_LINE = re.compile("^<SPEAKER [^>\n]+> *$", flags=re.MULTILINE)
+EUROPARL_RAW_SPEAKER_LINE = re.compile("^<SPEAKER [^>\n]+> *\n", flags=re.MULTILINE)
 EUROPARL_RAW_CHAPTER = re.compile("^<CHAPTER[^>\n]+> *\n[^<]*", flags=re.MULTILINE)
 
 
@@ -1259,7 +1259,7 @@ def preprocess_europarl_raw(
     nf = len(files)
     doc_ids = list(range(start_doc_id, start_doc_id + nf))
     file_ids = list(range(start_file_id, start_file_id + nf))
-    with Progress(nf, "Preparing Google Normalization dataset", "doc") as progress_queues:
+    with Progress(nf, "Preparing EuroParl raw dataset", "doc") as progress_queues:
         with mp.Pool(num_jobs, initializer=tokenizability_initializer) as pool:
             pool.starmap(
                 PreprocessEuroparlRawWorker(document_dir, tokenizer, progress_queues[0]),
