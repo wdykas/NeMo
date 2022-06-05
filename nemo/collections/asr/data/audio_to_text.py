@@ -653,7 +653,7 @@ class AudioAndEmbeddingToBPEDataset(AudioToBPEDataset):
         if self.synthetic_generation:
             target_speaker = sample.speaker
             if len(self.manifest_processor.collection.speaker_mapping[target_speaker]) == 1:
-                raise ValueError("target speaker only has one utterance")
+                logging.info(f"target speaker {target_speaker} only has one utterance")
 
             other_utterance_index = np.random.choice(
                 self.manifest_processor.collection.speaker_mapping[target_speaker]
