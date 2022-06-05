@@ -1223,7 +1223,7 @@ class PreprocessEuroparlRawWorker:
         text = '\n'.join(chapters)
         text = EUROPARL_RAW_SPEAKER_LINE.sub('', text)
         text = EUROPARL_RAW_LANG_DISCLAIMER.sub('', text)
-        text = EUROPARL_RAW_REPORTED_SPEECH.sub('', text).replace('<P>\n', '')
+        text = EUROPARL_RAW_REPORTED_SPEECH.sub('', text).replace('\n<P>\n', ' ')
         text = big.ALL_PARENTHESES.sub(' ', text)
         global tok_chars
         global untok_chars
