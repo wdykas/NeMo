@@ -1224,8 +1224,6 @@ class PreprocessEuroparlRawWorker:
         text = EUROPARL_RAW_SPEAKER_LINE.sub('', text)
         text = EUROPARL_RAW_LANG_DISCLAIMER.sub('', text)
         text = EUROPARL_RAW_REPORTED_SPEECH.sub('', text).replace('<P>\n', '')
-        if text[0] == '\n':
-            print("After europarl specific removal text starts with new line character")
         text = big.ALL_PARENTHESES.sub(' ', text)
         global tok_chars
         global untok_chars
@@ -1243,11 +1241,9 @@ class PreprocessEuroparlRawWorker:
             return
         text += ('' if text[-1] == '\n' else '\n')
         text = big.normalize_punctuation(text, 'en')
-        if text[0] == '\n':
-            print('final text starts with new line character')
         prepared_docs = {
             doc_id: {
-                "text": text,
+                "text": text.lstrip(),
                 "start_line": 0,
                 "end_line": n_orig_lines,
                 "source": file,
