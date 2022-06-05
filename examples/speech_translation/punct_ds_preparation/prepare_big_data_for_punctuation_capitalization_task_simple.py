@@ -79,6 +79,11 @@ MIN_NUM_WORDS_FOR_FRACTION_CRITERIA = 15
 
 GOOGLE_NORMALIZATION_DATASET_MIN_NUM_WORDS_IN_SENTENCE = 6
 
+EUROPARL_RAW_REPORTED_SPEECH = re.compile("^[^.\n]+ - (?:\\([^)]+\\) )?", flags=re.MULTILINE)
+EUROPARL_RAW_LANG_DISCLAIMER = re.compile("^\\([^)]+\\) ?", flags=re.MULTILINE)
+EUROPARL_RAW_SPEAKER_LINE = re.compile("^<SPEAKER [^>\n]+> *$", flags=re.MULTILINE)
+EUROPARL_RAW_CHAPTER = re.compile("^<CHAPTER[^>\n]+> *\n[^<]*", flags=re.MULTILINE)
+
 
 def count_in_blocks(files, size=BUFFER_SIZE, specific_to_count=None, num_characters=None):
     total_num_characters = 0
@@ -1206,22 +1211,12 @@ class PreprocessEuroparlRawWorker:
         self.tokenizer = tokenizer
 
     def __call__(self, file: Path, file_id: int, doc_id: int, idx: int) -> None:
-        n_orig_lines = 0
-        lines = []
         with file.open() as f:
-            current_line = ""
-            for line in f:
-                n_orig_lines += 1
-                parts = line.split()
-                if parts[0] == '<eos>':
-                    if count_words(current_line) >= GOOGLE_NORMALIZATION_DATASET_MIN_NUM_WORDS_IN_SENTENCE:
-                        lines.append(current_line)
-                    current_line = ""
-                else:
-                    if small.WORD_CHARACTER.match(parts[1]) is not None and current_line:
-                        current_line += ' '
-                    current_line += parts[1]
-        text = '\n'.join(lines) + '\n'
+            text = f.read()
+        n_orig_lines = text.count('\n') + (text[-1] != '\n')
+        text = EUROPARL_RAW_CHAPTER.sub('', text)
+        text = EUROPARL_RAW_LANG_DISCLAIMER.sub('', text)
+        text = EUROPARL_RAW_REPORTED_SPEECH.sub('', text).replace('<P>\n', '')
         text = big.ALL_PARENTHESES.sub(' ', text)
         global tok_chars
         global untok_chars
@@ -1237,7 +1232,7 @@ class PreprocessEuroparlRawWorker:
         text = big.SPACE_DUP.sub(' ', text)
         if not text.strip():
             return
-        text = text + ('' if text[-1] == '\n' else '\n')
+        text += ('' if text[-1] == '\n' else '\n')
         text = big.normalize_punctuation(text, 'en')
         prepared_docs = {
             doc_id: {
