@@ -19,6 +19,9 @@ import re
 import time
 from typing import Optional
 
+import phonemizer
+from phonemizer import phonemize
+
 import nltk
 import torch
 
@@ -26,6 +29,11 @@ from nemo.collections.tts.torch.en_utils import english_word_tokenize
 from nemo.utils import logging
 from nemo.utils.get_rank import is_global_rank_zero
 
+
+global_phonemizer = phonemizer.backend.EspeakBackend(language='en-us', preserve_punctuation=True,  with_stress=True)
+
+_alt_re = re.compile(r'\([0-9]+\)')
+_whitespace_re = re.compile(r'\s+')
 
 class BaseG2p(abc.ABC):
     def __init__(
@@ -235,3 +243,54 @@ class EnglishG2p(BaseG2p):
             prons.extend(pron)
 
         return prons
+
+class IPAG2p(BaseG2p):
+    def __init__(
+        self,
+        strip=True,
+        njobs=1
+    ):
+        """IPA G2P module. This module converts words from grapheme to phoneme representation using phoneme_dict in CMU dict format.
+        Optionally, it can ignore words which are heteronyms, ambiguous or marked as unchangeable by word_tokenize_func (see code for details).
+        Ignored words are left unchanged or passed through apply_to_oov_word.
+        Args:
+            phoneme_dict (str, Path, Dict): Path to file in CMU dict format or dictionary in CMU dict.
+            word_tokenize_func: Function for tokenizing text to words.
+                It has to return List[Tuple[Union[str, List[str]], bool]] where every tuple denotes word representation and flag whether to leave unchanged or not.
+                It is expected that unchangeable word representation will be represented as List[str], other cases are represented as str.
+                It is useful to mark word as unchangeable which is already in phoneme representation.
+            apply_to_oov_word: Function that will be applied to out of phoneme_dict word.
+            ignore_ambiguous_words: Whether to not handle word via phoneme_dict with ambiguous phoneme sequences. Defaults to True.
+            heteronyms (str, Path, List): Path to file with heteronyms (every line is new word) or list of words.
+            encoding: Encoding type.
+        """
+        self.strip = strip
+        self.njobs = njobs
+
+
+    @staticmethod
+    def _parse_file_by_lines(p, encoding):
+        with open(p, encoding=encoding) as f:
+            return [l.rstrip() for l in f.readlines()]
+
+
+    def parse_one_word(self, word: str):
+        """
+        Returns parsed `word` and `status` as bool.
+        `status` will be `False` if word wasn't handled, `True` otherwise.
+        """
+
+        # punctuation
+        if re.search("[a-zA-Z]", word) is None:
+            return list(word), True
+
+        word = global_phonemizer.phonemize([word], strip=self.strip, njobs=self.njobs)
+        word = re.sub(_whitespace_re, ' ', word[0])
+
+        return word, True
+
+    def __call__(self, text):
+        g2p_text = global_phonemizer.phonemize([text], strip=self.strip, njobs=self.njobs)
+        g2p_text = re.sub(_whitespace_re, ' ', g2p_text[0])
+
+        return g2p_text

@@ -370,3 +370,105 @@ class EnglishPhonemesTokenizer(BaseTokenizer):
         finally:
             if hasattr(self.g2p, "phoneme_probability"):
                 self.g2p.phoneme_probability = self.phoneme_probability
+
+
+class IPAPhonemesTokenizer(BaseTokenizer):
+    # fmt: off
+
+    # _punctuation = ';:,.!?¡¿—…"«»“”#()-~[]|/'
+    # _letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
+    # _letters_ipa = "ɑɐɒæɓʙβɔɕçɗɖðʤəɘɚɛɜɝɞɟʄɡɠɢʛɦɧħɥʜɨɪʝɭɬɫɮʟɱɯɰŋɳɲɴøɵɸθœɶʘɹɺɾɻʀʁɽʂʃʈʧʉʊʋⱱʌɣɤʍχʎʏʑʐʒʔʡʕʢǀǁǂǃˈˌːˑʼʴʰʱʲʷˠˤ˞↓↑→↗↘'̩'ᵻàãäåèéíîôõúûüăēĕĝğĩĭŏŝšũŭžǐǝǧʻˀ˥˦˧˨˩̝̞̠̥̪̃̆̊̍̚εابرسشصفلمهوᵐᵑᵝṣẽ​‍‎’⁠ⁿっゎッヮヶ�"
+    PAD = '_'
+    # fmt: on
+
+    _punctuation = ';:,.!?¡¿—…"«»“” '
+    _letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
+    _letters_ipa = "ɑɐɒæɓʙβɔɕçɗɖðʤəɘɚɛɜɝɞɟʄɡɠɢʛɦɧħɥʜɨɪʝɭɬɫɮʟɱɯɰŋɳɲɴøɵɸθœɶʘɹɺɾɻʀʁɽʂʃʈʧʉʊʋⱱʌɣɤʍχʎʏʑʐʒʔʡʕʢǀǁǂǃˈˌːˑʼʴʰʱʲʷˠˤ˞↓↑→↗↘'̩'ᵻ"
+
+    PUNCT_LIST = [p for p in _punctuation]
+
+    def __init__(
+        self,
+        g2p,
+        punct=True,
+        non_default_punct_list=None,
+        stresses=False,
+        chars=False,
+        *,
+        space=' ',
+        silence=None,
+        apostrophe=True,
+        oov=BaseTokenizer.OOV,
+        sep='|',  # To be able to distinguish between 2/3 letters codes.
+        add_blank_at=None,
+        pad_with_space=False,
+        text_preprocessing_func=lambda text: english_text_preprocessing(text, lower=False),
+    ):
+        """English phoneme-based tokenizer.
+        Args:
+            g2p: Grapheme to phoneme module.
+            punct: Whether to reserve grapheme for basic punctuation or not.
+            non_default_punct_list: List of punctuation marks which will be used instead default.
+            stresses: Whether to use phonemes codes with stresses (0-2) or not.
+            chars: Whether to additionally use chars together with phonemes. It is useful if g2p module can return chars too.
+            space: Space token as string.
+            silence: Silence token as string (will be disabled if it is None).
+            apostrophe: Whether to use apostrophe or not.
+            oov: OOV token as string.
+            sep: Separation token as string.
+            add_blank_at: Add blank to labels in the specified order ("last") or after tokens (any non None),
+             if None then no blank in labels.
+            pad_with_space: Whether to pad text with spaces at the beginning and at the end or not.
+            text_preprocessing_func: Text preprocessing function for correct execution of the tokenizer.
+             Basically, it replaces all non-unicode characters with unicode ones.
+             Note that lower() function shouldn't applied here, because text can contains phonemes (it will be handled by g2p).
+        """
+        self.phoneme_probability = None
+        if hasattr(g2p, "phoneme_probability"):
+            self.phoneme_probability = g2p.phoneme_probability
+        tokens = []
+        self.space, tokens = len(tokens), tokens + [space]  # Space
+
+        if silence is not None:
+            self.silence, tokens = len(tokens), tokens + [silence]  # Silence
+
+        tokens.extend([l for l in self._letters_ipa])
+        tokens.extend([l for l in self._letters])
+
+        if punct:
+            tokens.extend(self.PUNCT_LIST)
+
+        super().__init__(tokens, oov=oov, pad=self.PAD, sep=sep, add_blank_at=add_blank_at)
+
+        self.chars = chars
+        self.punct = punct
+        self.stresses = stresses
+        self.pad_with_space = pad_with_space
+
+        self.text_preprocessing_func = text_preprocessing_func
+        self.g2p = g2p
+
+    def encode(self, text):
+        """See base class."""
+
+        text = self.text_preprocessing_func(text)
+
+        g2p_text = self.g2p(text)
+
+        # Remove trailing spaces
+        # while ps[-1] == space:
+        #     ps.pop()
+
+        if self.pad_with_space:
+            g2p_text = self.tokens[self.space] + g2p_text + self.tokens[self.space]
+
+        return [self._token2id[p] for p in g2p_text]
+    @contextmanager
+    def set_phone_prob(self, prob):
+        if hasattr(self.g2p, "phoneme_probability"):
+            self.g2p.phoneme_probability = prob
+        try:
+            yield
+        finally:
+            if hasattr(self.g2p, "phoneme_probability"):
+                self.g2p.phoneme_probability = self.phoneme_probability
