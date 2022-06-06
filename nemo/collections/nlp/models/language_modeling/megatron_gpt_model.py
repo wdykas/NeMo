@@ -287,7 +287,7 @@ class MegatronGPTModel(NLPModel, TextGeneration):
             self._optimizer.allreduce_main_grads()  # @sangkug we think this is fine
             torch.cuda.synchronize(); toc = time.time()
 
-            if batch_idx == 8:
+            if batch_idx == 48:
                 if (parallel_state.get_pipeline_model_parallel_world_size() == 1) or \
                    (parallel_state.get_pipeline_model_parallel_world_size() > 1 and \
                     parallel_state.get_pipeline_model_parallel_rank() == 0):
@@ -299,14 +299,9 @@ class MegatronGPTModel(NLPModel, TextGeneration):
                             (toc - tic) * 1000
                         ))
 
-            if batch_idx == 9 and \
-               (parallel_state.get_pipeline_model_parallel_world_size() > 1 and
-                parallel_state.get_pipeline_model_parallel_rank() == 0):
-                torch.cuda.synchronize(); tic = time.time()
-
             self.allreduce_first_last_embeddings()
 
-            if batch_idx == 8 and \
+            if batch_idx == 48 and \
                (parallel_state.get_pipeline_model_parallel_world_size() > 1 and
                 parallel_state.get_pipeline_model_parallel_rank() == 0):
                 torch.cuda.synchronize(); toc = time.time()
