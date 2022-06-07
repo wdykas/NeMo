@@ -424,8 +424,6 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):  # ! ASR dependency here
 
     # ===== Dataset Setup Functions ===== #
     def _setup_dataloader_from_config(self, cfg, name):
-        if "dataset" not in cfg or not isinstance(cfg.dataset, DictConfig):
-            raise ValueError(f"No dataset for {name}")
         if "dataloader_params" not in cfg or not isinstance(cfg.dataloader_params, DictConfig):
             raise ValueError(f"No dataloader_params for {name}")
 
@@ -454,13 +452,15 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):  # ! ASR dependency here
         self._train_dl = self._setup_dataloader_from_config(cfg, name="train")
 
     def setup_multiple_validation_data(self, val_data_config: Union[DictConfig, Dict] = None):
-        if val_data_config is None:
-            val_data_config = self._cfg.validation_ds
+        if not val_data_config or val_data_config.manifest_filepath is None:
+            self._validation_dl = None
+            return
         return super().setup_multiple_validation_data(val_data_config)
 
     def setup_multiple_test_data(self, test_data_config: Union[DictConfig, Dict] = None):
-        if test_data_config is None:
-            test_data_config = self._cfg.test_ds
+        if not test_data_config or test_data_config.manifest_filepath is None:
+            self._test_dl = None
+            return
         return super().setup_multiple_test_data(test_data_config)
 
     def setup_validation_data(self, cfg: Optional[DictConfig]):
