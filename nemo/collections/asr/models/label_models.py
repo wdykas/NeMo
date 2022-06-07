@@ -336,8 +336,8 @@ class EncDecSpeakerLabelModel(ModelPT, ExportableEncDecModel):
         self._accuracy.reset()
         
 
-        logging.info("val_loss: {:.3f}".format(val_loss_mean))
-        self.log('val_loss', val_loss_mean)
+        # logging.info("val_loss: {:.3f}".format(val_loss_mean))
+        # self.log('val_loss', val_loss_mean)
         for top_k, score in zip(self._accuracy.top_k, topk_scores):
             self.log('val_epoch_accuracy_top@{}'.format(top_k), score)
 
