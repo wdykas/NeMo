@@ -99,6 +99,8 @@ class EncDecSpeakerLabelModel(ModelPT, ExportableEncDecModel):
         self.preprocessor = EncDecSpeakerLabelModel.from_config_dict(cfg.preprocessor)
         self.encoder = EncDecSpeakerLabelModel.from_config_dict(cfg.encoder)
         self.decoder = EncDecSpeakerLabelModel.from_config_dict(cfg.decoder)
+        # self.labels_occurrence = None  # TODO
+
         if 'angular' in cfg.decoder and cfg.decoder['angular']:
             logging.info("loss is Angular Softmax")
             scale = cfg.loss.scale
@@ -106,14 +108,16 @@ class EncDecSpeakerLabelModel(ModelPT, ExportableEncDecModel):
             self.loss = AngularSoftmaxLoss(scale=scale, margin=margin)
         else:
             logging.info("loss is Softmax-CrossEntropy")
-            if 'weight' in cfg.loss and cfg.loss.weight:
-                if cfg.loss.weight == 'auto':
+            if 'label_weight' in cfg.loss and cfg.loss.label_weight:
+                if cfg.loss.label_weight == 'auto':
                     self.cal_labels_occurrence = True
                     # Goal is to give more weight to the classes with less samples so as to match the ones with the higher frequencies
-                    weight = [sum(self.labels_occurrence) / (len(self.labels_occurrence) * i) for i in self.labels_occurrence]
-
+                    if self.labels_occurrence:
+                        weight = [sum(self.labels_occurrence) / (len(self.labels_occurrence) * i) for i in self.labels_occurrence]
+                    else:
+                        weight = None
                 else:
-                    weight = cfg.loss.weight
+                    weight = cfg.loss.label_weight
 
                 self.loss = CELoss(weight=weight)
             else:

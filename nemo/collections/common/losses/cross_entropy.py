@@ -50,10 +50,12 @@ class CrossEntropyLoss(nn.CrossEntropyLoss, Serialization, Typing):
             weight (list): list of rescaling weight given to each class
             reduction (str): type of the reduction over the batch
         """
-        if weight is not None and not torch.is_tensor(weight):
-            weight = torch.FloatTensor(weight)
+        if weight is not None:
+            if not torch.is_tensor(weight):
+                weight = torch.FloatTensor(weight)
             weight = weight / sum(weight) # manual rescale weight given to each class
             logging.info(f"Use cross_entropy loss with weight {weight} for labels")
+
         super().__init__(weight=weight, reduction=reduction, ignore_index=ignore_index)
         self._logits_dim = logits_ndim
 
