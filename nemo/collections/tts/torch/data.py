@@ -980,7 +980,10 @@ class CTCG2PBPEDataset(Dataset):
                     num_filtered += 1
                     continue
                 """
+                item["text_graphemes"] = item["text_graphemes"].lower()
+
                 if with_labels:
+                    item["text"] = item["text"].lower()
                     target_tokens = self.tokenizer_phonemes.text_to_ids(item["text"])
                     target_len = len(target_tokens)
 
