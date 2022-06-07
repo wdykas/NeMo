@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import re
-from typing import Any, Dict, Optional
+from typing import Any, List, Optional, Union, Dict
 
 import torch
 from omegaconf.dictconfig import DictConfig
@@ -33,6 +33,19 @@ from nemo.collections.nlp.modules.common.megatron.utils import (
     ApexGuardDefaults,
     average_losses_across_data_parallel_group,
     get_params_for_weight_decay_optimization,
+)
+from nemo.collections.nlp.modules.common.transformer.text_generation import (
+    LengthParam,
+    OutputType,
+    SamplingParam,
+    TextGeneration,
+)
+from nemo.collections.nlp.modules.common.text_generation_utils import (
+    generate,
+    get_computeprob_response,
+    get_default_length_params,
+    get_default_sampling_params,
+    megatron_enc_dec_generate,
 )
 from nemo.collections.nlp.parts.nlp_overrides import GradScaler
 from nemo.collections.nlp.parts.utils_funcs import get_last_rank
@@ -63,7 +76,7 @@ except (ImportError, ModuleNotFoundError):
 __all__ = ["MegatronLMEncoderDecoderModel"]
 
 
-class MegatronLMEncoderDecoderModel(MegatronBaseModel):
+class MegatronLMEncoderDecoderModel(MegatronBaseModel, TextGeneration):
     """
     Megatron encoder-decoder base class
     """
@@ -199,6 +212,17 @@ class MegatronLMEncoderDecoderModel(MegatronBaseModel):
             The list of microbatches is then piped through the pipeline using Apex fwd/bwd functions.
         """
         # we zero grads here because we also call backward in the apex fwd/bwd functions
+        pad_fractions = []
+        for i, batch in enumerate(self._train_dl):
+            if i % 100 == 0:
+                print(i)
+            if i == 10000:
+                break
+            num_pad = batch['text_enc'].eq(self.tokenizer.pad_id).sum()
+            pad_fraction = num_pad / (batch['text_enc'].size(0) * batch['text_enc'].size(1))
+            pad_fractions.append(pad_fraction)
+
+        import ipdb; ipdb.set_trace()
         self._optimizer.zero_grad()
 
         # we prepare the micro batches for the apex fwd/bwd function
@@ -782,7 +806,12 @@ class MegatronLMEncoderDecoderModel(MegatronBaseModel):
         logging.info(f"response: {response}")
         return response
 
-    def decode(self, tokens_enc, enc_mask, num_tokens_to_generate, encoder_input=None, tokenizer=None):
+    def decode(
+        self,
+        inputs: Union[List[str], torch.Tensor, List[dict]],
+        length_params: LengthParam,
+        sampling_params: SamplingParam = None,
+    ) -> OutputType:
         # Check whether the DDP is initialized. This is needed when running inference outside of training loop.
         if parallel_state.is_unitialized():
 
@@ -802,11 +831,22 @@ class MegatronLMEncoderDecoderModel(MegatronBaseModel):
                 data_parallel_size=1,  # We check above to make sure that dataparallel size is always 1 at inference.
             )
 
+        # set the default sampling params if it is None.
+        # default do greedy sampling
+        if sampling_params is None:
+            sampling_params = get_default_sampling_params()
+
+        # set the default length params if it is None.
+        # default do greedy sampling
+        if length_params is None:
+            length_params = get_default_length_params()
+
+        return megatron_enc_dec_generate(self.cuda(), inputs, self.tokenizer, length_params, sampling_params)
+
         # If classes that inherit from this class are using a different tokenizer,
         tokenizer = self.tokenizer if tokenizer is None else tokenizer
         app_state = AppState()
         global_batch_per_gpu = tokens_enc.size(0)
-
         num_micro_batches_before_decode = get_num_microbatches()
         # Reconfigure microbatch calculator here to set num microbatches to 1 while decoding since its not clear how to decode with "grad acc".
         # TODO: reconfigure back to how things were before decode?
