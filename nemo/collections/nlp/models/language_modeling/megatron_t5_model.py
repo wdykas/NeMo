@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import math
+
 from omegaconf.dictconfig import DictConfig
 from pytorch_lightning.trainer.trainer import Trainer
 
@@ -32,18 +34,63 @@ class MegatronT5Model(MegatronLMEncoderDecoderModel):
     def __init__(self, cfg: DictConfig, trainer: Trainer):
         super().__init__(cfg, trainer=trainer)
 
+        # validate cfg
+        self._validate_cfg()
+
+    @property
+    def model_name(self):
+        """Allows child classes to implement models with different data regime"""
+        return "T5"
+
+    def _validate_cfg(self):
+        """Class-specific cfg validation"""
+        # Make sure the user specifies dataset type as either 't5' or 't5_prefix_lm' only.
+        if self._cfg.data.get('dataset_type', None) is not None:
+            if self._cfg.data.get('dataset_type') not in ['t5', 't5_prefix_lm', 'ul2']:
+                raise ValueError(
+                    f"dataset_type must be either 't5', 't5_prefix_lm' or 'ul2'. found {self._cfg.data.get('dataset_type')}"
+                )
+
+        if hasattr(self._cfg.data, 'seq_length_dec') and self._cfg.data.get('dataset_type') == 't5':
+            if self._cfg.data.seq_length_dec < self._cfg.data.seq_length * self._cfg.data.masked_lm_prob:
+                raise ValueError(
+                    f"Cannot have decoder max sequence length ({self._cfg.data.seq_length_dec}) less than encoder sequence length ({self._cfg.data.seq_length}) * masked_lm_prob ({self._cfg.data.masked_lm_prob})"
+                )
+
+        if self._cfg.data.get("dataset_type", "t5") == "ul2":
+            if self._cfg.data.seq_length_dec != self._cfg.data.seq_length:
+                raise ValueError(
+                    f"Encoder and decoder sequence lengths must be the same while using the UL2 dataset type. Found encoder length {self._cfg.data.seq_length} and decoder length {self._cfg.data.seq_length_dec}"
+                )
+            if (
+                self._cfg.tokenizer.num_sentinel_tokens
+                < self._cfg.data.seq_length * self._cfg.data.extreme_masked_lm_prob
+            ):
+                raise ValueError(
+                    f"Not enough sentinel tokens specified. Need at least {math.ceil(self._cfg.data.seq_length * self._cfg.data.extreme_masked_lm_prob)} sentinel tokens. Found {self._cfg.tokenizer.num_sentinel_tokens}"
+                )
+
+    @property
+    def _build_train_valid_test_datasets_kwargs(self):
+        """allows child classes to add kwargs to dataset building"""
+        return dict(max_seq_length_dec=self._cfg.data.seq_length_dec,)
+
     def _build_vocab(self):
-        # T5-related construction
-        self.num_sentinel_tokens = self._cfg.tokenizer.num_sentinel_tokens
         self._add_special_tokens_to_tokenizer()
 
         super()._build_vocab()
 
     def _add_special_tokens_to_tokenizer(self):
+        # T5-related construction
+        self.num_sentinel_tokens = self._cfg.tokenizer.num_sentinel_tokens
+
         if self._cfg.tokenizer.library == 'huggingface' or self._cfg.tokenizer.library == 'megatron':
             additional_tokens = {
                 'additional_special_tokens': [f'<extra_id_{i}>' for i in range(self.num_sentinel_tokens)]
             }
+            if self._cfg.data.get("dataset_type", "t5") == "ul2":
+                for mask_type in ['r', 's', 'x']:
+                    additional_tokens['additional_special_tokens'].extend([f'<extra_id_{mask_type}>'])
             self.tokenizer.add_special_tokens(additional_tokens)
 
         if self._cfg.tokenizer.library == 'sentencepiece':
@@ -90,13 +137,18 @@ class MegatronT5Model(MegatronLMEncoderDecoderModel):
                 else:
                     self.tokenizer.add_special_tokens([f'<extra_id_{i}>'])
 
+            if self._cfg.data.get("dataset_type", "t5") == "ul2":
+                for mask_type in ['r', 's', 'x']:
+                    if f'▁<extra_id_{mask_type}>' in self.tokenizer.vocab:
+                        self.tokenizer.special_token_to_id[f'<extra_id_{i}>'] = self.tokenizer.text_to_ids(
+                            f'<extra_id_{i}>'
+                        )[0]
+                    else:
+                        self.tokenizer.add_special_tokens([f'<extra_id_{mask_type}>'])
+
     def build_train_valid_test_datasets(self):
-        logging.info('Building T5 datasets.')
-        if self._cfg.data.seq_length_dec < self._cfg.data.seq_length * self._cfg.data.masked_lm_prob:
-            raise ValueError(
-                f"Cannot have decoder max sequence length ({self._cfg.data.seq_length_dec}) less than encoder sequence length ({self._cfg.data.seq_length}) * masked_lm_prob ({self._cfg.data.masked_lm_prob})"
-            )
-        global_batch_size = self.trainer.world_size * self._cfg.micro_batch_size / self._cfg.tensor_model_parallel_size
+        logging.info(f'Building {self.model_name} datasets.')
+        global_batch_size = self._cfg.global_batch_size
         eval_iters = (self.trainer.max_steps // self.trainer.val_check_interval + 1) * self.trainer.limit_val_batches
         test_iters = self.trainer.limit_test_batches
         train_valid_test_num_samples = [
@@ -113,17 +165,24 @@ class MegatronT5Model(MegatronLMEncoderDecoderModel):
             splits_string=self._cfg.data.splits_string,
             train_valid_test_num_samples=train_valid_test_num_samples,
             max_seq_length=self._cfg.data.seq_length,
-            max_seq_length_dec=self._cfg.data.seq_length_dec,
             masked_lm_prob=self._cfg.data.masked_lm_prob,
             short_seq_prob=self._cfg.data.short_seq_prob,
             seed=self._cfg.seed,
             skip_warmup=self._cfg.data.skip_warmup,
-            dataset_type='t5',
+            dataset_type=self._cfg.data.get('dataset_type', self.model_name.lower()),
+            max_ngram_size=self._cfg.data.get('max_ngram_size', 10),
+            mean_ngram_size=self._cfg.data.get('mean_ngram_size', None),
+            geometric_dist=self._cfg.data.get('geometric_dist', True),
+            permutation=self._cfg.data.get('permutation', False),
+            whole_word_masking=self._cfg.data.get('whole_word_masking', True),
+            favor_long_ngrams=self._cfg.data.get('favor_long_ngrams', False),
+            # additional arguments from child classes
+            **self._build_train_valid_test_datasets_kwargs,
         )
         logging.info(f'Length of train dataset: {len(self._train_ds)}')
         logging.info(f'Length of val dataset: {len(self._validation_ds)}')
         logging.info(f'Length of test dataset: {len(self._test_ds)}')
-        logging.info(f'Finished building T5 datasets.')
+        logging.info(f'Finished building {self.model_name} datasets.')
         return self._train_ds, self._validation_ds, self._test_ds
 
     def list_available_models(self):

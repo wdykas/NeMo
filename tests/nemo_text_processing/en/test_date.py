@@ -18,7 +18,7 @@ from nemo_text_processing.text_normalization.normalize import Normalizer
 from nemo_text_processing.text_normalization.normalize_with_audio import NormalizerWithAudio
 from parameterized import parameterized
 
-from ..utils import CACHE_DIR, PYNINI_AVAILABLE, parse_test_case_file
+from ..utils import CACHE_DIR, PYNINI_AVAILABLE, RUN_AUDIO_BASED_TESTS, parse_test_case_file
 
 
 class TestDate:
@@ -37,13 +37,13 @@ class TestDate:
         assert pred == expected
 
     normalizer_en = (
-        Normalizer(input_case='cased', lang='en', cache_dir=CACHE_DIR, overwrite_cache=False)
+        Normalizer(input_case='cased', lang='en', cache_dir=CACHE_DIR, overwrite_cache=False, post_process=True)
         if PYNINI_AVAILABLE
         else None
     )
     normalizer_with_audio_en = (
         NormalizerWithAudio(input_case='cased', lang='en', cache_dir=CACHE_DIR, overwrite_cache=False)
-        if PYNINI_AVAILABLE and CACHE_DIR
+        if PYNINI_AVAILABLE and RUN_AUDIO_BASED_TESTS
         else None
     )
 
@@ -61,7 +61,7 @@ class TestDate:
             pred_non_deterministic = self.normalizer_with_audio_en.normalize(
                 test_input, punct_post_process=False, n_tagged=100
             )
-            assert expected in pred_non_deterministic
+            assert expected in pred_non_deterministic, f"INPUT: {test_input}"
 
     normalizer_uppercased = (
         Normalizer(input_case='cased', lang='en', cache_dir=CACHE_DIR, overwrite_cache=False)

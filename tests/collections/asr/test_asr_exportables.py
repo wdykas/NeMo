@@ -17,7 +17,7 @@ import tempfile
 import onnx
 import pytest
 import torch.cuda
-from omegaconf import DictConfig, ListConfig
+from omegaconf import DictConfig, ListConfig, OmegaConf
 
 from nemo.collections.asr.models import (
     EncDecClassificationModel,
@@ -25,8 +25,8 @@ from nemo.collections.asr.models import (
     EncDecRNNTModel,
     EncDecSpeakerLabelModel,
 )
-from nemo.collections.asr.modules import ConvASRDecoder, ConvASREncoder
 from nemo.collections.asr.parts.utils import asr_module_utils
+from nemo.collections.common.parts.adapter_modules import LinearAdapterConfig
 from nemo.core.utils import numba_utils
 from nemo.core.utils.numba_utils import __NUMBA_MINIMUM_VERSION__
 
@@ -47,7 +47,9 @@ class TestExportable:
         model = EncDecCTCModel(cfg=model_config).cuda()
         with tempfile.TemporaryDirectory() as tmpdir:
             filename = os.path.join(tmpdir, 'qn.onnx')
-            model.export(output=filename)
+            model.export(
+                output=filename, check_trace=True,
+            )
             onnx_model = onnx.load(filename)
             onnx.checker.check_model(onnx_model, full_check=True)  # throws when failed
             assert onnx_model.graph.input[0].name == 'audio_signal'
@@ -59,7 +61,9 @@ class TestExportable:
         model = speech_classification_model.cuda()
         with tempfile.TemporaryDirectory() as tmpdir:
             filename = os.path.join(tmpdir, 'edc.onnx')
-            model.export(output=filename)
+            model.export(
+                output=filename, check_trace=True,
+            )
             onnx_model = onnx.load(filename)
             onnx.checker.check_model(onnx_model, full_check=True)  # throws when failed
             assert onnx_model.graph.input[0].name == 'audio_signal'
@@ -99,7 +103,9 @@ class TestExportable:
             device = next(model.parameters()).device
             input_example = torch.randn(4, model.encoder._feat_in, 777, device=device)
             input_example_length = torch.full(size=(input_example.shape[0],), fill_value=777, device=device)
-            model.export(output=filename, input_example=tuple([input_example, input_example_length]))
+            model.export(
+                output=filename, input_example=tuple([input_example, input_example_length]), check_trace=True,
+            )
 
     @pytest.mark.run_only_on('GPU')
     @pytest.mark.unit
@@ -109,7 +115,9 @@ class TestExportable:
 
         with tempfile.TemporaryDirectory() as tmpdir, torch.cuda.amp.autocast():
             filename = os.path.join(tmpdir, 'citri_se.onnx')
-            model.export(output=filename)
+            model.export(
+                output=filename, check_trace=True,
+            )
             onnx_model = onnx.load(filename)
             onnx.checker.check_model(onnx_model, full_check=True)  # throws when failed
             assert onnx_model.graph.input[0].name == 'audio_signal'
@@ -124,9 +132,10 @@ class TestExportable:
         with tempfile.TemporaryDirectory() as tmpdir:
             fn = 'citri_rnnt.onnx'
             filename = os.path.join(tmpdir, fn)
-            model.export(output=filename, verbose=False)
+            files, descr = model.export(output=filename, verbose=False)
 
-            encoder_filename = os.path.join(tmpdir, 'Encoder-' + fn)
+            encoder_filename = os.path.join(tmpdir, 'encoder-' + fn)
+            assert files[0] == encoder_filename
             assert os.path.exists(encoder_filename)
             onnx_model = onnx.load(encoder_filename)
             onnx.checker.check_model(onnx_model, full_check=True)  # throws when failed
@@ -137,7 +146,8 @@ class TestExportable:
             assert onnx_model.graph.output[0].name == 'outputs'
             assert onnx_model.graph.output[1].name == 'encoded_lengths'
 
-            decoder_joint_filename = os.path.join(tmpdir, 'Decoder-Joint-' + fn)
+            decoder_joint_filename = os.path.join(tmpdir, 'decoder_joint-' + fn)
+            assert files[1] == decoder_joint_filename
             assert os.path.exists(decoder_joint_filename)
             onnx_model = onnx.load(decoder_joint_filename)
             onnx.checker.check_model(onnx_model, full_check=True)  # throws when failed
@@ -164,6 +174,41 @@ class TestExportable:
             if num_states > 0:
                 for idx, op in enumerate(onnx_model.graph.output[2:]):
                     assert op.name == "output-" + state_name + '-' + str(idx + 1)
+
+    @pytest.mark.run_only_on('GPU')
+    @pytest.mark.unit
+    def test_EncDecCTCModel_adapted_export_to_onnx(self):
+        model_config = DictConfig(
+            {
+                'preprocessor': DictConfig(self.preprocessor),
+                'encoder': DictConfig(self.encoder_dict),
+                'decoder': DictConfig(self.decoder_dict),
+            }
+        )
+
+        # support adapter in encoder
+        model_config.encoder.cls = model_config.encoder.cls + 'Adapter'  # ConvASREncoderAdapter
+
+        # load model
+        model = EncDecCTCModel(cfg=model_config)
+
+        # add adapter
+        adapter_cfg = OmegaConf.structured(
+            LinearAdapterConfig(in_features=model_config.encoder.params.jasper[0].filters, dim=32)
+        )
+        model.add_adapter('temp', cfg=adapter_cfg)
+
+        model = model.cuda()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            filename = os.path.join(tmpdir, 'qn.onnx')
+            model.export(
+                output=filename, check_trace=True,
+            )
+            onnx_model = onnx.load(filename)
+            onnx.checker.check_model(onnx_model, full_check=True)  # throws when failed
+            assert onnx_model.graph.input[0].name == 'audio_signal'
+            assert onnx_model.graph.output[0].name == 'logprobs'
 
     def setup_method(self):
         self.preprocessor = {
@@ -384,7 +429,7 @@ def citrinet_model():
     modelConfig = DictConfig(
         {'preprocessor': DictConfig(preprocessor), 'encoder': DictConfig(encoder), 'decoder': DictConfig(decoder)}
     )
-    citri_model = EncDecSpeakerLabelModel(cfg=modelConfig)
+    citri_model = EncDecCTCModel(cfg=modelConfig)
     return citri_model
 
 
@@ -516,5 +561,5 @@ def conformer_model():
     modelConfig = DictConfig(
         {'preprocessor': DictConfig(preprocessor), 'encoder': DictConfig(encoder), 'decoder': DictConfig(decoder)}
     )
-    citri_model = EncDecSpeakerLabelModel(cfg=modelConfig)
-    return citri_model
+    conformer_model = EncDecCTCModel(cfg=modelConfig)
+    return conformer_model

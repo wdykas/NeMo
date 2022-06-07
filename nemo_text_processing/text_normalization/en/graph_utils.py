@@ -47,6 +47,7 @@ try:
     NEMO_SIGMA = pynini.closure(NEMO_CHAR)
 
     delete_space = pynutil.delete(pynini.closure(NEMO_WHITE_SPACE))
+    delete_zero_or_one_space = pynutil.delete(pynini.closure(NEMO_WHITE_SPACE, 0, 1))
     insert_space = pynutil.insert(" ")
     delete_extra_space = pynini.cross(pynini.closure(NEMO_WHITE_SPACE, 1), " ")
     delete_preserve_order = pynini.closure(
@@ -71,6 +72,8 @@ try:
     PLURAL_TO_SINGULAR = pynini.invert(graph_plural)
     TO_LOWER = pynini.union(*[pynini.cross(x, y) for x, y in zip(string.ascii_uppercase, string.ascii_lowercase)])
     TO_UPPER = pynini.invert(TO_LOWER)
+    MIN_NEG_WEIGHT = -0.0001
+    MIN_POS_WEIGHT = 0.0001
 
     PYNINI_AVAILABLE = True
 except (ModuleNotFoundError, ImportError):
@@ -112,11 +115,13 @@ except (ModuleNotFoundError, ImportError):
     PLURAL_TO_SINGULAR = None
     TO_LOWER = None
     TO_UPPER = None
+    MIN_NEG_WEIGHT = None
+    MIN_POS_WEIGHT = None
 
     PYNINI_AVAILABLE = False
 
 
-def generator_main(file_name: str, graphs: Dict[str, pynini.FstLike]):
+def generator_main(file_name: str, graphs: Dict[str, 'pynini.FstLike']):
     """
     Exports graph as OpenFst finite state archive (FAR) file with given file name and rule name.
 
@@ -159,7 +164,7 @@ def convert_space(fst) -> 'pynini.FstLike':
     """
     Converts space to nonbreaking space.
     Used only in tagger grammars for transducing token values within quotes, e.g. name: "hello kitty"
-    This is making transducer significantly slower, so only use when there could be potential spaces within quotes, otherwise leave it. 
+    This is making transducer significantly slower, so only use when there could be potential spaces within quotes, otherwise leave it.
 
     Args:
         fst: input fst
@@ -208,9 +213,9 @@ class GraphFst:
         """
         Wraps class name around to given fst
 
-        Args: 
+        Args:
             fst: input fst
-        
+
         Returns:
             Fst: fst
         """
