@@ -84,6 +84,7 @@ class G2PClassificationDataset(Dataset):
         EXTRA_ID_1 = '<extra_id_1>'
 
         target_ipa = []
+        self.target_ipa_label_to_id = {}
         #  read wordids.tsv file
         wiki_homograph_dict = defaultdict(dict)
         with open(wordid_map, "r") as f_in:
@@ -94,9 +95,9 @@ class G2PClassificationDataset(Dataset):
                 grapheme = line[0].strip()
                 word_id = line[1].strip()
                 ipa_form = line[3].strip()
+                self.target_ipa_label_to_id[word_id] = len(target_ipa)
                 target_ipa.append(ipa_form)
                 wiki_homograph_dict[grapheme][word_id] = ipa_form
-
         num_removed_or_truncated = 0
 
         for file in glob(f"{dir_name}/*.tsv"):
@@ -129,9 +130,10 @@ class G2PClassificationDataset(Dataset):
                         # if target_len > len(item["text_graphemes"]) or target_len > max_target_len:
                         # # num_removed_or_truncated += 1
                         # #                 continue
-                        # import pdb; pdb.set_trace()
-                        target = target_ipa.index(wiki_homograph_dict[homograph][wordid])
-                        self.data.append({"input": input, "target": target})
+                        grapheme_ipa_forms = wiki_homograph_dict[homograph]
+                        target = target_ipa.index(grapheme_ipa_forms[wordid])
+                        target_and_negatives = [target_ipa.index(ipa_) for wordid_, ipa_ in grapheme_ipa_forms.items()]
+                        self.data.append({"input": input, "target": target, "target_and_negatives": target_and_negatives})
                         # for wordid_, ipa in wiki_homograph_dict[homograph].items():
                         #     if wordid_ != wordid:
                         #         input_sequence = f"sentence1: {input} ipa: {ipa}"
@@ -176,6 +178,9 @@ class G2PClassificationDataset(Dataset):
 
         # Encode targets
         targets = torch.tensor([entry["target"] for entry in batch])
+        target_and_negatives = torch.tensor([entry["target_and_negatives"] for entry in batch])
+        # import pdb;
+        # pdb.set_trace()
         output = (input_ids, attention_mask, targets)
 
         # graphemes_batch = [entry["graphemes"] for entry in batch]

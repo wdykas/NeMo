@@ -54,8 +54,18 @@ class G2PClassificationModel(ModelPT):
         else:
             self.encoder = self.restore_from(cfg.encoder.pretrained).encoder
 
-        # TODO: fix this to remove hardcoding
-        num_classes = 326
+        # read wordids.tsv to get the number of classes and label_to_id mapping
+        self.target_ipa_label_to_id = {}
+        with open(self.wordids, "r") as f_in:
+            for i, line in enumerate(f_in):
+                if i == 0:
+                    continue
+                line = line.replace('"', "").strip().split("\t")
+                word_id = line[1].strip()
+                self.target_ipa_label_to_id[word_id] = len(self.target_ipa_label_to_id)
+
+
+        num_classes = len(self.target_ipa_label_to_id)
         self.hidden_size = self.encoder.config.d_model
         self.classifier = SequenceClassifier(
             hidden_size=self.hidden_size,
@@ -73,7 +83,7 @@ class G2PClassificationModel(ModelPT):
 
         # setup to track metrics
         self.classification_report = ClassificationReport(
-            num_classes=num_classes, mode='macro', dist_sync_on_step=True
+            num_classes=num_classes, mode='macro', dist_sync_on_step=True, label_ids=self.target_ipa_label_to_id
         )
 
         # Language
@@ -96,6 +106,7 @@ class G2PClassificationModel(ModelPT):
         """
         input_ids, attention_mask, targets = batch
         logits = self.forward(input_ids=input_ids, attention_mask=attention_mask)
+        import pdb; pdb.set_trace()
         loss = self.loss(logits=logits, labels=targets)
         self.log('train_loss', loss)
         return loss
