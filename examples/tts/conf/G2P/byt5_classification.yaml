@@ -11,6 +11,7 @@ model:
   max_sequence_len: 512
 
   encoder:
+    pretrained: "/mnt/sdb_4/g2p/chpts/byt5/2982960/g2p/G2PCTC/2022-06-07_01-00-45/checkpoints/G2PCTC.nemo" # pretrained g2p model with encoder
     transformer: google/byt5-small
     dropout: null
 
@@ -84,14 +85,14 @@ exp_manager:
   exp_dir: null
   name: ${name}
   create_tensorboard_logger: True
-  create_checkpoint_callback: False
+  create_checkpoint_callback: True
   checkpoint_callback_params:
     save_top_k: 3
     monitor: "val_loss"
     mode: "min"
     save_best_model: true
-  create_wandb_logger: true
-  wandb_logger_kwargs:
-    project: ctc_g2p
-    name: "del"
+#  create_wandb_logger: true
+#  wandb_logger_kwargs:
+#    project: ctc_g2p
+#    name: "del"
 

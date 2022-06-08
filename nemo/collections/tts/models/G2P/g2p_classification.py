@@ -49,12 +49,17 @@ class G2PClassificationModel(ModelPT):
         self.max_sequence_len = cfg.get('max_sequence_len', self.tokenizer.model_max_length)
         self.wordids = None
         super().__init__(cfg=cfg, trainer=trainer)
+        if cfg.encoder.pretrained is None:
+            self.encoder = AutoModel.from_pretrained(cfg.encoder.transformer).encoder
+        else:
+            self.encoder = self.restore_from(cfg.encoder.pretrained).encoder
 
-        self.encoder = AutoModel.from_pretrained(cfg.encoder.transformer).encoder
+        # TODO: fix this to remove hardcoding
+        num_classes = 326
         self.hidden_size = self.encoder.config.d_model
         self.classifier = SequenceClassifier(
             hidden_size=self.hidden_size,
-            num_classes=2,
+            num_classes=num_classes,
             num_layers=cfg.classifier_head.num_output_layers,
             activation='relu',
             log_softmax=False,
@@ -67,7 +72,9 @@ class G2PClassificationModel(ModelPT):
         self.loss = CrossEntropyLoss()
 
         # setup to track metrics
-        self.classification_report = ClassificationReport(num_classes=2, mode='macro', dist_sync_on_step=True)
+        self.classification_report = ClassificationReport(
+            num_classes=num_classes, mode='macro', dist_sync_on_step=True
+        )
 
         # Language
         self.lang = cfg.get('lang', None)
@@ -107,6 +114,7 @@ class G2PClassificationModel(ModelPT):
         val_loss = self.loss(logits=logits, labels=targets)
         self.log(f"{split}_loss", val_loss)
         preds = torch.argmax(logits, axis=-1)
+
         tp, fn, fp, _ = self.classification_report(preds, targets)
         return {f'{split}_loss': val_loss, 'tp': tp, 'fn': fn, 'fp': fp}
 

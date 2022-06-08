@@ -282,7 +282,7 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):  # ! ASR dependency here
         # TODO: Add better PER calculation and logging.
         avg_per = sum([x["per"] for x in outputs]) / len(outputs)
         self.log(f"{split}_per", avg_per)
-
+        # import pdb; pdb.set_trace()
         if split == "test":
             dataloader_name = self._test_names[dataloader_idx].upper()
         else:

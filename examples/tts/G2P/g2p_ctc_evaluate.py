@@ -25,7 +25,7 @@ from nemo.utils import logging
 
 """
 python g2p_ctc_evaluate.py \
-model.test_ds.dataset.manifest_filepath=/mnt/sdb_4/g2p/v2/phoneme_dev_clean.json \
+model.test_ds.manifest_filepath=/mnt/sdb/test2/g2p/ipa_v2/phoneme_dev_clean_fields_updated_word_boundaries_ipa.json \
 pretrained_model=/mnt/sdb_4/g2p/chpts/conformer/2780434/g2p/G2PCTC/2022-04-04_22-55-15/checkpoints/G2PCTC.nemo
 
 """
@@ -67,7 +67,7 @@ def main(cfg: DictConfig) -> None:
             f'Provide path to the pre-trained .nemo checkpoint or choose from {CTCG2PModel.list_available_models()}'
         )
     model.set_trainer(trainer)
-    model.setup_test_data(cfg.model.test_ds)
+    model.setup_multiple_test_data(cfg.model.test_ds)
     trainer.test(model)
 
 

@@ -83,6 +83,7 @@ class G2PClassificationDataset(Dataset):
         EXTRA_ID_0 = '<extra_id_0>'
         EXTRA_ID_1 = '<extra_id_1>'
 
+        target_ipa = []
         #  read wordids.tsv file
         wiki_homograph_dict = defaultdict(dict)
         with open(wordid_map, "r") as f_in:
@@ -93,6 +94,7 @@ class G2PClassificationDataset(Dataset):
                 grapheme = line[0].strip()
                 word_id = line[1].strip()
                 ipa_form = line[3].strip()
+                target_ipa.append(ipa_form)
                 wiki_homograph_dict[grapheme][word_id] = ipa_form
 
         num_removed_or_truncated = 0
@@ -123,21 +125,20 @@ class G2PClassificationDataset(Dataset):
                         r_context = sentence[end:].split()[:context_len]
                         input = l_context + [EXTRA_ID_0, homograph, EXTRA_ID_1] + r_context
                         input = " ".join(input)
-                        input_sequence = f"sentence1: {input} ipa: {wiki_homograph_dict[homograph][wordid]}"
+                        # input_sequence = f"sentence1: {input} ipa: {wiki_homograph_dict[homograph][wordid]}"
                         # if target_len > len(item["text_graphemes"]) or target_len > max_target_len:
                         # # num_removed_or_truncated += 1
                         # #                 continue
-                        self.data.append(
-                            {"input": input_sequence, "target": 1,}
-                        )
-                        for wordid_, ipa in wiki_homograph_dict[homograph].items():
-                            if wordid_ != wordid:
-                                input_sequence = f"sentence1: {input} ipa: {ipa}"
-                                self.data.append(
-                                    {"input": input_sequence, "target": 0,}
-                                )
+                        # import pdb; pdb.set_trace()
+                        target = target_ipa.index(wiki_homograph_dict[homograph][wordid])
+                        self.data.append({"input": input, "target": target})
+                        # for wordid_, ipa in wiki_homograph_dict[homograph].items():
+                        #     if wordid_ != wordid:
+                        #         input_sequence = f"sentence1: {input} ipa: {ipa}"
+                        #         self.data.append(
+                        #             {"input": input_sequence, "target": 0,}
+                        #         )
                     else:
-                        print("skipped")
                         num_removed_or_truncated += 1
                         # self.data.append(
                         #                     {
