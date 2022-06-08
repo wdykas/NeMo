@@ -185,7 +185,7 @@ class ClassifyFst(GraphFst):
                 time=time_final, cardinal=cardinal_tagger, date=date_final, deterministic=deterministic
             ).fst
             classify_and_verbalize |= pynutil.add_weight(pynini.compose(range_graph, v_word_graph), sem_w)
-            classify_and_verbalize = pynutil.insert("< ") + classify_and_verbalize + pynutil.insert(" >")
+            # classify_and_verbalize = pynutil.insert("< ") + classify_and_verbalize + pynutil.insert(" >")
             classify_and_verbalize |= pynutil.add_weight(word_graph, word_w)
 
             punct_only = pynutil.add_weight(punct_graph, weight=punct_w)

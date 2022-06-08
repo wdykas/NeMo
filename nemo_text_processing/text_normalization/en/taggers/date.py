@@ -373,7 +373,7 @@ class DateFst(GraphFst):
                         else pynini.union(md_to_dm_curr, md_to_dm_graph).optimize()
                     ).optimize()
 
-            final_graph |= mdy_to_dmy_graph | md_to_dm_graph | ymd_to_mdy_graph | ymd_to_dmy_graph
+            final_graph |= (mdy_to_dmy_graph | md_to_dm_graph | ymd_to_mdy_graph | ymd_to_dmy_graph)
 
         final_graph = self.add_tokens(final_graph)
         self.fst = final_graph.optimize()
