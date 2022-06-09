@@ -71,7 +71,7 @@ model:
 
 trainer:
   devices: 1 # number of gpus
-  max_epochs: 10
+  max_epochs: 50
   num_nodes: 1
   accelerator: gpu
   strategy: ddp
@@ -91,8 +91,8 @@ exp_manager:
     monitor: "val_loss"
     mode: "min"
     save_best_model: true
-#  create_wandb_logger: true
-#  wandb_logger_kwargs:
-#    project: ctc_g2p
-#    name: "del"
+  create_wandb_logger: true
+  wandb_logger_kwargs:
+    project: g2p_classification
+    name: "with_mask"
 

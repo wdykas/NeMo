@@ -90,12 +90,15 @@ class G2PClassificationModel(ModelPT):
         self.lang = cfg.get('lang', None)
 
     # @typecheck()
-    def forward(self, input_ids, attention_mask):
+    def forward(self, input_ids, attention_mask, target_and_negatives_mask):
         hidden_states = self.encoder(input_ids=input_ids, attention_mask=attention_mask)[0]
 
         # [B, 1, hid-dim]
         sentence_embedding = torch.mean(hidden_states, dim=1).unsqueeze(1)
         logits = self.classifier(hidden_states=sentence_embedding)
+
+        # apply mask to mask out irrelevant options (elementwise)
+        logits = logits * target_and_negatives_mask
         return logits
 
     # Training
@@ -104,9 +107,8 @@ class G2PClassificationModel(ModelPT):
         Lightning calls this inside the training loop with the data from the training dataloader
         passed in as `batch`.
         """
-        input_ids, attention_mask, targets = batch
-        logits = self.forward(input_ids=input_ids, attention_mask=attention_mask)
-        import pdb; pdb.set_trace()
+        input_ids, attention_mask, target_and_negatives_mask, targets = batch
+        logits = self.forward(input_ids=input_ids, attention_mask=attention_mask, target_and_negatives_mask=target_and_negatives_mask)
         loss = self.loss(logits=logits, labels=targets)
         self.log('train_loss', loss)
         return loss
@@ -120,8 +122,8 @@ class G2PClassificationModel(ModelPT):
         Lightning calls this inside the validation loop with the data from the validation dataloader
         passed in as `batch`.
         """
-        input_ids, attention_mask, targets = batch
-        logits = self.forward(input_ids=input_ids, attention_mask=attention_mask)
+        input_ids, attention_mask, target_and_negatives_mask, targets = batch
+        logits = self.forward(input_ids=input_ids, attention_mask=attention_mask, target_and_negatives_mask=target_and_negatives_mask)
         val_loss = self.loss(logits=logits, labels=targets)
         self.log(f"{split}_loss", val_loss)
         preds = torch.argmax(logits, axis=-1)

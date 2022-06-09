@@ -178,10 +178,17 @@ class G2PClassificationDataset(Dataset):
 
         # Encode targets
         targets = torch.tensor([entry["target"] for entry in batch])
-        target_and_negatives = torch.tensor([entry["target_and_negatives"] for entry in batch])
-        # import pdb;
-        # pdb.set_trace()
-        output = (input_ids, attention_mask, targets)
+        target_and_negatives = [entry["target_and_negatives"] for entry in batch]
+
+        # create a mask 1 for target_and_negatives and 0 for the rest of the entries since they're not relevant to the target word
+        batch_size = input_ids.shape[0]
+        num_classes = len(self.target_ipa_label_to_id)
+        target_and_negatives_mask = torch.zeros(batch_size, num_classes)
+        for i, values in enumerate(target_and_negatives):
+            for v in values:
+                target_and_negatives_mask[i][v] = 1
+
+        output = (input_ids, attention_mask, target_and_negatives_mask, targets)
 
         # graphemes_batch = [entry["graphemes"] for entry in batch]
         #
