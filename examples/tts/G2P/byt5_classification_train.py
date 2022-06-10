@@ -16,10 +16,12 @@
 This script is a copy of g2p_ctc.py with a different config_name value since multi-GPU jobs get stuck when the config_name is updated via command line
 
 To do testing:
-python g2p_ctc.py \
-    do_testing=True \
-    model.test_ds.dataset.manifest_filepath=/mnt/sdb_4/g2p/v2/phoneme_dev_clean.json \
-    pretrained_model=/mnt/sdb_4/g2p/chpts/2552576/g2p/G2PCTC/2022-01-28_01-00-25/checkpoints
+python byt5_classification_train \
+    train_dataset=/home/ebakhturina/g2p_scripts/WikipediaHomographData-master/data/train \
+    validation_dataset=/home/ebakhturina/g2p_scripts/WikipediaHomographData-master/data/eval \
+    model.encoder.pretrained=/mnt/sdb_4/g2p/chpts/byt5/2982960/g2p/G2PCTC/2022-06-07_01-00-45/checkpoints/G2PCTC.nemo
+
+
 """
 
 import os

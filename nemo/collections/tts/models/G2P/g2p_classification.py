@@ -13,25 +13,22 @@
 # limitations under the License.
 
 import os
-from time import perf_counter
 from typing import Dict, List, Optional
+from nemo.collections.nlp.parts.utils_funcs import tensor2list
 
 import torch
 from omegaconf import DictConfig
 from pytorch_lightning import Trainer
 from torch import nn
-from transformers import AutoModel, AutoTokenizer, DataCollatorForTokenClassification
-from transformers.tokenization_utils_base import BatchEncoding
+from tqdm import tqdm
+from transformers import AutoModel, AutoTokenizer
 
 from nemo.collections.common.losses import CrossEntropyLoss
-from nemo.collections.nlp.data.text_classification import TextClassificationDataset, calc_class_weights
 from nemo.collections.nlp.metrics.classification_report import ClassificationReport
-from nemo.collections.nlp.models.duplex_text_normalization.utils import has_numbers
 from nemo.collections.nlp.modules.common import SequenceClassifier
-from nemo.collections.tts.torch.g2p_classification_data import G2PClassificationDataset
+from nemo.collections.tts.torch.g2p_classification_data import G2PClassificationDataset, G2PClassificationInferDataset
 from nemo.core.classes import ModelPT
-from nemo.core.classes.common import PretrainedModelInfo, typecheck
-from nemo.core.neural_types import ChannelType, LogitsType, MaskType, NeuralType
+from nemo.core.classes.common import PretrainedModelInfo
 from nemo.utils import logging
 
 __all__ = ['G2PClassificationModel']
@@ -141,8 +138,9 @@ class G2PClassificationModel(ModelPT):
         # calculate metrics and classification report
         precision, recall, f1, report = self.classification_report.compute()
 
+        # remove examples with support=0
+        report = "\n".join([x for x in report.split("\n") if not x.endswith("          0")])
         logging.info(f'{split}_report: {report}')
-
         self.log(f'{split}_loss', avg_loss, prog_bar=True)
         self.log(f'{split}_precision', precision)
         self.log(f'{split}_f1', f1)
@@ -166,8 +164,30 @@ class G2PClassificationModel(ModelPT):
 
     # Functions for inference
     @torch.no_grad()
-    def _infer(self, sents: List[List[str]], inst_directions: List[str]):
-        pass
+    def disambiguate(self, sentences, start_end_indices, homographs, batch_size: int, num_workers: int = 0):
+        # store predictions for all queries in a single list
+        all_preds = []
+        mode = self.training
+        try:
+            device = 'cuda' if torch.cuda.is_available() else 'cpu'
+            # Switch model to evaluation mode
+            self.eval()
+            self.to(device)
+            infer_datalayer = self._setup_infer_dataloader(
+                sentences, start_end_indices, homographs, batch_size=batch_size, num_workers=num_workers
+            )
+
+            for batch in tqdm(infer_datalayer):
+                input_ids, attention_mask, target_and_negatives_mask = batch
+                logits = self.forward(input_ids=input_ids.to(device), attention_mask=attention_mask.to(device),
+                                      target_and_negatives_mask=target_and_negatives_mask.to(device))
+
+                preds = tensor2list(torch.argmax(logits, axis=-1))
+                all_preds.extend(preds)
+        finally:
+            # set mode back to its original value
+            self.train(mode=mode)
+        return all_preds
 
     # Functions for processing data
     def setup_training_data(self, train_data_config: Optional[DictConfig]):
@@ -219,6 +239,21 @@ class G2PClassificationModel(ModelPT):
         )
 
         return torch.utils.data.DataLoader(dataset, collate_fn=dataset.collate_fn, **cfg.dataloader_params)
+
+    def _setup_infer_dataloader(self, sentences, start_end_indices, homographs, batch_size: int, num_workers: int) -> 'torch.utils.data.DataLoader':
+        # TODO: fix context_len - remove hardcoding
+        dataset = G2PClassificationInferDataset(
+            sentences=sentences,
+            start_end=start_end_indices,
+            homographs=homographs,
+            tokenizer=self.tokenizer,
+            wordid_map=self.wordids,
+            context_len=5,
+            max_seq_len=self.max_sequence_len,
+            with_labels=False,
+        )
+
+        return torch.utils.data.DataLoader(dataset, collate_fn=dataset.collate_fn, batch_size=batch_size, shuffle=False, num_workers=num_workers, drop_last=False)
 
     def input_example(self):
         """

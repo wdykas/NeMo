@@ -1,8 +1,8 @@
 name: G2PClassification
 
 # Dataset info
-train_dataset: "/home/ebakhturina/g2p_scripts/WikipediaHomographData-master/data/train"
-validation_dataset: "/home/ebakhturina/g2p_scripts/WikipediaHomographData-master/data/eval"
+train_dataset: ???
+validation_dataset: ???
 do_testing: False
 pretrained_model: null # .nemo
 
@@ -11,7 +11,7 @@ model:
   max_sequence_len: 512
 
   encoder:
-    pretrained: "/mnt/sdb_4/g2p/chpts/byt5/2982960/g2p/G2PCTC/2022-06-07_01-00-45/checkpoints/G2PCTC.nemo" # pretrained g2p model with encoder
+    pretrained: null # pretrained g2p model with encoder
     transformer: google/byt5-small
     dropout: null
 
