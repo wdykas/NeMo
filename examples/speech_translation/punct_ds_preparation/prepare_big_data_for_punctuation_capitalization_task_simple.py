@@ -1,8 +1,10 @@
 import argparse
 import copy
+import html
 import itertools
 import logging
 import multiprocessing as mp
+import os
 import random
 import re
 from itertools import accumulate, chain
@@ -43,6 +45,7 @@ SUPPORTED_CORPUS_TYPES = [
     "google-normalization-dataset",
     "tatoeba",
     "europarl-raw",
+    "un",
 ]
 
 
@@ -83,6 +86,17 @@ EUROPARL_RAW_REPORTED_SPEECH = re.compile("^[^.\n]+\\. - (?:\\([^)]+\\) )?", fla
 EUROPARL_RAW_LANG_DISCLAIMER = re.compile("^\\([^)]+\\) ?", flags=re.MULTILINE)
 EUROPARL_RAW_SPEAKER_LINE = re.compile("^<SPEAKER [^>\n]+> *\n", flags=re.MULTILINE)
 EUROPARL_RAW_CHAPTER = re.compile("^<CHAPTER[^>\n]+> *\n[^<]*", flags=re.MULTILINE)
+
+UN_PARAGRAPH_START = re.compile("<p(?: id=\"[1-9][0-9]*\")?>")
+UN_SENTENCE_START = re.compile("<s(?: id=\"[0-9:]+\")?(?: lang=\"[a-zA-Z]+\")?>")
+
+ENUMERATION_START = re.compile(r'^[0-9]+\. *|^[0-9]', flags=re.MULTILINE)
+ALPHA_ENUMERATION_START = re.compile(r'^\([a-z]+\) *', flags=re.MULTILINE)
+BULLET_START = re.compile('^- *', flags=re.MULTILINE)
+ROMAN_ENUMERATION_START = re.compile(r'[A-Za-z]+. *', flags=re.MULTILINE)
+UN_FORBIDDEN_ENUMERATION_START = re.compile(
+    '|'.join([ALPHA_ENUMERATION_START.pattern, BULLET_START.pattern, ROMAN_ENUMERATION_START.pattern])
+)
 
 
 def count_in_blocks(files, size=BUFFER_SIZE, specific_to_count=None, num_characters=None):
@@ -1275,6 +1289,102 @@ def preprocess_europarl_raw(
     return dict(zip(doc_ids, file_ids))
 
 
+class PreprocessUNWorker:
+    def __init__(self, document_dir: Path, tokenizer: TokenizerSpec, progress_queue: mp.Queue) -> None:
+        self.document_dir = document_dir
+        self.progress_queue = progress_queue
+        self.tokenizer = tokenizer
+
+    def __call__(self, file: Path, file_id: int, doc_id: int, idx: int) -> None:
+        with file.open() as f:
+            text = f.read()
+        n_orig_lines = text.count('\n') + (text[-1] != '\n')
+        body_split_1 = text.split('<body>')
+        if len(body_split_1) != 2:
+            raise ValueError(f"Wrong number {len(body_split_1) - 1} of <body> tags were found in file {file}")
+        body_split_2 = body_split_1[1].split('</body>')
+        if len(body_split_2) != 2:
+            raise ValueError(f"Wrong number {len(body_split_2) - 1} of </body> tags were found in file {file}")
+        body = body_split_2[0]
+        paragraphs = [p.split('</p>')[0].strip('\n') for p in UN_PARAGRAPH_START.split(body)[1:]]
+        global tok_chars
+        global untok_chars
+        text = ""
+        for p in paragraphs:
+            sentences = [s.split('</s>')[0] for s in UN_SENTENCE_START.split(p)[1:]]
+            if not sentences:
+                continue
+            sentences = '\n'.join(sentences)
+            sentences = html.unescape(sentences)
+            if UN_FORBIDDEN_ENUMERATION_START.search(sentences) is not None:
+                continue
+            sentences = sentences.split('\n')
+            if any([ENUMERATION_START.match(s) for s in sentences[1:]]):
+                continue
+            sentences[0] = ENUMERATION_START.sub('', sentences[0])
+            sentences = '\n'.join(sentences)
+            sentences, tok_chars, untok_chars, _ = small.remove_untokenizable_characters_from_text(
+                sentences, self.tokenizer, tok_chars, untok_chars, remove_entire_lines=True
+            )
+            sentences, num_removed_lines = big.remove_suspicious_lines_and_rearrange_quotes_and_spaces(
+                sentences,
+                normalize_and_check_quotes_and_parentheses=True,
+                check_suspicious_endings=True,
+                check_suspicious_parentheses=True,
+            )
+            if num_removed_lines > 0:
+                continue
+            sentences = big.SPACE_DUP.sub(' ', sentences)
+            if not sentences.strip():
+                continue
+            sentences = big.normalize_punctuation(sentences, 'en')
+            sentences = sentences.replace('\n', ' ')
+            text += sentences + '\n'
+        prepared_docs = {
+            doc_id: {
+                "text": text.lstrip(),
+                "start_line": 0,
+                "end_line": n_orig_lines,
+                "source": file,
+                "title": f"gnd-{idx}",
+            }
+        }
+        self.progress_queue.put(1)
+        big.write_docs_to_file(prepared_docs, self.document_dir / (str(file_id) + '.xml'))
+
+
+def find_files(dir_path: Union[str, os.PathLike], regex: str) -> List[Path]:
+    pattern = re.compile(regex)
+    dir_path = Path(dir_path).expanduser()
+    result = []
+    for root, _, files in os.walk(str(dir_path)):
+        for name in files:
+            if pattern.search(name):
+                result.append(Path(root) / name)
+    return result
+
+
+def preprocess_un(
+    dir_path: Path,
+    document_dir: Path,
+    start_doc_id: int,
+    start_file_id: int,
+    tokenizer: TokenizerSpec,
+    num_jobs: int,
+) -> Dict[int, int]:
+    files = find_files(dir_path, '.xml$')
+    nf = len(files)
+    doc_ids = list(range(start_doc_id, start_doc_id + nf))
+    file_ids = list(range(start_file_id, start_file_id + nf))
+    with Progress(nf, "Preparing UN dataset", "doc") as progress_queues:
+        with mp.Pool(num_jobs, initializer=tokenizability_initializer) as pool:
+            pool.starmap(
+                PreprocessUNWorker(document_dir, tokenizer, progress_queues[0]),
+                zip(files, file_ids, doc_ids, range(nf)),
+            )
+    return dict(zip(doc_ids, file_ids))
+
+
 def preprocess_tatoeba(file_path, document_dir, doc_id, file_id) -> Dict[int, int]:
     logging.info("Processing tatoeba...")
     lines = []
@@ -1895,6 +2005,10 @@ def main():
                 )
             elif corpus_type == SUPPORTED_CORPUS_TYPES[11]:  # europarl_raw
                 corpus_doc_id_to_file_i = preprocess_europarl_raw(
+                    file_or_dir_path, document_dir, start_doc_id, start_file_id, tokenizer, args.num_jobs
+                )
+            elif corpus_type == SUPPORTED_CORPUS_TYPES[12]:  # un
+                corpus_doc_id_to_file_i = preprocess_un(
                     file_or_dir_path, document_dir, start_doc_id, start_file_id, tokenizer, args.num_jobs
                 )
             else:
