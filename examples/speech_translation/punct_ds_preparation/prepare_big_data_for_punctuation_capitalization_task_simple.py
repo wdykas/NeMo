@@ -1317,8 +1317,9 @@ class PreprocessUNWorker:
         text = ""
         if str(file).endswith('1991/unep/ozl_pro_3/11.xml'):
             print("len(paragraphs):", len(paragraphs))
-            print("paragraphs:\n\n", paragraphs)
-        for p in paragraphs:
+        for p_i, p in enumerate(paragraphs):
+            if p_i == 20:
+                print(f"{p}th paragraph:", p)
             sentences = [s.split('</s>')[0] for s in UN_SENTENCE_START.split(p)[1:]]
             if not sentences:
                 continue
