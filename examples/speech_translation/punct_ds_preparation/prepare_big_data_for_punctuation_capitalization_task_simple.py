@@ -1699,7 +1699,13 @@ def cut_and_save_one_pass(text, out_f, progress_queue, num_words_in_segments) ->
             start_match = m
         num_in_segment += 1
         if num_in_segment == permutation[p_i]:
-            out_f.write(strip_segment(text[start_match.span()[0]: m.span()[1]]) + '\n')
+            segment = text[start_match.span()[0]: m.span()[1]]
+            if str(out_f.name).endswith('81957.txt'):
+                print(f"orig segment: '{segment}'")
+            segment = strip_segment(segment)
+            if str(out_f.name).endswith('81957.txt'):
+                print(f"stripped segment: '{segment}'")
+            out_f.write(segment + '\n')
             num_written_segments += 1
             start_match = None
             p_i = (p_i + 1) % len(permutation)
@@ -1732,6 +1738,8 @@ def cut_and_save(file_num, progress_queue, file, num_passes_through_dataset, out
     with out_file.open('w', buffering=BUFFER_SIZE) as out_f:
         for _ in range(num_passes_through_dataset):
             num_written_segments += cut_and_save_one_pass(text, out_f, progress_queue, num_words_in_segments)
+        if out_file.name == '81957.txt':
+            print(f"number_written_segments in file {out_file}:", num_written_segments)
     if num_written_segments == 0:
         out_file.unlink()
 
@@ -1893,9 +1901,9 @@ def cut_and_save_parallel(document_dir, sorted_text_file, num_passes_through_dat
             if is_int(p.stem) and p.suffixes == ['.txt']:
                 with p.open() as in_f:
                     text = in_f.read()
-                    if not text:
-                        print("Empty cut file:", p)
-                    out_f.write(text + ('' if text[-1] == '\n' else '\n'))
+                if not text:
+                    print("Empty cut file:", p)
+                out_f.write(text + ('' if text[-1] == '\n' else '\n'))
 
 
 def count_content_lines_in_files(files: List[Path], file_batch_size: int = 128) -> int:
