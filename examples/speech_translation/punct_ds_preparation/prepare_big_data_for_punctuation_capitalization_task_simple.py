@@ -88,7 +88,7 @@ EUROPARL_RAW_SPEAKER_LINE = re.compile("^<SPEAKER [^>\n]+> *\n", flags=re.MULTIL
 EUROPARL_RAW_CHAPTER = re.compile("^<CHAPTER[^>\n]+> *\n[^<]*", flags=re.MULTILINE)
 
 UN_PARAGRAPH_START = re.compile("<p(?: id=\"[1-9][0-9]*\")?>")
-UN_SENTENCE_START = re.compile("<s(?: id=\"[0-9:]+\")?(?: lang=\"[a-zA-Z]+\")?>")
+UN_SENTENCE_START = re.compile("<s(?: id=\"[0-9:]+\")?(?: lang=\"en\")?>")
 
 ENUMERATION_START = re.compile(r'^[0-9]+\. *|^[0-9]', flags=re.MULTILINE)
 ALPHA_ENUMERATION_START = re.compile(r'^\([a-z]+\) *', flags=re.MULTILINE)
@@ -1312,6 +1312,8 @@ class PreprocessUNWorker:
         global tok_chars
         global untok_chars
         text = ""
+        if file.name == '11.xml':
+            print("len(paragraphs):", len(paragraphs))
         for p in paragraphs:
             sentences = [s.split('</s>')[0] for s in UN_SENTENCE_START.split(p)[1:]]
             if not sentences:
