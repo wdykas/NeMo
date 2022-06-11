@@ -1681,7 +1681,7 @@ def extract_dev_text_segments(
     return dev_text_file, test_text_file
 
 
-def cut_and_save_one_pass(text, out_f, progress_queue, num_words_in_segments):
+def cut_and_save_one_pass(text, out_f, progress_queue, num_words_in_segments) -> int:
     permutation = random.sample(num_words_in_segments, len(num_words_in_segments))
     shift = random.randint(0, max(num_words_in_segments) // 2)
     p_i = 0
@@ -1690,6 +1690,7 @@ def cut_and_save_one_pass(text, out_f, progress_queue, num_words_in_segments):
     progress_report = 0
     num_cut_segments = 0
     m = None
+    num_written_segments = 0
     for m in small.WORD_WITH_PRECEDING_AND_FOLLOWING_PUNCTUATION.finditer(text):
         if shift > 0:
             shift -= 1
@@ -1699,6 +1700,7 @@ def cut_and_save_one_pass(text, out_f, progress_queue, num_words_in_segments):
         num_in_segment += 1
         if num_in_segment == permutation[p_i]:
             out_f.write(strip_segment(text[start_match.span()[0]: m.span()[1]]) + '\n')
+            num_written_segments += 1
             start_match = None
             p_i = (p_i + 1) % len(permutation)
             if p_i == 0:
@@ -1712,7 +1714,8 @@ def cut_and_save_one_pass(text, out_f, progress_queue, num_words_in_segments):
     if start_match is not None:
         out_f.write(strip_segment(text[start_match.span()[0]: m.span()[1]]) + '\n')
         num_cut_segments += 1
-    return num_cut_segments
+        num_written_segments += 1
+    return num_written_segments
 
 
 def cut_and_save(file_num, progress_queue, file, num_passes_through_dataset, output_dir, sequence_range):
@@ -1725,9 +1728,12 @@ def cut_and_save(file_num, progress_queue, file, num_passes_through_dataset, out
     if num_words < (sequence_range[0] + 1) * 2:
         return
     num_words_in_segments = list(range(sequence_range[0], min(sequence_range[1], num_words // 2)))
+    num_written_segments = 0
     with out_file.open('w', buffering=BUFFER_SIZE) as out_f:
         for _ in range(num_passes_through_dataset):
-            cut_and_save_one_pass(text, out_f, progress_queue, num_words_in_segments)
+            num_written_segments += cut_and_save_one_pass(text, out_f, progress_queue, num_words_in_segments)
+    if num_written_segments == 0:
+        out_file.unlink()
 
 
 def get_max_allowed_segments_for_text(text: str, max_segment_length: int) -> int:
