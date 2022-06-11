@@ -1722,11 +1722,7 @@ def cut_and_save(file_num, progress_queue, file, num_passes_through_dataset, out
     text = '\n'.join([doc[1]['text'] for doc in text])
     text = small.SPACE_DUP.sub(' ', text.replace('\n', ' '))
     num_words = count_words(text)
-    if num_words <= sequence_range[0]:
-        warnings.warn(
-            f"Only {num_words} words are found in file {file} whereas sequence length range is {sequence_range}."
-        )
-    if num_words < sequence_range[0] * 2:
+    if num_words < (sequence_range[0] + 1) * 2:
         return
     num_words_in_segments = list(range(sequence_range[0], min(sequence_range[1], num_words // 2)))
     with out_file.open('w', buffering=BUFFER_SIZE) as out_f:
