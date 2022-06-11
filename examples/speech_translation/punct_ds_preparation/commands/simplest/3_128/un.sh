@@ -12,5 +12,4 @@ python prepare_big_data_for_punctuation_capitalization_task_simple.py \
   --num_jobs 24 \
   --num_passes_through_dataset 1 \
   --dev_size 10000 \
-  --test_size 0 \
-  --resume_from cutting
+  --test_size 0 # --resume_from cutting
