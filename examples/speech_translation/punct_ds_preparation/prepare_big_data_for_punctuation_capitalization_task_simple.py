@@ -1361,6 +1361,8 @@ class PreprocessUNWorker:
                 or str(file).endswith('en/1995/e/cn_4/1995/16.xml') and p_i == 14
             ):
                 print(f"sentences after untokenizable removal: '{sentences}'")
+            sentences = big.ALL_PARENTHESES.sub(' ', sentences)
+            sentences = NEW_LINE_WITH_SPACES_PATTERN.sub('\n', sentences)
             sentences, num_removed_lines = big.remove_suspicious_lines_and_rearrange_quotes_and_spaces(
                 sentences,
                 normalize_and_check_quotes_and_parentheses=True,
