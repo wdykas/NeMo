@@ -7,6 +7,7 @@ import multiprocessing as mp
 import os
 import random
 import re
+import string
 from itertools import accumulate, chain
 from pathlib import Path
 from subprocess import PIPE, Popen, run
@@ -97,6 +98,7 @@ ROMAN_ENUMERATION_START = re.compile(r'[A-Za-z]+\. *', flags=re.MULTILINE)
 UN_FORBIDDEN_ENUMERATION_START = re.compile(
     '|'.join([ALPHA_ENUMERATION_START.pattern, BULLET_START.pattern, ROMAN_ENUMERATION_START.pattern])
 )
+ASCII_PRINTABLE = set(string.printable)
 
 
 def count_in_blocks(files, size=BUFFER_SIZE, specific_to_count=None, num_characters=None):
@@ -1290,10 +1292,9 @@ def preprocess_europarl_raw(
 
 
 class PreprocessUNWorker:
-    def __init__(self, document_dir: Path, tokenizer: TokenizerSpec, progress_queue: mp.Queue) -> None:
+    def __init__(self, document_dir: Path, progress_queue: mp.Queue) -> None:
         self.document_dir = document_dir
         self.progress_queue = progress_queue
-        self.tokenizer = tokenizer
 
     def __call__(self, file: Path, file_id: int, doc_id: int, idx: int) -> None:
         with file.open() as f:
@@ -1312,8 +1313,6 @@ class PreprocessUNWorker:
             return
         body = body_split_2[0]
         paragraphs = [p.split('</p>')[0].strip('\n') for p in UN_PARAGRAPH_START.split(body)[1:]]
-        global tok_chars
-        global untok_chars
         text = ""
         if str(file).endswith('1991/unep/ozl_pro_3/11.xml'):
             print("len(paragraphs):", len(paragraphs))
@@ -1338,9 +1337,8 @@ class PreprocessUNWorker:
             sentences = '\n'.join(sentences)
             if str(file).endswith('1991/unep/ozl_pro_3/11.xml') and p_i == 20:
                 print(f"sentences after leading enumeration removal:", sentences)
-            sentences, tok_chars, untok_chars, _ = small.remove_untokenizable_characters_from_text(
-                sentences, self.tokenizer, tok_chars, untok_chars, remove_entire_lines=True
-            )
+            if not ASCII_PRINTABLE.issuperset(sentences):
+                continue
             if str(file).endswith('1991/unep/ozl_pro_3/11.xml') and p_i == 20:
                 print(f"sentences after untokenizable removal:", sentences)
             sentences, num_removed_lines = big.remove_suspicious_lines_and_rearrange_quotes_and_spaces(
@@ -1403,8 +1401,7 @@ def preprocess_un(
     with Progress(nf, "Preparing UN dataset", "doc") as progress_queues:
         with mp.Pool(num_jobs, initializer=tokenizability_initializer) as pool:
             pool.starmap(
-                PreprocessUNWorker(document_dir, tokenizer, progress_queues[0]),
-                zip(files, file_ids, doc_ids, range(nf)),
+                PreprocessUNWorker(document_dir, progress_queues[0]), zip(files, file_ids, doc_ids, range(nf))
             )
     return dict(zip(doc_ids, file_ids))
 
@@ -1701,6 +1698,8 @@ def cut_and_save(file_num, progress_queue, file, num_passes_through_dataset, out
     text = '\n'.join([doc[1]['text'] for doc in text])
     text = small.SPACE_DUP.sub(' ', text.replace('\n', ' '))
     num_words = count_words(text)
+    if num_words <= 1:
+        raise ValueError(f"Only {num_words} words are found in file {file}.")
     if num_words < sequence_range[0] * 2:
         return
     num_words_in_segments = list(range(sequence_range[0], min(sequence_range[1], num_words // 2)))
