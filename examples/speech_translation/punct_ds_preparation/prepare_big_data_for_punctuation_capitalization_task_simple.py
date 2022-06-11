@@ -1890,9 +1890,11 @@ def cut_and_save_parallel(document_dir, sorted_text_file, num_passes_through_dat
     progress_process.join()
     with sorted_text_file.open('w') as out_f:
         for p in output_dir.iterdir():
-            with p.open() as in_f:
-                if is_int(p.stem) and p.suffixes == ['.txt']:
+            if is_int(p.stem) and p.suffixes == ['.txt']:
+                with p.open() as in_f:
                     text = in_f.read()
+                    if not text:
+                        print("Empty cut file:", p)
                     out_f.write(text + ('' if text[-1] == '\n' else '\n'))
 
 
