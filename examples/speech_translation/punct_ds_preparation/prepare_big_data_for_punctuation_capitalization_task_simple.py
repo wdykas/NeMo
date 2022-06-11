@@ -1301,10 +1301,10 @@ class PreprocessUNWorker:
         n_orig_lines = text.count('\n') + (text[-1] != '\n')
         body_split_1 = text.split('<body>')
         if len(body_split_1) != 2:
-            raise ValueError(f"Wrong number {len(body_split_1) - 1} of <body> tags were found in file {file}")
+            return
         body_split_2 = body_split_1[1].split('</body>')
         if len(body_split_2) != 2:
-            raise ValueError(f"Wrong number {len(body_split_2) - 1} of </body> tags were found in file {file}")
+            return
         body = body_split_2[0]
         paragraphs = [p.split('</p>')[0].strip('\n') for p in UN_PARAGRAPH_START.split(body)[1:]]
         global tok_chars
