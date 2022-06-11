@@ -1298,6 +1298,8 @@ class PreprocessUNWorker:
     def __call__(self, file: Path, file_id: int, doc_id: int, idx: int) -> None:
         with file.open() as f:
             text = f.read()
+        if not text:
+            return
         n_orig_lines = text.count('\n') + (text[-1] != '\n')
         body_split_1 = text.split('<body>')
         if len(body_split_1) != 2:
