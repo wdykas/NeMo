@@ -93,7 +93,7 @@ UN_SENTENCE_START = re.compile("<s(?: id=\"[0-9:]+\")?(?: lang=\"en\")?>")
 ENUMERATION_START = re.compile(r'^[0-9]+\. *|^[0-9]', flags=re.MULTILINE)
 ALPHA_ENUMERATION_START = re.compile(r'^\([a-z]+\) *', flags=re.MULTILINE)
 BULLET_START = re.compile('^- *', flags=re.MULTILINE)
-ROMAN_ENUMERATION_START = re.compile(r'[A-Za-z]+. *', flags=re.MULTILINE)
+ROMAN_ENUMERATION_START = re.compile(r'[A-Za-z]+\. *', flags=re.MULTILINE)
 UN_FORBIDDEN_ENUMERATION_START = re.compile(
     '|'.join([ALPHA_ENUMERATION_START.pattern, BULLET_START.pattern, ROMAN_ENUMERATION_START.pattern])
 )
