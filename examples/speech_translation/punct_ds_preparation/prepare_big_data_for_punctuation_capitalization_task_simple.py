@@ -1299,21 +1299,25 @@ class PreprocessUNWorker:
         with file.open() as f:
             text = f.read()
         if not text:
+            self.progress_queue.put(1)
             return
         n_orig_lines = text.count('\n') + (text[-1] != '\n')
         body_split_1 = text.split('<body>')
         if len(body_split_1) != 2:
+            self.progress_queue.put(1)
             return
         body_split_2 = body_split_1[1].split('</body>')
         if len(body_split_2) != 2:
+            self.progress_queue.put(1)
             return
         body = body_split_2[0]
         paragraphs = [p.split('</p>')[0].strip('\n') for p in UN_PARAGRAPH_START.split(body)[1:]]
         global tok_chars
         global untok_chars
         text = ""
-        if file.name == '11.xml':
+        if str(file).endswith('1991/unep/ozl_pro_3/11.xml'):
             print("len(paragraphs):", len(paragraphs))
+            print("paragraphs:\n\n", paragraphs)
         for p in paragraphs:
             sentences = [s.split('</s>')[0] for s in UN_SENTENCE_START.split(p)[1:]]
             if not sentences:
@@ -1345,6 +1349,7 @@ class PreprocessUNWorker:
             sentences = sentences.replace('\n', ' ')
             text += sentences + '\n'
         if not text.strip():
+            self.progress_queue.put(1)
             return
         prepared_docs = {
             doc_id: {
