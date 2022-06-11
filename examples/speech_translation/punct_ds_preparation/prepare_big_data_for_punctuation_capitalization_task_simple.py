@@ -1314,32 +1314,52 @@ class PreprocessUNWorker:
         body = body_split_2[0]
         paragraphs = [p.split('</p>')[0].strip('\n') for p in UN_PARAGRAPH_START.split(body)[1:]]
         text = ""
-        if str(file).endswith('1991/unep/ozl_pro_3/11.xml'):
-            print("len(paragraphs):", len(paragraphs))
+        if str(file).endswith('1991/unep/ozl_pro_3/11.xml') or str(file).endswith('en/1995/e/cn_4/1995/16.xml'):
+            print(f"len(paragraphs) for {file}:", len(paragraphs))
         for p_i, p in enumerate(paragraphs):
-            if str(file).endswith('1991/unep/ozl_pro_3/11.xml') and p_i == 20:
+            if (
+                str(file).endswith('1991/unep/ozl_pro_3/11.xml') and p_i == 20
+                or str(file).endswith('en/1995/e/cn_4/1995/16.xml') and p_i == 14
+            ):
                 print(f"{p}th paragraph:", p)
             sentences = [s.split('</s>')[0] for s in UN_SENTENCE_START.split(p)[1:]]
-            if str(file).endswith('1991/unep/ozl_pro_3/11.xml') and p_i == 20:
+            if (
+                str(file).endswith('1991/unep/ozl_pro_3/11.xml') and p_i == 20
+                or str(file).endswith('en/1995/e/cn_4/1995/16.xml') and p_i == 14
+            ):
                 print(f"sentences:", sentences)
             if not sentences:
                 continue
             sentences = '\n'.join(sentences)
             sentences = html.unescape(sentences)
-            if str(file).endswith('1991/unep/ozl_pro_3/11.xml') and p_i == 20:
+            if (
+                str(file).endswith('1991/unep/ozl_pro_3/11.xml') and p_i == 20
+                or str(file).endswith('en/1995/e/cn_4/1995/16.xml') and p_i == 14
+            ):
                 print(f"sentences after unescape:", sentences)
             if UN_FORBIDDEN_ENUMERATION_START.search(sentences) is not None:
                 continue
+            if (
+                str(file).endswith('1991/unep/ozl_pro_3/11.xml') and p_i == 20
+                or str(file).endswith('en/1995/e/cn_4/1995/16.xml') and p_i == 14
+            ):
+                print(f"sentences after forbidden enumeration removal:", sentences)
             sentences = sentences.split('\n')
             if any([ENUMERATION_START.match(s) for s in sentences[1:]]):
                 continue
             sentences[0] = ENUMERATION_START.sub('', sentences[0])
             sentences = '\n'.join(sentences)
-            if str(file).endswith('1991/unep/ozl_pro_3/11.xml') and p_i == 20:
+            if (
+                str(file).endswith('1991/unep/ozl_pro_3/11.xml') and p_i == 20
+                or str(file).endswith('en/1995/e/cn_4/1995/16.xml') and p_i == 14
+            ):
                 print(f"sentences after leading enumeration removal:", sentences)
             if not ASCII_PRINTABLE.issuperset(sentences):
                 continue
-            if str(file).endswith('1991/unep/ozl_pro_3/11.xml') and p_i == 20:
+            if (
+                str(file).endswith('1991/unep/ozl_pro_3/11.xml') and p_i == 20
+                or str(file).endswith('en/1995/e/cn_4/1995/16.xml') and p_i == 14
+            ):
                 print(f"sentences after untokenizable removal:", sentences)
             sentences, num_removed_lines = big.remove_suspicious_lines_and_rearrange_quotes_and_spaces(
                 sentences,
@@ -1347,7 +1367,10 @@ class PreprocessUNWorker:
                 check_suspicious_endings=True,
                 check_suspicious_parentheses=True,
             )
-            if str(file).endswith('1991/unep/ozl_pro_3/11.xml') and p_i == 20:
+            if (
+                str(file).endswith('1991/unep/ozl_pro_3/11.xml') and p_i == 20
+                or str(file).endswith('en/1995/e/cn_4/1995/16.xml') and p_i == 14
+            ):
                 print(f"sentences after suspicious removal:", sentences)
             if num_removed_lines > 0:
                 continue
@@ -1355,7 +1378,10 @@ class PreprocessUNWorker:
             if not sentences.strip():
                 continue
             sentences = big.normalize_punctuation(sentences, 'en')
-            if str(file).endswith('1991/unep/ozl_pro_3/11.xml') and p_i == 20:
+            if (
+                str(file).endswith('1991/unep/ozl_pro_3/11.xml') and p_i == 20
+                or str(file).endswith('en/1995/e/cn_4/1995/16.xml') and p_i == 14
+            ):
                 print(f"sentences punctuation normalization:", sentences)
             sentences = sentences.replace('\n', ' ')
             text += sentences + '\n'
@@ -1387,12 +1413,7 @@ def find_files(dir_path: Union[str, os.PathLike], regex: str) -> List[Path]:
 
 
 def preprocess_un(
-    dir_path: Path,
-    document_dir: Path,
-    start_doc_id: int,
-    start_file_id: int,
-    tokenizer: TokenizerSpec,
-    num_jobs: int,
+    dir_path: Path, document_dir: Path, start_doc_id: int, start_file_id: int, num_jobs: int
 ) -> Dict[int, int]:
     files = find_files(dir_path, '.xml$')
     nf = len(files)
@@ -2032,7 +2053,7 @@ def main():
                 )
             elif corpus_type == SUPPORTED_CORPUS_TYPES[12]:  # un
                 corpus_doc_id_to_file_i = preprocess_un(
-                    file_or_dir_path, document_dir, start_doc_id, start_file_id, tokenizer, args.num_jobs
+                    file_or_dir_path, document_dir, start_doc_id, start_file_id, args.num_jobs
                 )
             else:
                 raise ValueError(
