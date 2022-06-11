@@ -1318,13 +1318,17 @@ class PreprocessUNWorker:
         if str(file).endswith('1991/unep/ozl_pro_3/11.xml'):
             print("len(paragraphs):", len(paragraphs))
         for p_i, p in enumerate(paragraphs):
-            if p_i == 20:
+            if str(file).endswith('1991/unep/ozl_pro_3/11.xml') and p_i == 20:
                 print(f"{p}th paragraph:", p)
             sentences = [s.split('</s>')[0] for s in UN_SENTENCE_START.split(p)[1:]]
+            if str(file).endswith('1991/unep/ozl_pro_3/11.xml') and p_i == 20:
+                print(f"sentences:", sentences)
             if not sentences:
                 continue
             sentences = '\n'.join(sentences)
             sentences = html.unescape(sentences)
+            if str(file).endswith('1991/unep/ozl_pro_3/11.xml') and p_i == 20:
+                print(f"sentences after unescape:", sentences)
             if UN_FORBIDDEN_ENUMERATION_START.search(sentences) is not None:
                 continue
             sentences = sentences.split('\n')
@@ -1332,21 +1336,29 @@ class PreprocessUNWorker:
                 continue
             sentences[0] = ENUMERATION_START.sub('', sentences[0])
             sentences = '\n'.join(sentences)
+            if str(file).endswith('1991/unep/ozl_pro_3/11.xml') and p_i == 20:
+                print(f"sentences after leading enumeration removal:", sentences)
             sentences, tok_chars, untok_chars, _ = small.remove_untokenizable_characters_from_text(
                 sentences, self.tokenizer, tok_chars, untok_chars, remove_entire_lines=True
             )
+            if str(file).endswith('1991/unep/ozl_pro_3/11.xml') and p_i == 20:
+                print(f"sentences after untokenizable removal:", sentences)
             sentences, num_removed_lines = big.remove_suspicious_lines_and_rearrange_quotes_and_spaces(
                 sentences,
                 normalize_and_check_quotes_and_parentheses=True,
                 check_suspicious_endings=True,
                 check_suspicious_parentheses=True,
             )
+            if str(file).endswith('1991/unep/ozl_pro_3/11.xml') and p_i == 20:
+                print(f"sentences after suspicious removal:", sentences)
             if num_removed_lines > 0:
                 continue
             sentences = big.SPACE_DUP.sub(' ', sentences)
             if not sentences.strip():
                 continue
             sentences = big.normalize_punctuation(sentences, 'en')
+            if str(file).endswith('1991/unep/ozl_pro_3/11.xml') and p_i == 20:
+                print(f"sentences punctuation normalization:", sentences)
             sentences = sentences.replace('\n', ' ')
             text += sentences + '\n'
         if not text.strip():
