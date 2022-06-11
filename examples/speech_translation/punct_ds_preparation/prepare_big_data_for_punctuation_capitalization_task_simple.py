@@ -1340,6 +1340,8 @@ class PreprocessUNWorker:
             sentences = big.normalize_punctuation(sentences, 'en')
             sentences = sentences.replace('\n', ' ')
             text += sentences + '\n'
+        if not text.strip():
+            return
         prepared_docs = {
             doc_id: {
                 "text": text.lstrip(),
