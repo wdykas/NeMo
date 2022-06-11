@@ -94,7 +94,7 @@ UN_SENTENCE_START = re.compile("<s(?: id=\"[0-9:]+\")?(?: lang=\"en\")?>")
 ENUMERATION_START = re.compile(r'^[0-9]+\. *|^[0-9]', flags=re.MULTILINE)
 ALPHA_ENUMERATION_START = re.compile(r'^\([a-z]+\) *', flags=re.MULTILINE)
 BULLET_START = re.compile('^- *', flags=re.MULTILINE)
-ROMAN_ENUMERATION_START = re.compile(r'[A-Za-z]+\. *', flags=re.MULTILINE)
+ROMAN_ENUMERATION_START = re.compile(r'^[A-Za-z]+\. *', flags=re.MULTILINE)
 UN_FORBIDDEN_ENUMERATION_START = re.compile(
     '|'.join([ALPHA_ENUMERATION_START.pattern, BULLET_START.pattern, ROMAN_ENUMERATION_START.pattern])
 )
@@ -1336,14 +1336,14 @@ class PreprocessUNWorker:
                 str(file).endswith('1991/unep/ozl_pro_3/11.xml') and p_i == 20
                 or str(file).endswith('en/1995/e/cn_4/1995/16.xml') and p_i == 14
             ):
-                print(f"sentences after unescape:", sentences)
+                print(f"sentences after unescape: '{sentences}'")
             if UN_FORBIDDEN_ENUMERATION_START.search(sentences) is not None:
                 continue
             if (
                 str(file).endswith('1991/unep/ozl_pro_3/11.xml') and p_i == 20
                 or str(file).endswith('en/1995/e/cn_4/1995/16.xml') and p_i == 14
             ):
-                print(f"sentences after forbidden enumeration removal:", sentences)
+                print(f"sentences after forbidden enumeration removal: '{sentences}'")
             sentences = sentences.split('\n')
             if any([ENUMERATION_START.match(s) for s in sentences[1:]]):
                 continue
@@ -1353,14 +1353,14 @@ class PreprocessUNWorker:
                 str(file).endswith('1991/unep/ozl_pro_3/11.xml') and p_i == 20
                 or str(file).endswith('en/1995/e/cn_4/1995/16.xml') and p_i == 14
             ):
-                print(f"sentences after leading enumeration removal:", sentences)
+                print(f"sentences after leading enumeration removal: '{sentences}'")
             if not ASCII_PRINTABLE.issuperset(sentences):
                 continue
             if (
                 str(file).endswith('1991/unep/ozl_pro_3/11.xml') and p_i == 20
                 or str(file).endswith('en/1995/e/cn_4/1995/16.xml') and p_i == 14
             ):
-                print(f"sentences after untokenizable removal:", sentences)
+                print(f"sentences after untokenizable removal: '{sentences}'")
             sentences, num_removed_lines = big.remove_suspicious_lines_and_rearrange_quotes_and_spaces(
                 sentences,
                 normalize_and_check_quotes_and_parentheses=True,
@@ -1371,7 +1371,7 @@ class PreprocessUNWorker:
                 str(file).endswith('1991/unep/ozl_pro_3/11.xml') and p_i == 20
                 or str(file).endswith('en/1995/e/cn_4/1995/16.xml') and p_i == 14
             ):
-                print(f"sentences after suspicious removal:", sentences)
+                print(f"sentences after suspicious removal: '{sentences}'")
             if num_removed_lines > 0:
                 continue
             sentences = big.SPACE_DUP.sub(' ', sentences)
@@ -1382,7 +1382,7 @@ class PreprocessUNWorker:
                 str(file).endswith('1991/unep/ozl_pro_3/11.xml') and p_i == 20
                 or str(file).endswith('en/1995/e/cn_4/1995/16.xml') and p_i == 14
             ):
-                print(f"sentences punctuation normalization:", sentences)
+                print(f"sentences punctuation normalization: '{sentences}'")
             sentences = sentences.replace('\n', ' ')
             text += sentences + '\n'
         if not text.strip():
