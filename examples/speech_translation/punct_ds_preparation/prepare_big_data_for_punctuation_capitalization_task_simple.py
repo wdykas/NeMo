@@ -8,7 +8,6 @@ import os
 import random
 import re
 import string
-import warnings
 from itertools import accumulate, chain
 from pathlib import Path
 from subprocess import PIPE, Popen, run
@@ -100,6 +99,8 @@ UN_FORBIDDEN_ENUMERATION_START = re.compile(
     '|'.join([ALPHA_ENUMERATION_START.pattern, BULLET_START.pattern, ROMAN_ENUMERATION_START.pattern])
 )
 ASCII_PRINTABLE = set(string.printable)
+UPPER_CASE_LETTERS = re.compile('[A-Z]')
+LOWER_CASE_LETTERS = re.compile('[a-z]')
 
 
 def count_in_blocks(files, size=BUFFER_SIZE, specific_to_count=None, num_characters=None):
@@ -1147,6 +1148,18 @@ def preprocess_pubmed(
     return merge_small_files(document_dir, doc_id_to_file_i)
 
 
+def remove_lines_with_too_many_upper_case_letters(
+    lines: List[str], min_length: int = 25, max_upper_case_quotient: int = 0.4
+) -> List[str]:
+    filtered = []
+    for line in lines:
+        num_upper = len(UPPER_CASE_LETTERS.findall(line))
+        num_lower = len(LOWER_CASE_LETTERS.findall(line))
+        if len(line) <= min_length or num_upper / (num_lower + num_upper) < max_upper_case_quotient:
+            filtered.append(line)
+    return filtered
+
+
 class GoogleNormalizationWorker:
     def __init__(self, document_dir: Path, tokenizer: TokenizerSpec, progress_queue: mp.Queue) -> None:
         self.document_dir = document_dir
@@ -1182,6 +1195,7 @@ class GoogleNormalizationWorker:
             check_suspicious_endings=False,
             check_suspicious_parentheses=True,
         )
+        text = '\n'.join(remove_lines_with_too_many_upper_case_letters(text.split('\n')))
         text = big.SPACE_DUP.sub(' ', text)
         if not text.strip():
             return
@@ -1240,7 +1254,7 @@ class PreprocessEuroparlRawWorker:
         text = '\n'.join(chapters)
         text = EUROPARL_RAW_SPEAKER_LINE.sub('', text)
         text = EUROPARL_RAW_LANG_DISCLAIMER.sub('', text)
-        text = EUROPARL_RAW_REPORTED_SPEECH.sub('', text).replace('\n<P>\n', ' ')
+        text = EUROPARL_RAW_REPORTED_SPEECH.sub('', text).replace('\n<P>', '')
         text = big.ALL_PARENTHESES.sub(' ', text)
         global tok_chars
         global untok_chars
@@ -1315,53 +1329,21 @@ class PreprocessUNWorker:
         body = body_split_2[0]
         paragraphs = [p.split('</p>')[0].strip('\n') for p in UN_PARAGRAPH_START.split(body)[1:]]
         text = ""
-        if str(file).endswith('1991/unep/ozl_pro_3/11.xml') or str(file).endswith('en/1995/e/cn_4/1995/16.xml'):
-            print(f"len(paragraphs) for {file}:", len(paragraphs))
         for p_i, p in enumerate(paragraphs):
-            if (
-                str(file).endswith('1991/unep/ozl_pro_3/11.xml') and p_i == 20
-                or str(file).endswith('en/1995/e/cn_4/1995/16.xml') and p_i == 14
-            ):
-                print(f"{p}th paragraph:", p)
             sentences = [s.split('</s>')[0] for s in UN_SENTENCE_START.split(p)[1:]]
-            if (
-                str(file).endswith('1991/unep/ozl_pro_3/11.xml') and p_i == 20
-                or str(file).endswith('en/1995/e/cn_4/1995/16.xml') and p_i == 14
-            ):
-                print(f"sentences:", sentences)
             if not sentences:
                 continue
             sentences = '\n'.join(sentences)
             sentences = html.unescape(sentences)
-            if (
-                str(file).endswith('1991/unep/ozl_pro_3/11.xml') and p_i == 20
-                or str(file).endswith('en/1995/e/cn_4/1995/16.xml') and p_i == 14
-            ):
-                print(f"sentences after unescape: '{sentences}'")
             if UN_FORBIDDEN_ENUMERATION_START.search(sentences) is not None:
                 continue
-            if (
-                str(file).endswith('1991/unep/ozl_pro_3/11.xml') and p_i == 20
-                or str(file).endswith('en/1995/e/cn_4/1995/16.xml') and p_i == 14
-            ):
-                print(f"sentences after forbidden enumeration removal: '{sentences}'")
             sentences = sentences.split('\n')
             if any([ENUMERATION_START.match(s) for s in sentences[1:]]):
                 continue
             sentences[0] = ENUMERATION_START.sub('', sentences[0])
             sentences = '\n'.join(sentences)
-            if (
-                str(file).endswith('1991/unep/ozl_pro_3/11.xml') and p_i == 20
-                or str(file).endswith('en/1995/e/cn_4/1995/16.xml') and p_i == 14
-            ):
-                print(f"sentences after leading enumeration removal: '{sentences}'")
             if not ASCII_PRINTABLE.issuperset(sentences):
                 continue
-            if (
-                str(file).endswith('1991/unep/ozl_pro_3/11.xml') and p_i == 20
-                or str(file).endswith('en/1995/e/cn_4/1995/16.xml') and p_i == 14
-            ):
-                print(f"sentences after untokenizable removal: '{sentences}'")
             sentences = big.ALL_PARENTHESES.sub(' ', sentences)
             sentences = NEW_LINE_WITH_SPACES_PATTERN.sub('\n', sentences)
             sentences, num_removed_lines = big.remove_suspicious_lines_and_rearrange_quotes_and_spaces(
@@ -1370,23 +1352,12 @@ class PreprocessUNWorker:
                 check_suspicious_endings=True,
                 check_suspicious_parentheses=True,
             )
-            if (
-                str(file).endswith('1991/unep/ozl_pro_3/11.xml') and p_i == 20
-                or str(file).endswith('en/1995/e/cn_4/1995/16.xml') and p_i == 14
-            ):
-                print(f"sentences after suspicious removal: '{sentences}'")
             if num_removed_lines > 0:
                 continue
             sentences = big.SPACE_DUP.sub(' ', sentences)
             if not sentences.strip():
                 continue
             sentences = big.normalize_punctuation(sentences, 'en')
-            if (
-                str(file).endswith('1991/unep/ozl_pro_3/11.xml') and p_i == 20
-                or str(file).endswith('en/1995/e/cn_4/1995/16.xml') and p_i == 14
-            ):
-                print(f"sentences punctuation normalization: '{sentences}'")
-            sentences = sentences.replace('\n', ' ')
             text += sentences + '\n'
         if not text.strip():
             self.progress_queue.put(1)
@@ -1438,6 +1409,7 @@ def preprocess_tatoeba(file_path, document_dir, doc_id, file_id) -> Dict[int, in
             words = line.split()
             lines.append(' '.join(words[2:]))
     text = '\n'.join(lines)
+    text = DOUBLE_HYPHEN_PATTERN.sub(' - ', text)
     prepared_docs = {
         doc_id: {
             "text": text,
