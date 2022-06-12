@@ -86,24 +86,29 @@ class FastPitchModel(SpectrogramGenerator, Exportable):
 
         self.learn_alignment = cfg.get("learn_alignment", False)
 
-       # Setup tokenizer
-        self.tokenizer = None
-        self._setup_tokenizer(cfg)
-        assert self.tokenizer is not None
-        
-        num_tokens = len(self.tokenizer.tokens)
-        self.tokenizer_pad = self.tokenizer.pad
-        self.tokenizer_unk = self.tokenizer.oov
-
-        self.learn_alignment = cfg.get("learn_alignment", False)
-
         # Setup vocabulary (=tokenizer) and input_fft_kwargs (supported only with self.learn_alignment=True)
         input_fft_kwargs = {}
         if self.learn_alignment:
+            self.vocab = None
             self.ds_class_name = cfg.train_ds.dataset._target_.split(".")[-1]
 
-            input_fft_kwargs["n_embed"] = num_tokens
-            input_fft_kwargs["padding_idx"] = self.tokenizer_pad
+            if self.ds_class_name == "TTSDataset":
+                self._setup_tokenizer(cfg)
+                assert self.vocab is not None
+                input_fft_kwargs["n_embed"] = len(self.vocab.tokens)
+                input_fft_kwargs["padding_idx"] = self.vocab.pad
+            elif self.ds_class_name == "AudioToCharWithPriorAndPitchDataset":
+                logging.warning(
+                    "AudioToCharWithPriorAndPitchDataset class has been deprecated. No support for"
+                    " training or finetuning. Only inference is supported."
+                )
+                tokenizer_conf = self._get_default_text_tokenizer_conf()
+                self._setup_tokenizer(tokenizer_conf)
+                assert self.vocab is not None
+                input_fft_kwargs["n_embed"] = len(self.vocab.tokens)
+                input_fft_kwargs["padding_idx"] = self.vocab.pad
+            else:
+                raise ValueError(f"Unknown dataset class: {self.ds_class_name}")
 
         self._parser = None
         self._tb_logger = None
@@ -184,7 +189,7 @@ class FastPitchModel(SpectrogramGenerator, Exportable):
 
             text_tokenizer_kwargs["g2p"] = instantiate(cfg.text_tokenizer.g2p, **g2p_kwargs)
 
-        self.tokenizer = instantiate(cfg.text_tokenizer, **text_tokenizer_kwargs)
+        self.vocab = instantiate(cfg.text_tokenizer, **text_tokenizer_kwargs)
 
     @property
     def tb_logger(self):
@@ -209,12 +214,12 @@ class FastPitchModel(SpectrogramGenerator, Exportable):
             ds_class_name = self._cfg.train_ds.dataset._target_.split(".")[-1]
 
             if ds_class_name == "TTSDataset":
-                self._parser = self.tokenizer.encode
+                self._parser = self.vocab.encode
             elif ds_class_name == "AudioToCharWithPriorAndPitchDataset":
-                if self.tokenizer is None:
+                if self.vocab is None:
                     tokenizer_conf = self._get_default_text_tokenizer_conf()
                     self._setup_tokenizer(tokenizer_conf)
-                self._parser = self.votokenizercab.encode
+                self._parser = self.vocab.encode
             else:
                 raise ValueError(f"Unknown dataset class: {ds_class_name}")
         else:
@@ -238,8 +243,8 @@ class FastPitchModel(SpectrogramGenerator, Exportable):
 
         if self.learn_alignment:
             eval_phon_mode = contextlib.nullcontext()
-            if hasattr(self.tokenizer, "set_phone_prob"):
-                eval_phon_mode = self.tokenizer.set_phone_prob(prob=1.0)
+            if hasattr(self.vocab, "set_phone_prob"):
+                eval_phon_mode = self.vocab.set_phone_prob(prob=1.0)
 
             # Disable mixed g2p representation if necessary
             with eval_phon_mode:
@@ -308,7 +313,7 @@ class FastPitchModel(SpectrogramGenerator, Exportable):
                 else:
                     audio, audio_lens, text, text_lens, attn_prior, pitch, _ = batch
             else:
-                raise ValueError(f"Unknown vocab class: {self.tokenizer.__class__.__name__}")
+                raise ValueError(f"Unknown vocab class: {self.vocab.__class__.__name__}")
         else:
             audio, audio_lens, text, text_lens, durs, pitch, speaker = batch
 
@@ -413,7 +418,7 @@ class FastPitchModel(SpectrogramGenerator, Exportable):
                 else:
                     audio, audio_lens, text, text_lens, attn_prior, pitch, _ = batch
             else:
-                raise ValueError(f"Unknown vocab class: {self.tokenizer.__class__.__name__}")
+                raise ValueError(f"Unknown vocab class: {self.vocab.__class__.__name__}")
         else:
             audio, audio_lens, text, text_lens, durs, pitch, speaker = batch
 
@@ -497,15 +502,15 @@ class FastPitchModel(SpectrogramGenerator, Exportable):
 
         if cfg.dataset._target_ == "nemo.collections.tts.torch.data.TTSDataset":
             phon_mode = contextlib.nullcontext()
-            if hasattr(self.tokenizer, "set_phone_prob"):
-                phon_mode = self.tokenizer.set_phone_prob(prob=None if name == "val" else self.tokenizer.phoneme_probability)
+            if hasattr(self.vocab, "set_phone_prob"):
+                phon_mode = self.vocab.set_phone_prob(prob=None if name == "val" else self.vocab.phoneme_probability)
 
             with phon_mode:
                 dataset = instantiate(
                     cfg.dataset,
                     text_normalizer=self.normalizer,
                     text_normalizer_call_kwargs=self.text_normalizer_call_kwargs,
-                    text_tokenizer=self.tokenizer,
+                    text_tokenizer=self.vocab,
                 )
         else:
             dataset = instantiate(cfg.dataset)
