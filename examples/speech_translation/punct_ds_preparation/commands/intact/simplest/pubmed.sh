@@ -12,4 +12,4 @@ python prepare_big_data_for_punctuation_capitalization_task_simple.py \
   --dev_size 0 \
   --test_size 0 \
   --intact_sentences \
-  --use_nltk_sentence_splitting \
+  --use_nltk_sentence_splitting
