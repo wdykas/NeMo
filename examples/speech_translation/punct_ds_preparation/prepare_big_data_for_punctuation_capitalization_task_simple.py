@@ -1155,7 +1155,10 @@ def remove_lines_with_too_many_upper_case_letters(
     for line in lines:
         num_upper = len(UPPER_CASE_LETTERS.findall(line))
         num_lower = len(LOWER_CASE_LETTERS.findall(line))
-        if len(line) <= min_length or num_upper / (num_lower + num_upper) < max_upper_case_quotient:
+        if (
+            len(line) <= min_length
+            or (num_lower + num_upper) > 0 and num_upper / (num_lower + num_upper) < max_upper_case_quotient
+        ):
             filtered.append(line)
     return filtered
 
