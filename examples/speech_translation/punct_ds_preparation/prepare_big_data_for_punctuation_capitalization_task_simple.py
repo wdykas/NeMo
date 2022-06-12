@@ -1272,6 +1272,7 @@ class PreprocessEuroparlRawWorker:
         )
         text = big.SPACE_DUP.sub(' ', text)
         if not text.strip():
+            self.progress_queue.put(1)
             return
         text += ('' if text[-1] == '\n' else '\n')
         text = big.normalize_punctuation(text, 'en')
@@ -1344,7 +1345,9 @@ class PreprocessUNWorker:
             if any([ENUMERATION_START.match(s) for s in sentences[1:]]):
                 continue
             sentences[0] = ENUMERATION_START.sub('', sentences[0])
+            sentences = remove_lines_with_too_many_upper_case_letters(sentences)
             sentences = '\n'.join(sentences)
+            sentences = SQUARE_BRACKETS_PATTERN.sub(' ', sentences)
             if not ASCII_PRINTABLE.issuperset(sentences):
                 continue
             sentences = big.ALL_PARENTHESES.sub(' ', sentences)
