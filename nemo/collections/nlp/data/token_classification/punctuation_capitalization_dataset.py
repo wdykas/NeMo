@@ -979,9 +979,22 @@ class BertPunctuationCapitalizationDataset(Dataset):
                 logging.info(f'Features saved to {self.features_pkl}')
 
         # wait until the master process writes to the processed data files
-        if features is None and not os.path.exists(self.features_pkl):
-            torch.distributed.barrier()
-
+        from nemo.utils.env_var_parsing import get_envint
+        from time import time
+        rank = get_envint("RANK", None)
+        slurm_rank = get_envint("SLURM_PROCID", None)
+        node_rank = get_envint("NODE_RANK", get_envint("GROUP_RANK", 0))
+        local_rank = get_envint("LOCAL_RANK", 0)
+        rank_file = (
+            self.text_file.parent.parent
+            / f"debug_files/RANK_{rank}__SLURM_PROCID_{slurm_rank}__NODE_RANK_{node_rank}__LOCAL_RANK_{local_rank}.txt"
+        )
+        with rank_file.open('w') as out_f:
+            out_f.write(f"before file check: {time()}\n")
+            if features is None and not os.path.exists(self.features_pkl):
+                out_f.write(f"before barrier: {time()}\n")
+                torch.distributed.barrier()
+            out_f.write(f"after barrier: {time()}\n")
         if features is None:
             features = pickle.load(self.features_pkl.open('rb'))
             li = features[-2:]
