@@ -31,7 +31,7 @@ EXPNAME="evelina_model_debug_multi_node_pc"
 SLURM_ACCOUNT='ent_aiapps'
 USERID='apeganov'
 LUSTRE_ACCOUNT_PREFIX=/gpfs/fs1/projects/${SLURM_ACCOUNT}
-DATA="${LUSTRE_ACCOUNT_PREFIX}/datasets/data/punctuation_capitalization/wiki_wmt_min_punc_3_128_06.04.2022"
+DATA="${LUSTRE_ACCOUNT_PREFIX}/datasets/data/punctuation_capitalization/wiki_wmt_min_punc_3_128_17.01.2022_debug"
 RESULTS=${LUSTRE_ACCOUNT_PREFIX}/users/${USERID}/results/$PROJECT/$EXPNAME
 CODE="${LUSTRE_ACCOUNT_PREFIX}/users/${USERID}/code/NeMo"
 
