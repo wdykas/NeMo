@@ -56,8 +56,7 @@ echo "*******STARTING********" \
 	--config-path=/code/examples/nlp/token_classification/conf/wiki \
 	--config-name=local_bs15000_steps100000 \
 	do_testing=false \
-	model.train_ds.ds_item="/data/train_t5_tarred_5500" \
-	model.train_ds.tar_metadata_file="metadata.punctuation_capitalization.tokens5500.max_seq_length512.-home-apeganov-pretrained_tokenizers-t5_large.json" \
+	model.train_ds.ds_item="/data/wiki_dev" \
 	model.validation_ds.ds_item=[/data/europarl_dev,/data/news_commentary_dev,/data/rapid_dev,/data/wiki_dev,/data/IWSLT_tst2019] \
 	model.validation_ds.tokens_in_batch=4092 \
 	~model.test_ds \

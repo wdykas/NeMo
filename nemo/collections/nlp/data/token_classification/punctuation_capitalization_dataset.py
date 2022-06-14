@@ -987,8 +987,10 @@ class BertPunctuationCapitalizationDataset(Dataset):
         local_rank = get_envint("LOCAL_RANK", 0)
         rank_file = (
             self.text_file.parent.parent
-            / f"debug_files/RANK_{rank}__SLURM_PROCID_{slurm_rank}__NODE_RANK_{node_rank}__LOCAL_RANK_{local_rank}.txt"
+            / f"debug_files/{self.text_file.stem}/"
+            f"RANK_{rank}__SLURM_PROCID_{slurm_rank}__NODE_RANK_{node_rank}__LOCAL_RANK_{local_rank}.txt"
         )
+        rank_file.parent.mkdir(parents=True, exist_ok=True)
         with rank_file.open('w') as out_f:
             out_f.write(f"before file check: {time()}\n")
             if features is None and not os.path.exists(self.features_pkl):

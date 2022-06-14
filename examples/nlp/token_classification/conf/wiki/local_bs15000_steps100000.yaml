@@ -58,9 +58,10 @@ model:
   train_ds:
     # if evaluation data is not in the model.dataset.data_dir as the training data or multiple datasets are used for
     # evaluation is needed, specify ds_item, otherwise by default data_dir is used
-    use_tarred_dataset: true
+    use_tarred_dataset: false
     ds_item: /media/apeganov/DATA/prepared_wiki_unsplit_48_65_3.11.2021/train_bert_tarred
-    tar_metadata_file:
+    text_file: input.txt
+    labels_file: bert_labels.txt
     shuffle: true
     num_samples: -1
     tokens_in_batch: 15000
