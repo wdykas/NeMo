@@ -43,7 +43,7 @@ def get_features(
     max_seq_length: int = -1,
     label_ids: dict = None,
     pad_label: str = 'O',
-    raw_labels: List[str] = None,
+    raw_labels: List[List[str]] = None,
     ignore_extra_tokens: bool = False,
     ignore_start_end: bool = False,
 ):

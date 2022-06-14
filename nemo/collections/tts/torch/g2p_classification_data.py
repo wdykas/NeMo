@@ -105,31 +105,42 @@ class G2PClassificationDataset(Dataset):
                 for i, line in enumerate(f):
                     if i == 0:
                         continue
+
                     homograph, wordid, sentence, start, end = line.replace('"', "").strip().split("\t")
+
+                    # dataset errors fix
+                    sentence = sentence.replace("2014Coordinate", "2014 Coordinate")
+
                     start, end = int(start), int(end)
-                    homograph_span = sentence[start:end].lower()
-                    if homograph_span != homograph and sentence.lower().count(homograph) == 1:
+                    homograph_span = sentence[start:end]
+                    if homograph_span.lower() != homograph and sentence.lower().count(homograph) == 1:
                         start = sentence.lower().index(homograph)
                         end = start + len(homograph)
-                        homograph_span = sentence[start:end].lower()
+                        homograph_span = sentence[start:end]
                         assert homograph == homograph_span.lower()
 
                     # we'll skip examples where start/end indices are incorrect and
                     # the target homorgaph is also present in the context (ambiguous)
-                    if homograph_span == homograph:
-                        try:
-                            l_context = sentence[:start].split()[-context_len:]
-                        except:
-                            import pdb
+                    if homograph_span.lower() == homograph:
+                        l_context_len = len(tokenizer.tokenize(sentence[:start], add_special_tokens=False))
+                        r_context_len = len(tokenizer.tokenize(sentence[end:], add_special_tokens=False))
 
-                            pdb.set_trace()
-                        r_context = sentence[end:].split()[:context_len]
-                        input = l_context + [EXTRA_ID_0, homograph, EXTRA_ID_1] + r_context
-                        input = " ".join(input)
                         grapheme_ipa_forms = wiki_homograph_dict[homograph]
+                        target_len = len(tokenizer.tokenize(homograph_span, add_special_tokens=False))
                         target = target_ipa.index(grapheme_ipa_forms[wordid])
+
+                        # add extra -100 tokens at the begging and end for [CLS] and [SEP] bert tokens, TODO: remove hardcoding
+                        target = (
+                            [-100] * (l_context_len + 1)
+                            + [target]
+                            + [-100] * (target_len - 1)
+                            + [-100] * (r_context_len + 1)
+                        )
+
                         target_and_negatives = [target_ipa.index(ipa_) for wordid_, ipa_ in grapheme_ipa_forms.items()]
-                        self.data.append({"input": input, "target": target, "target_and_negatives": target_and_negatives})
+                        self.data.append(
+                            {"input": sentence, "target": target, "target_and_negatives": target_and_negatives}
+                        )
                     else:
                         num_removed_or_truncated += 1
 
@@ -154,10 +165,17 @@ class G2PClassificationDataset(Dataset):
         input_encoding = self.tokenizer(
             input_batch, padding='longest', max_length=self.max_seq_len, truncation=True, return_tensors='pt',
         )
+
         input_ids, attention_mask = input_encoding.input_ids, input_encoding.attention_mask
 
         # Encode targets
-        targets = torch.tensor([entry["target"] for entry in batch])
+
+        targets = [entry["target"] for entry in batch]
+        targets_len = [len(entry) for entry in targets]
+        max_target_len = max(targets_len)
+        targets = [entry + [-100] * (max_target_len - entry_len) for entry, entry_len in zip(targets, targets_len)]
+        targets = torch.tensor(targets)
+
         target_and_negatives = [entry["target_and_negatives"] for entry in batch]
 
         # create a mask 1 for target_and_negatives and 0 for the rest of the entries since they're not relevant to the target word
@@ -169,7 +187,15 @@ class G2PClassificationDataset(Dataset):
                 target_and_negatives_mask[i][v] = 1
 
         output = (input_ids, attention_mask, target_and_negatives_mask, targets)
+
+        if input_ids.shape != targets.shape:
+            import pdb
+
+            pdb.set_trace()
+            print()
+
         return output
+
 
 class G2PClassificationInferDataset(Dataset):
     """
@@ -258,18 +284,9 @@ class G2PClassificationInferDataset(Dataset):
             # we'll skip examples where start/end indices are incorrect and
             # the target homorgaph is also present in the context (ambiguous)
             if homograph_span == homograph:
-                try:
-                    l_context = sent[:start].split()[-context_len:]
-                except:
-                    import pdb
-
-                    pdb.set_trace()
-                r_context = sent[end:].split()[:context_len]
-                input = l_context + [EXTRA_ID_0, homograph, EXTRA_ID_1] + r_context
-                input = " ".join(input)
                 grapheme_ipa_forms = wiki_homograph_dict[homograph]
                 target_and_negatives = [target_ipa.index(ipa_) for wordid_, ipa_ in grapheme_ipa_forms.items()]
-                self.data.append({"input": input, "target_and_negatives": target_and_negatives})
+                self.data.append({"input": sent, "target_and_negatives": target_and_negatives})
             else:
                 num_removed_or_truncated += 1
 

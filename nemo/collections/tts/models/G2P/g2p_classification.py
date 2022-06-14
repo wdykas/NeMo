@@ -14,7 +14,6 @@
 
 import os
 from typing import Dict, List, Optional
-from nemo.collections.nlp.parts.utils_funcs import tensor2list
 
 import torch
 from omegaconf import DictConfig
@@ -25,7 +24,8 @@ from transformers import AutoModel, AutoTokenizer
 
 from nemo.collections.common.losses import CrossEntropyLoss
 from nemo.collections.nlp.metrics.classification_report import ClassificationReport
-from nemo.collections.nlp.modules.common import SequenceClassifier
+from nemo.collections.nlp.modules.common import TokenClassifier
+from nemo.collections.nlp.parts.utils_funcs import tensor2list
 from nemo.collections.tts.torch.g2p_classification_data import G2PClassificationDataset, G2PClassificationInferDataset
 from nemo.core.classes import ModelPT
 from nemo.core.classes.common import PretrainedModelInfo
@@ -44,10 +44,12 @@ class G2PClassificationModel(ModelPT):
     def __init__(self, cfg: DictConfig, trainer: Trainer = None):
         self.tokenizer = AutoTokenizer.from_pretrained(cfg.tokenizer, add_prefix_space=True)
         self.max_sequence_len = cfg.get('max_sequence_len', self.tokenizer.model_max_length)
-        self.wordids = None
+
+        # TODO fix this
+        self.wordids = "/home/ebakhturina/g2p_scripts/WikipediaHomographData-master/data/wordids.tsv"
         super().__init__(cfg=cfg, trainer=trainer)
         if cfg.encoder.pretrained is None:
-            self.encoder = AutoModel.from_pretrained(cfg.encoder.transformer).encoder
+            self.encoder = AutoModel.from_pretrained(cfg.encoder.transformer)  # .encoder
         else:
             self.encoder = self.restore_from(cfg.encoder.pretrained).encoder
 
@@ -61,22 +63,21 @@ class G2PClassificationModel(ModelPT):
                 word_id = line[1].strip()
                 self.target_ipa_label_to_id[word_id] = len(self.target_ipa_label_to_id)
 
-
         num_classes = len(self.target_ipa_label_to_id)
-        self.hidden_size = self.encoder.config.d_model
-        self.classifier = SequenceClassifier(
+
+        self.hidden_size = self.encoder.config.hidden_size
+        self.classifier = TokenClassifier(
             hidden_size=self.hidden_size,
             num_classes=num_classes,
-            num_layers=cfg.classifier_head.num_output_layers,
-            activation='relu',
+            num_layers=self._cfg.head.num_fc_layers,
+            activation=self._cfg.head.activation,
             log_softmax=False,
-            dropout=cfg.classifier_head.fc_dropout,
-            use_transformer_init=True,
-            idx_conditioned_on=0,
+            dropout=self._cfg.head.fc_dropout,
+            use_transformer_init=self._cfg.head.use_transformer_init,
         )
 
         # Loss Functions
-        self.loss = CrossEntropyLoss()
+        self.loss = CrossEntropyLoss(logits_ndim=3)
 
         # setup to track metrics
         self.classification_report = ClassificationReport(
@@ -89,13 +90,10 @@ class G2PClassificationModel(ModelPT):
     # @typecheck()
     def forward(self, input_ids, attention_mask, target_and_negatives_mask):
         hidden_states = self.encoder(input_ids=input_ids, attention_mask=attention_mask)[0]
-
-        # [B, 1, hid-dim]
-        sentence_embedding = torch.mean(hidden_states, dim=1).unsqueeze(1)
-        logits = self.classifier(hidden_states=sentence_embedding)
+        logits = self.classifier(hidden_states=hidden_states)
 
         # apply mask to mask out irrelevant options (elementwise)
-        logits = logits * target_and_negatives_mask
+        logits = logits * target_and_negatives_mask.unsqueeze(1)
         return logits
 
     # Training
@@ -105,8 +103,11 @@ class G2PClassificationModel(ModelPT):
         passed in as `batch`.
         """
         input_ids, attention_mask, target_and_negatives_mask, targets = batch
-        logits = self.forward(input_ids=input_ids, attention_mask=attention_mask, target_and_negatives_mask=target_and_negatives_mask)
+        logits = self.forward(
+            input_ids=input_ids, attention_mask=attention_mask, target_and_negatives_mask=target_and_negatives_mask
+        )
         loss = self.loss(logits=logits, labels=targets)
+
         self.log('train_loss', loss)
         return loss
 
@@ -120,12 +121,17 @@ class G2PClassificationModel(ModelPT):
         passed in as `batch`.
         """
         input_ids, attention_mask, target_and_negatives_mask, targets = batch
-        logits = self.forward(input_ids=input_ids, attention_mask=attention_mask, target_and_negatives_mask=target_and_negatives_mask)
+        logits = self.forward(
+            input_ids=input_ids, attention_mask=attention_mask, target_and_negatives_mask=target_and_negatives_mask
+        )
         val_loss = self.loss(logits=logits, labels=targets)
         self.log(f"{split}_loss", val_loss)
-        preds = torch.argmax(logits, axis=-1)
 
-        tp, fn, fp, _ = self.classification_report(preds, targets)
+        tag_preds = torch.argmax(logits, axis=-1)
+        tag_preds = tag_preds[targets != -100]
+        targets = targets[targets != -100]
+
+        tp, fn, fp, _ = self.classification_report(tag_preds, targets)
         return {f'{split}_loss': val_loss, 'tp': tp, 'fn': fn, 'fp': fp}
 
     def validation_epoch_end(self, outputs, split="val"):
@@ -139,7 +145,13 @@ class G2PClassificationModel(ModelPT):
         precision, recall, f1, report = self.classification_report.compute()
 
         # remove examples with support=0
-        report = "\n".join([x for x in report.split("\n") if not x.endswith("          0")])
+        report = "\n".join(
+            [
+                x
+                for x in report.split("\n")
+                if not x.endswith("          0") and "100.00     100.00     100.00" not in x
+            ]
+        )
         logging.info(f'{split}_report: {report}')
         self.log(f'{split}_loss', avg_loss, prog_bar=True)
         self.log(f'{split}_precision', precision)
@@ -179,8 +191,11 @@ class G2PClassificationModel(ModelPT):
 
             for batch in tqdm(infer_datalayer):
                 input_ids, attention_mask, target_and_negatives_mask = batch
-                logits = self.forward(input_ids=input_ids.to(device), attention_mask=attention_mask.to(device),
-                                      target_and_negatives_mask=target_and_negatives_mask.to(device))
+                logits = self.forward(
+                    input_ids=input_ids.to(device),
+                    attention_mask=attention_mask.to(device),
+                    target_and_negatives_mask=target_and_negatives_mask.to(device),
+                )
 
                 preds = tensor2list(torch.argmax(logits, axis=-1))
                 all_preds.extend(preds)
@@ -240,7 +255,9 @@ class G2PClassificationModel(ModelPT):
 
         return torch.utils.data.DataLoader(dataset, collate_fn=dataset.collate_fn, **cfg.dataloader_params)
 
-    def _setup_infer_dataloader(self, sentences, start_end_indices, homographs, batch_size: int, num_workers: int) -> 'torch.utils.data.DataLoader':
+    def _setup_infer_dataloader(
+        self, sentences, start_end_indices, homographs, batch_size: int, num_workers: int
+    ) -> 'torch.utils.data.DataLoader':
         # TODO: fix context_len - remove hardcoding
         dataset = G2PClassificationInferDataset(
             sentences=sentences,
@@ -253,7 +270,14 @@ class G2PClassificationModel(ModelPT):
             with_labels=False,
         )
 
-        return torch.utils.data.DataLoader(dataset, collate_fn=dataset.collate_fn, batch_size=batch_size, shuffle=False, num_workers=num_workers, drop_last=False)
+        return torch.utils.data.DataLoader(
+            dataset,
+            collate_fn=dataset.collate_fn,
+            batch_size=batch_size,
+            shuffle=False,
+            num_workers=num_workers,
+            drop_last=False,
+        )
 
     def input_example(self):
         """

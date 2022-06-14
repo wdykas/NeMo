@@ -12,14 +12,20 @@ model:
 
   encoder:
     pretrained: null # pretrained g2p model with encoder
-    transformer: google/byt5-small
+    transformer: bert-base-cased #google/byt5-small
     dropout: null
 
   tokenizer: ${model.encoder.transformer}
 
-  classifier_head:
-    num_output_layers: 2
-    fc_dropout: 0.1
+#  classifier_head:
+#    num_output_layers: 2
+#    fc_dropout: 0.1
+
+  head:
+    num_fc_layers: 2
+    fc_dropout: 0.5
+    activation: 'relu'
+    use_transformer_init: True
 
   train_ds:
     dataset:
@@ -57,7 +63,7 @@ model:
 
   optim:
     name: adamw
-    lr: 4e-4
+    lr: 5e-5
     weight_decay: 0.01
     # scheduler setup
     sched:
@@ -71,7 +77,7 @@ model:
 
 trainer:
   devices: 1 # number of gpus
-  max_epochs: 50
+  max_epochs: 10
   num_nodes: 1
   accelerator: gpu
   strategy: ddp
@@ -94,5 +100,5 @@ exp_manager:
   create_wandb_logger: true
   wandb_logger_kwargs:
     project: g2p_classification
-    name: "with_mask"
+    name: "token_cl_with_mask"
 
