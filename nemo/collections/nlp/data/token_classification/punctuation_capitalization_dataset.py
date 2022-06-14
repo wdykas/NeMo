@@ -991,12 +991,15 @@ class BertPunctuationCapitalizationDataset(Dataset):
             f"RANK_{rank}__SLURM_PROCID_{slurm_rank}__NODE_RANK_{node_rank}__LOCAL_RANK_{local_rank}.txt"
         )
         rank_file.parent.mkdir(parents=True, exist_ok=True)
-        with rank_file.open('w') as out_f:
-            out_f.write(f"before file check: {time()}\n")
-            if features is None and not os.path.exists(self.features_pkl):
-                out_f.write(f"before barrier: {time()}\n")
-                torch.distributed.barrier()
-            out_f.write(f"after barrier: {time()}\n")
+        out_f = rank_file.open('w')
+        out_f.write(f"before file check: {time()}\n")
+        out_f.flush()
+        if features is None and not os.path.exists(self.features_pkl):
+            out_f.write(f"before barrier: {time()}\n")
+            out_f.flush()
+            torch.distributed.barrier()
+        out_f.write(f"after barrier: {time()}\n")
+        out_f.close()
         if features is None:
             features = pickle.load(self.features_pkl.open('rb'))
             li = features[-2:]
