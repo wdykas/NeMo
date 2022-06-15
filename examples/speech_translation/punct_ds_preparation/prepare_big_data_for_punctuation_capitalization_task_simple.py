@@ -34,19 +34,19 @@ random.seed(42)
 
 
 SUPPORTED_CORPUS_TYPES = [
-    "wikipedia",
-    "europarl",
-    "TED",
-    "rapid",
-    "news-commentary",
-    "wiki-extracted",
-    "news-crawl",
-    "pg19",
-    "pubmed",
-    "google-normalization-dataset",
+    "wikipedia",  # Raw Wikipedia dump
+    "europarl",  # Europarl corpus from WMT
+    "TED",  # TED corpus from WMT
+    "rapid",  # RAPID corpus from WMT
+    "news-commentary",  # news-commentary from WMT
+    "wiki-extracted",  # Wikipedia dump preprocessed with Wiki Extractor (described in WMT 2020 challenge)
+    "news-crawl",  # news-crawl corpus from WMT
+    "pg19",  # Progect Guntenberg https://github.com/deepmind/pg19
+    "pubmed",  # Pubmed https://www.ncbi.nlm.nih.gov/pmc/tools/openftlist/#non-comm-coll
+    "google-normalization-dataset",  # https://www.kaggle.com/richardwilliamsproat/text-normalization-for-english-russian-and-polish
     "tatoeba",
-    "europarl-raw",
-    "un",
+    "europarl-raw",  # https://www.statmt.org/europarl/
+    "un",  # https://conferences.unite.un.org/UNCorpus/
 ]
 
 

@@ -5,6 +5,7 @@
 import html
 import logging
 import multiprocessing as mp
+import os
 import random
 import re
 import shutil
@@ -1075,17 +1076,18 @@ def write_dataset_sub(
 
 
 def write_dataset_parallel(
-    borders,
-    input_file,
-    output_dir,
-    create_model_input,
-    bert_labels,
-    autoregressive_labels,
-    allowed_punctuation,
-    only_first_punctuation_character_after_word_in_autoregressive,
-    no_label_if_all_characters_are_upper_case,
-    num_jobs,
+    borders: Tuple[int, int],
+    input_file: Union[str, os.PathLike],
+    output_dir: Union[str, os.PathLike],
+    create_model_input: bool,
+    bert_labels: bool,
+    autoregressive_labels: bool,
+    allowed_punctuation: Set[str],
+    only_first_punctuation_character_after_word_in_autoregressive: bool,
+    no_label_if_all_characters_are_upper_case: bool,
+    num_jobs: int,
 ):
+    output_dir = Path(output_dir).expanduser()
     num_jobs = min(num_jobs, borders[1] - borders[0])
     num_parts = max(ceil((borders[1] - borders[0]) / MAX_NUM_LINES_PER_PROCESS), num_jobs)
     num_lines_in_part = (borders[1] - borders[0]) // num_parts
@@ -1141,6 +1143,8 @@ def write_dataset_fast(
     progress_queue=None,
 ):
     extended_punctuation = allowed_punctuation | {' ', '\n'}
+    output_dir = Path(output_dir).expanduser()
+    input_file = Path(input_file).expanduser()
     output_dir.mkdir(parents=True, exist_ok=True)
     text_fn, input_fn = output_dir / Path('text.txt'), output_dir / Path('input.txt')
     bert_fn, ar_fn = output_dir / Path('bert_labels.txt'), output_dir / Path('autoregressive_labels.txt')
