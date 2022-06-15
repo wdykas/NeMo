@@ -154,45 +154,32 @@ class MegatronGPTModel(MegatronBaseModel, TextGeneration):
         output_tensor = self.model(tokens, text_position_ids, attention_mask, labels=labels)
         return output_tensor
 
-    def training_step(self, batch, batch_idx):
-        """
-            Our dataloaders produce a micro-batch and then we fetch
-            a number of microbatches depending on the global batch size and model parallel size
-            from the dataloader to produce a list of microbatches.
-            Batch should be a list of microbatches and those microbatches should on CPU.
-            Microbatches are then moved to GPU during the pipeline.
-            The list of microbatches is then piped through the pipeline using Apex fwd/bwd functions.
-        """
-
-        # we zero grads here because we also call backward in the apex fwd/bwd functions
-        self._optimizer.zero_grad()
-
-        # we prepare the micro batches for the apex fwd/bwd function
-        batch_for_pipeline = self.process_global_batch(batch)
+    def fwd_bwd_step(self, batch, forward_only):
         tensor_shape = [self.cfg.encoder_seq_length, self.cfg.micro_batch_size, self.cfg.hidden_size]
 
         if self.cfg.get('pipeline_model_parallel_size', 1) > 1:
             losses_reduced_per_micro_batch = forward_backward_pipelining_without_interleaving(
                 forward_step_func=self.get_forward_output_and_loss_func(),
-                batch=batch_for_pipeline,
+                batch=batch,
                 model=self.model,
-                forward_only=False,
+                forward_only=forward_only,
                 tensor_shape=tensor_shape,
                 dtype=self.autocast_dtype,
                 grad_scaler=self.trainer.precision_plugin.scaler if self.cfg.precision == 16 else None,
             )
         else:
             # no pipeline parallelism so we reduce grads asynchronously
-            if self.megatron_amp_o2:
+            if self.megatron_amp_o2 and not forward_only:
                 custom_sync_context_handler = self._optimizer.no_sync
             else:
                 # TODO: enable async grad all reduce for O1/autocast mixed precision training
                 custom_sync_context_handler = None
+                
             losses_reduced_per_micro_batch = forward_backward_no_pipelining(
                 forward_step_func=self.get_forward_output_and_loss_func(),
-                batch=batch_for_pipeline,
+                batch=batch,
                 model=self.model,
-                forward_only=False,
+                forward_only=forward_only,
                 tensor_shape=tensor_shape,
                 dtype=self.autocast_dtype,
                 grad_scaler=self.trainer.precision_plugin.scaler if self.cfg.precision == 16 else None,
@@ -208,6 +195,9 @@ class MegatronGPTModel(MegatronBaseModel, TextGeneration):
         else:
             loss_mean = torch.tensor(0.0).cuda()
 
+        return loss_mean
+
+    def reduce_gradients(self, loss_mean):
         if self.megatron_amp_o2:
             # when using pipeline parallelism grads must be reduced after the pipeline (not asynchronously)
             if self.cfg.get('pipeline_model_parallel_size', 1) > 1:
@@ -233,6 +223,7 @@ class MegatronGPTModel(MegatronBaseModel, TextGeneration):
         # we can avoid this broadcast by updating the PTL log function to accept specific ranks
         torch.distributed.broadcast(loss_mean, get_last_rank())
 
+    def log_training_step(self, loss_mean):
         if self.cfg.precision == 16:
             loss_scale = self.trainer.precision_plugin.scaler._scale
             if loss_scale is not None:
@@ -249,6 +240,25 @@ class MegatronGPTModel(MegatronBaseModel, TextGeneration):
             prog_bar=True,
             rank_zero_only=True,
         )
+
+    def training_step(self, batch, batch_idx):
+        """
+            Our dataloaders produce a micro-batch and then we fetch
+            a number of microbatches depending on the global batch size and model parallel size
+            from the dataloader to produce a list of microbatches.
+            Batch should be a list of microbatches and those microbatches should on CPU.
+            Microbatches are then moved to GPU during the pipeline.
+            The list of microbatches is then piped through the pipeline using Apex fwd/bwd functions.
+        """
+
+        # we zero grads here because we also call backward in the apex fwd/bwd functions
+        self._optimizer.zero_grad()
+
+        # we prepare the micro batches for the apex fwd/bwd function
+        batch_for_pipeline = self.process_global_batch(batch)
+        loss_mean = self.fwd_bwd_step(batch_for_pipeline, forward_only=False)
+        self.reduce_gradients(loss_mean)
+        self.log_training_step(loss_mean)
 
         return loss_mean
 
@@ -382,34 +392,8 @@ class MegatronGPTModel(MegatronBaseModel, TextGeneration):
         """
 
         batch_for_pipeline = self.process_global_batch(batch)
-        tensor_shape = [self.cfg.encoder_seq_length, self.cfg.micro_batch_size, self.cfg.hidden_size]
-
-        if self.cfg.get('pipeline_model_parallel_size', 1) > 1:
-            losses_reduced_per_micro_batch = forward_backward_pipelining_without_interleaving(
-                forward_step_func=self.get_forward_output_and_loss_func(),
-                batch=batch_for_pipeline,
-                model=self.model,
-                forward_only=True,
-                tensor_shape=tensor_shape,
-                dtype=self.autocast_dtype,
-            )
-        else:
-            losses_reduced_per_micro_batch = forward_backward_no_pipelining(
-                forward_step_func=self.get_forward_output_and_loss_func(),
-                batch=batch_for_pipeline,
-                model=self.model,
-                forward_only=True,
-                tensor_shape=tensor_shape,
-                dtype=self.autocast_dtype,
-            )
-
-        if losses_reduced_per_micro_batch:
-            # average loss across micro batches
-            loss_tensors_list = [loss_reduced['avg'] for loss_reduced in losses_reduced_per_micro_batch]
-            loss_tensor = torch.concat(loss_tensors_list)
-            loss_mean = loss_tensor.mean()
-        else:
-            # we're not on the last pipeline stage so no losses
+        loss_mean = self.fwd_bwd_step(batch_for_pipeline, batch_idx, forward_only=True)
+        if loss_mean.item == 0.0:
             loss_mean = []
 
         return loss_mean
@@ -538,18 +522,7 @@ class MegatronGPTModel(MegatronBaseModel, TextGeneration):
         Args:
             stage (str, optional): Can be 'fit', 'validate', 'test' or 'predict'. Defaults to None.
         """
-        resume_checkpoint_path = self.trainer._checkpoint_connector.resume_from_checkpoint_fit_path
-        if resume_checkpoint_path:
-            try:
-                init_consumed_samples = int(
-                    float(re.findall(r"consumed_samples\=([0-9]+.[0-9]+)", resume_checkpoint_path)[0])
-                )
-            except (ValueError, TypeError):
-                logging.warning("Cannot parse the checkpoint file to get the consumed samples. assume it is zero.")
-                init_consumed_samples = 0
-        else:
-            init_consumed_samples = 0
-        self.init_consumed_samples = init_consumed_samples
+        self.setup_consumed_samples()
 
         if stage == 'predict':
             return
@@ -564,6 +537,21 @@ class MegatronGPTModel(MegatronBaseModel, TextGeneration):
         # when using pipeline model parallel the final stage need to initialize word embeddings
         if parallel_state.get_pipeline_model_parallel_world_size() > 1:
             self.model.sync_initial_word_embeddings()
+
+    def setup_consumed_samples(self):
+        resume_checkpoint_path = self.trainer._checkpoint_connector.resume_from_checkpoint_fit_path
+        if resume_checkpoint_path:
+            try:
+                init_consumed_samples = int(
+                    float(re.findall(r"consumed_samples\=([0-9]+.[0-9]+)", resume_checkpoint_path)[0])
+                )
+            except (ValueError, TypeError):
+                logging.warning("Cannot parse the checkpoint file to get the consumed samples. assume it is zero.")
+                init_consumed_samples = 0
+        else:
+            init_consumed_samples = 0
+
+        self.init_consumed_samples = init_consumed_samples
 
     def setup_training_data(self, cfg):
         if hasattr(self, '_train_ds'):
