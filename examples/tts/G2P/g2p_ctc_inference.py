@@ -27,7 +27,7 @@ from nemo.utils import logging
 
 """
 python G2P/g2p_ctc_inference.py \
-    pretrained_model=/mnt/sdb_4/g2p/chpts/conformer/2780434/g2p/G2PCTC/2022-04-04_22-55-15/checkpoints/G2PCTC.nemo \
+    pretrained_model=/mnt/sdb_4/g2p/chpts/byt5/2982960/g2p/G2PCTC/2022-06-07_01-00-45/checkpoints/G2PCTC.nemo \
     manifest_filepath=/home/ebakhturina/g2p_scripts/misc_data/phonemes_ipa/dev_clean_ambiguous_checked_fields_updated_word_boundaries_ipa_path.json \
     batch_size=32 \
     num_workers=4 \
@@ -35,6 +35,8 @@ python G2P/g2p_ctc_inference.py \
 
 python ../../tools/speech_data_explorer/data_explorer.py /home/ebakhturina/g2p_scripts/misc_data/phonemes_ipa/dev_clean_ambiguous_checked_fields_updated_word_boundaries_ipa_path_phonemes.json --disable-caching-metrics --port 8052
 
+WER 1.64%
+CER 0.57%
 """
 
 
@@ -43,6 +45,7 @@ class TranscriptionConfig:
     # Required configs
     pretrained_model: str  # Path to a .nemo file or Name of a pretrained model
     manifest_filepath: str  # Path to .json manifest file with "text" field
+    pretrained_heteronyms_model: Optional[str] = None  # Path to a .nemo file or a Name of a pretrained model to disambiguage heteronyms (Optional)
 
     # General configs
     output_file: Optional[str] = None

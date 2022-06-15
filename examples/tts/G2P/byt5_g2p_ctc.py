@@ -18,7 +18,7 @@ This script is a copy of g2p_ctc.py with a different config_name value since mul
 To do testing:
 python g2p_ctc.py \
     do_testing=True \
-    model.test_ds.manifest_filepath=/mnt/sdb_4/g2p/v2/phoneme_dev_clean.json \
+    model.test_ds.manifest_filepath=/home/ebakhturina/g2p_scripts/misc_data/phonemes_ipa/dev_clean_ambiguous_checked_fields_updated_word_boundaries_ipa_path.json \
     pretrained_model=/mnt/sdb_4/g2p/chpts/2552576/g2p/G2PCTC/2022-01-28_01-00-25/checkpoints
 """
 

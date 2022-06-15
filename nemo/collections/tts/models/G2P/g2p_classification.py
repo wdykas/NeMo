@@ -190,14 +190,15 @@ class G2PClassificationModel(ModelPT):
             )
 
             for batch in tqdm(infer_datalayer):
-                input_ids, attention_mask, target_and_negatives_mask = batch
+                input_ids, attention_mask, target_and_negatives_mask, pred_mask = batch
                 logits = self.forward(
                     input_ids=input_ids.to(device),
                     attention_mask=attention_mask.to(device),
                     target_and_negatives_mask=target_and_negatives_mask.to(device),
                 )
 
-                preds = tensor2list(torch.argmax(logits, axis=-1))
+                preds = torch.argmax(logits, axis=-1)
+                preds = tensor2list(preds[pred_mask != 0])
                 all_preds.extend(preds)
         finally:
             # set mode back to its original value

@@ -17,6 +17,7 @@ import os
 from collections import defaultdict
 from glob import glob
 from typing import List
+import csv
 
 import torch
 from tqdm import tqdm
@@ -83,68 +84,34 @@ class G2PClassificationDataset(Dataset):
         EXTRA_ID_0 = '<extra_id_0>'
         EXTRA_ID_1 = '<extra_id_1>'
 
-        target_ipa = []
-        self.target_ipa_label_to_id = {}
-        #  read wordids.tsv file
-        wiki_homograph_dict = defaultdict(dict)
-        with open(wordid_map, "r") as f_in:
-            for i, line in enumerate(f_in):
-                if i == 0:
-                    continue
-                line = line.replace('"', "").strip().split("\t")
-                grapheme = line[0].strip()
-                word_id = line[1].strip()
-                ipa_form = line[3].strip()
-                self.target_ipa_label_to_id[word_id] = len(target_ipa)
-                target_ipa.append(ipa_form)
-                wiki_homograph_dict[grapheme][word_id] = ipa_form
-        num_removed_or_truncated = 0
+        wiki_homograph_dict, target_ipa, self.target_ipa_label_to_id = read_wordids(wordid_map)
 
         for file in glob(f"{dir_name}/*.tsv"):
-            with open(file, "r", encoding="utf-8") as f:
-                for i, line in enumerate(f):
-                    if i == 0:
-                        continue
+            file_data = read_wikihomograph_file(file)
 
-                    homograph, wordid, sentence, start, end = line.replace('"', "").strip().split("\t")
+            for sentence, start_end_index, homograph, word_id in file_data:
+                start, end = start_end_index
+                sentence, start, end = correct_wikihomograph_data(sentence, start, end)
+                homograph_span = sentence[start: end]
+                l_context_len = len(tokenizer.tokenize(sentence[:start], add_special_tokens=False))
+                r_context_len = len(tokenizer.tokenize(sentence[end:], add_special_tokens=False))
 
-                    # dataset errors fix
-                    sentence = sentence.replace("2014Coordinate", "2014 Coordinate")
+                grapheme_ipa_forms = wiki_homograph_dict[homograph]
+                target_len = len(tokenizer.tokenize(homograph_span, add_special_tokens=False))
+                target = target_ipa.index(grapheme_ipa_forms[word_id])
 
-                    start, end = int(start), int(end)
-                    homograph_span = sentence[start:end]
-                    if homograph_span.lower() != homograph and sentence.lower().count(homograph) == 1:
-                        start = sentence.lower().index(homograph)
-                        end = start + len(homograph)
-                        homograph_span = sentence[start:end]
-                        assert homograph == homograph_span.lower()
+                # add extra -100 tokens at the begging and end for [CLS] and [SEP] bert tokens, TODO: remove hardcoding
+                target = (
+                    [-100] * (l_context_len + 1)
+                    + [target]
+                    + [-100] * (target_len - 1)
+                    + [-100] * (r_context_len + 1)
+                )
 
-                    # we'll skip examples where start/end indices are incorrect and
-                    # the target homorgaph is also present in the context (ambiguous)
-                    if homograph_span.lower() == homograph:
-                        l_context_len = len(tokenizer.tokenize(sentence[:start], add_special_tokens=False))
-                        r_context_len = len(tokenizer.tokenize(sentence[end:], add_special_tokens=False))
-
-                        grapheme_ipa_forms = wiki_homograph_dict[homograph]
-                        target_len = len(tokenizer.tokenize(homograph_span, add_special_tokens=False))
-                        target = target_ipa.index(grapheme_ipa_forms[wordid])
-
-                        # add extra -100 tokens at the begging and end for [CLS] and [SEP] bert tokens, TODO: remove hardcoding
-                        target = (
-                            [-100] * (l_context_len + 1)
-                            + [target]
-                            + [-100] * (target_len - 1)
-                            + [-100] * (r_context_len + 1)
-                        )
-
-                        target_and_negatives = [target_ipa.index(ipa_) for wordid_, ipa_ in grapheme_ipa_forms.items()]
-                        self.data.append(
-                            {"input": sentence, "target": target, "target_and_negatives": target_and_negatives}
-                        )
-                    else:
-                        num_removed_or_truncated += 1
-
-        logging.info(f"Number of samples removed or truncated {num_removed_or_truncated} examples from {dir_name}")
+                target_and_negatives = [target_ipa.index(ipa_) for wordid_, ipa_ in grapheme_ipa_forms.items()]
+                self.data.append(
+                    {"input": sentence, "target": target, "target_and_negatives": target_and_negatives}
+                )
 
     def __len__(self):
         return len(self.data)
@@ -251,31 +218,20 @@ class G2PClassificationInferDataset(Dataset):
         EXTRA_ID_0 = '<extra_id_0>'
         EXTRA_ID_1 = '<extra_id_1>'
 
-        target_ipa = []
-        self.target_ipa_label_to_id = {}
-        #  read wordids.tsv file
-        wiki_homograph_dict = defaultdict(dict)
-        with open(wordid_map, "r") as f_in:
-            for i, line in enumerate(f_in):
-                if i == 0:
-                    continue
-                line = line.replace('"', "").strip().split("\t")
-                grapheme = line[0].strip()
-                word_id = line[1].strip()
-                ipa_form = line[3].strip()
-                self.target_ipa_label_to_id[word_id] = len(target_ipa)
-                target_ipa.append(ipa_form)
-                wiki_homograph_dict[grapheme][word_id] = ipa_form
-        num_removed_or_truncated = 0
+        wiki_homograph_dict, target_ipa, self.target_ipa_label_to_id = read_wordids(wordid_map)
 
+        num_removed_or_truncated = 0
         if len(sentences) != len(start_end):
             raise ValueError(f"Number of sentences does not match start-end")
 
         for i, sent in enumerate(sentences):
             start, end = start_end[i]
+
+            # dataset errors fix
+            sent, start, end = correct_wikihomograph_data(sent, start, end)
             homograph = homographs[i]
-            homograph_span = sent[start:end].lower()
-            if homograph_span != homograph and sent.lower().count(homograph) == 1:
+            homograph_span = sent[start:end]
+            if homograph_span.lower() != homograph and sent.lower().count(homograph) == 1:
                 start = sent.lower().index(homograph)
                 end = start + len(homograph)
                 homograph_span = sent[start:end].lower()
@@ -283,11 +239,21 @@ class G2PClassificationInferDataset(Dataset):
 
             # we'll skip examples where start/end indices are incorrect and
             # the target homorgaph is also present in the context (ambiguous)
-            if homograph_span == homograph:
+            if homograph_span.lower() == homograph:
                 grapheme_ipa_forms = wiki_homograph_dict[homograph]
                 target_and_negatives = [target_ipa.index(ipa_) for wordid_, ipa_ in grapheme_ipa_forms.items()]
-                self.data.append({"input": sent, "target_and_negatives": target_and_negatives})
+
+                # add 1 to left and right context for [CLS] and [SEP] BERT special tokens added to input
+                # during tokenization in _collate_fn()
+                l_context_len = len(tokenizer.tokenize(sent[:start], add_special_tokens=False)) + 1
+                r_context_len = len(tokenizer.tokenize(sent[end:], add_special_tokens=False)) + 1
+                homograph_len = len(tokenizer.tokenize(homograph_span, add_special_tokens=False))
+                # use prediction of the first subword of the homograph
+                homograph_mask = [1] + [0] * (homograph_len - 1)
+                pred_mask = [0] * l_context_len + homograph_mask + [0] * r_context_len
+                self.data.append({"input": sent, "target_and_negatives": target_and_negatives, "pred_mask": pred_mask})
             else:
+                import pdb; pdb.set_trace()
                 num_removed_or_truncated += 1
 
         logging.info(f"Number of samples removed or truncated {num_removed_or_truncated} examples")
@@ -324,5 +290,81 @@ class G2PClassificationInferDataset(Dataset):
             for v in values:
                 target_and_negatives_mask[i][v] = 1
 
-        output = (input_ids, attention_mask, target_and_negatives_mask)
+        # pad prediction mask (masks out irrelevant words)
+        pred_mask = [entry["pred_mask"] for entry in batch]
+        pred_mask_len = [len(entry) for entry in pred_mask]
+        max_pred_mask_len = max(pred_mask_len)
+        pred_mask = [entry + [0] * (max_pred_mask_len - entry_len) for entry, entry_len in zip(pred_mask, pred_mask_len)]
+        pred_mask = torch.tensor(pred_mask)
+
+        output = (input_ids, attention_mask, target_and_negatives_mask, pred_mask)
         return output
+
+def correct_wikihomograph_data(sentence, start, end):
+    if sentence == "It is traditionally composed of 85–99% tin, mixed with copper, antimony, bismuth, and sometimes lead, although the use of lead is less common today.":
+        start, end = 96, 100
+    if sentence == "Pierrefonds Airport on Réunion recorded just 18 mm (0.71 in) of rainfall from November to January, a record minimum.":
+        start, end = 101, 107
+    sentence = sentence.replace("2014Coordinate", "2014 Coordinate")
+    return sentence, start, end
+
+
+def read_wikihomograph_file(file: str) -> (List[str], List[List[int]], List[str], List[str]):
+    """
+    Reads .tsv file from WikiHomograph dataset,
+    e.g. https://github.com/google-research-datasets/WikipediaHomographData/blob/master/data/eval/live.tsv
+
+    Args:
+        file: path to .tsv file
+    Returns:
+        sentences: Text.
+        start_end_indices: Start and end indices of the homograph in the sentence.
+        homographs: Target homographs for each sentence (TODO: check that multiple homograph for sent are supported).
+        word_ids: Word_ids corresponding to each homograph, i.e. label.
+    """
+    sentences = []
+    start_end_indices = []
+    homographs = []
+    word_ids = []
+    with open(file, "r", encoding="utf-8") as f:
+        tsv_file = csv.reader(f, delimiter="\t")
+        for i, line in enumerate(tsv_file):
+            if i == 0:
+                continue
+            homograph, wordid, sentence, start, end = line
+            start, end = int(start), int(end)
+            homograph_span = sentence[start:end]
+            if homograph_span != homograph and sentence.lower().count(homograph) == 1:
+                start = sentence.lower().index(homograph)
+                end = start + len(homograph)
+                homograph_span = sentence[start:end].lower()
+
+                if homograph != homograph_span.lower():
+                    import pdb; pdb.set_trace()
+                    print()
+
+            homographs.append(homograph)
+            start_end_indices.append([start, end])
+            sentences.append(sentence)
+            word_ids.append(wordid)
+    return sentences, start_end_indices, homographs, word_ids
+
+def read_wordids(wordid_map):
+    wiki_homograph_dict = defaultdict(dict)
+    target_ipa = []
+    target_ipa_label_to_id = {}
+
+    with open(wordid_map, "r", encoding="utf-8") as f:
+        tsv_file = csv.reader(f, delimiter="\t")
+
+        for i, line in enumerate(tsv_file):
+            if i == 0:
+                continue
+
+            grapheme = line[0]
+            word_id = line[1]
+            ipa_form = line[3]
+            target_ipa_label_to_id[word_id] = len(target_ipa)
+            target_ipa.append(ipa_form)
+            wiki_homograph_dict[grapheme][word_id] = ipa_form
+    return wiki_homograph_dict, target_ipa, target_ipa_label_to_id
