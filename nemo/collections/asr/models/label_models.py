@@ -99,7 +99,7 @@ class EncDecSpeakerLabelModel(ModelPT, ExportableEncDecModel):
         self.preprocessor = EncDecSpeakerLabelModel.from_config_dict(cfg.preprocessor)
         self.encoder = EncDecSpeakerLabelModel.from_config_dict(cfg.encoder)
         self.decoder = EncDecSpeakerLabelModel.from_config_dict(cfg.decoder)
-        # self.labels_occurrence = None  # TODO
+        self.labels_occurrence = None  # TODO
 
         if 'angular' in cfg.decoder and cfg.decoder['angular']:
             logging.info("loss is Angular Softmax")
