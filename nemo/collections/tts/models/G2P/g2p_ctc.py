@@ -282,7 +282,7 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):  # ! ASR dependency here
         # TODO: Add better PER calculation and logging.
         avg_per = sum([x["per"] for x in outputs]) / len(outputs)
         self.log(f"{split}_per", avg_per)
-        # import pdb; pdb.set_trace()
+
         if split == "test":
             dataloader_name = self._test_names[dataloader_idx].upper()
         else:
@@ -348,12 +348,12 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):  # ! ASR dependency here
 
             for batch in tqdm(infer_datalayer):
                 input_ids, attention_mask, input_len = batch
-
                 log_probs, greedy_predictions, encoded_len = self.forward(
                     input_ids=input_ids.to(device),
-                    attention_mask=attention_mask.to(device),
+                    attention_mask=attention_mask if attention_mask is None else attention_mask.to(device),
                     input_len=input_len.to(device),
                 )
+
                 preds_str = self.ctc_decoder_predictions_tensor(greedy_predictions.tolist())
                 all_preds.extend(preds_str)
 
@@ -371,33 +371,22 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):  # ! ASR dependency here
     def convert_graphemes_to_phonemes(
         self,
         manifest_filepath: str,
+        output_manifest_filepath: str,
         batch_size: int = 32,
         num_workers: int = 0,
-        output_file: Optional[str] = None,
         target_field: Optional[str] = None,
     ) -> List[str]:
-        """ Main function for Inference
-        Args:
-            sents: A list of inputs tokenized by a basic tokenizer.
-            nb_spans: A list of ints where each int indicates the number of semiotic spans in each input.
-            span_starts: A list of lists where each list contains the starting locations of semiotic spans in an input.
-            span_ends: A list of lists where each list contains the ending locations of semiotic spans in an input.
-            inst_directions: A list of str where each str indicates the direction of the corresponding instance (i.e., INST_BACKWARD for ITN or INST_FORWARD for TN).
-
-        Returns: A list of lists where each list contains the decoded spans for the corresponding input.
         """
-        if not os.path.exists(manifest_filepath):
-            raise ValueError(f"{manifest_filepath} is not found")
+        Main function for Inference
+        Args:
+            TODO
 
+        Returns: TODO
+        """
         all_preds = self._infer(manifest_filepath, batch_size=batch_size, num_workers=num_workers)
-
-        if output_file is None:
-            output_file = manifest_filepath.replace(".json", "_phonemes.json")
-
-        logging.info(f"Saving predictions to {output_file}.")
         all_targets = []
         with open(manifest_filepath, "r") as f_in:
-            with open(output_file, 'w', encoding="utf-8") as f_out:
+            with open(output_manifest_filepath, 'w', encoding="utf-8") as f_out:
                 for i, line in tqdm(enumerate(f_in)):
                     line = json.loads(line)
 
@@ -414,12 +403,13 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):  # ! ASR dependency here
                             all_targets.append(line[target_field])
 
                     line["pred_text"] = all_preds[i]
-                    f_out.write(json.dumps(line) + "\n")
+                    f_out.write(json.dumps(line, ensure_ascii=False) + "\n")
 
         if target_field is not None:
             per = word_error_rate(hypotheses=all_preds, references=all_targets)
             logging.info(f"Overall PER --- {round(per * 100, 2)}%")
-        logging.info(f"Predictions saved to {output_file}.")
+
+        logging.info(f"Predictions saved to {output_manifest_filepath}.")
         return all_preds
 
     # ===== Dataset Setup Functions ===== #

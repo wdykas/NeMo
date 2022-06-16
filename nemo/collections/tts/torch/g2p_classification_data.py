@@ -13,11 +13,11 @@
 # limitations under the License.
 
 
+import csv
 import os
 from collections import defaultdict
 from glob import glob
 from typing import List
-import csv
 
 import torch
 from tqdm import tqdm
@@ -92,7 +92,7 @@ class G2PClassificationDataset(Dataset):
             for sentence, start_end_index, homograph, word_id in file_data:
                 start, end = start_end_index
                 sentence, start, end = correct_wikihomograph_data(sentence, start, end)
-                homograph_span = sentence[start: end]
+                homograph_span = sentence[start:end]
                 l_context_len = len(tokenizer.tokenize(sentence[:start], add_special_tokens=False))
                 r_context_len = len(tokenizer.tokenize(sentence[end:], add_special_tokens=False))
 
@@ -102,16 +102,11 @@ class G2PClassificationDataset(Dataset):
 
                 # add extra -100 tokens at the begging and end for [CLS] and [SEP] bert tokens, TODO: remove hardcoding
                 target = (
-                    [-100] * (l_context_len + 1)
-                    + [target]
-                    + [-100] * (target_len - 1)
-                    + [-100] * (r_context_len + 1)
+                    [-100] * (l_context_len + 1) + [target] + [-100] * (target_len - 1) + [-100] * (r_context_len + 1)
                 )
 
                 target_and_negatives = [target_ipa.index(ipa_) for wordid_, ipa_ in grapheme_ipa_forms.items()]
-                self.data.append(
-                    {"input": sentence, "target": target, "target_and_negatives": target_and_negatives}
-                )
+                self.data.append({"input": sentence, "target": target, "target_and_negatives": target_and_negatives})
 
     def __len__(self):
         return len(self.data)
@@ -240,7 +235,12 @@ class G2PClassificationInferDataset(Dataset):
             # we'll skip examples where start/end indices are incorrect and
             # the target homorgaph is also present in the context (ambiguous)
             if homograph_span.lower() == homograph:
-                grapheme_ipa_forms = wiki_homograph_dict[homograph]
+                try:
+                    grapheme_ipa_forms = wiki_homograph_dict[homograph]
+                except:
+                    import pdb
+
+                    pdb.set_trace()
                 target_and_negatives = [target_ipa.index(ipa_) for wordid_, ipa_ in grapheme_ipa_forms.items()]
 
                 # add 1 to left and right context for [CLS] and [SEP] BERT special tokens added to input
@@ -253,7 +253,9 @@ class G2PClassificationInferDataset(Dataset):
                 pred_mask = [0] * l_context_len + homograph_mask + [0] * r_context_len
                 self.data.append({"input": sent, "target_and_negatives": target_and_negatives, "pred_mask": pred_mask})
             else:
-                import pdb; pdb.set_trace()
+                import pdb
+
+                pdb.set_trace()
                 num_removed_or_truncated += 1
 
         logging.info(f"Number of samples removed or truncated {num_removed_or_truncated} examples")
@@ -294,16 +296,25 @@ class G2PClassificationInferDataset(Dataset):
         pred_mask = [entry["pred_mask"] for entry in batch]
         pred_mask_len = [len(entry) for entry in pred_mask]
         max_pred_mask_len = max(pred_mask_len)
-        pred_mask = [entry + [0] * (max_pred_mask_len - entry_len) for entry, entry_len in zip(pred_mask, pred_mask_len)]
+        pred_mask = [
+            entry + [0] * (max_pred_mask_len - entry_len) for entry, entry_len in zip(pred_mask, pred_mask_len)
+        ]
         pred_mask = torch.tensor(pred_mask)
 
         output = (input_ids, attention_mask, target_and_negatives_mask, pred_mask)
         return output
 
+
 def correct_wikihomograph_data(sentence, start, end):
-    if sentence == "It is traditionally composed of 85–99% tin, mixed with copper, antimony, bismuth, and sometimes lead, although the use of lead is less common today.":
+    if (
+        sentence
+        == "It is traditionally composed of 85–99% tin, mixed with copper, antimony, bismuth, and sometimes lead, although the use of lead is less common today."
+    ):
         start, end = 96, 100
-    if sentence == "Pierrefonds Airport on Réunion recorded just 18 mm (0.71 in) of rainfall from November to January, a record minimum.":
+    if (
+        sentence
+        == "Pierrefonds Airport on Réunion recorded just 18 mm (0.71 in) of rainfall from November to January, a record minimum."
+    ):
         start, end = 101, 107
     sentence = sentence.replace("2014Coordinate", "2014 Coordinate")
     return sentence, start, end
@@ -340,7 +351,9 @@ def read_wikihomograph_file(file: str) -> (List[str], List[List[int]], List[str]
                 homograph_span = sentence[start:end].lower()
 
                 if homograph != homograph_span.lower():
-                    import pdb; pdb.set_trace()
+                    import pdb
+
+                    pdb.set_trace()
                     print()
 
             homographs.append(homograph)
@@ -349,8 +362,9 @@ def read_wikihomograph_file(file: str) -> (List[str], List[List[int]], List[str]
             word_ids.append(wordid)
     return sentences, start_end_indices, homographs, word_ids
 
+
 def read_wordids(wordid_map):
-    wiki_homograph_dict = defaultdict(dict)
+    wiki_homograph_dict = {}
     target_ipa = []
     target_ipa_label_to_id = {}
 
@@ -366,5 +380,7 @@ def read_wordids(wordid_map):
             ipa_form = line[3]
             target_ipa_label_to_id[word_id] = len(target_ipa)
             target_ipa.append(ipa_form)
+            if grapheme not in wiki_homograph_dict:
+                wiki_homograph_dict[grapheme] = {}
             wiki_homograph_dict[grapheme][word_id] = ipa_form
     return wiki_homograph_dict, target_ipa, target_ipa_label_to_id
