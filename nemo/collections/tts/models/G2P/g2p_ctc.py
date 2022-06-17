@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION & AFFILIATES.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,6 +14,7 @@
 
 import json
 import os
+import string
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Union
 
@@ -46,7 +47,7 @@ class CTCG2PConfig:
     validation_ds: Optional[Dict[Any, Any]] = None
 
 
-class CTCG2PModel(ModelPT, ASRBPEMixin):  # ! ASR dependency here
+class CTCG2PModel(ModelPT, ASRBPEMixin):
     """
     CTC-based grapheme-to-phoneme model.
     """
@@ -69,54 +70,13 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):  # ! ASR dependency here
             self.world_size = trainer.num_nodes * trainer.num_gpus
 
         self.mode = cfg.model_name.lower()
+
         supported_modes = ["byt5", "conformer_bpe"]
         if self.mode not in supported_modes:
             raise ValueError(f"{self.mode} is not supported, choose from {supported_modes}")
 
-        if self.mode == "byt5":
-            # Load appropriate tokenizer from HuggingFace
-            self.tokenizer_grapheme = AutoTokenizer.from_pretrained(cfg.tokenizer_grapheme.pretrained)
-            self.max_source_len = cfg.get("max_source_len", self.tokenizer_grapheme.model_max_length)
-            self.max_target_len = cfg.get("max_target_len", self.tokenizer_grapheme.model_max_length)
-        elif "conformer" in self.mode:
-            self.max_source_len = cfg.get("max_source_len", 512)
-            self.max_target_len = cfg.get("max_target_len", 512)
-            # set up grapheme tokenizer
-            chars = [
-                " ",
-                "a",
-                "b",
-                "c",
-                "d",
-                "e",
-                "f",
-                "g",
-                "h",
-                "i",
-                "j",
-                "k",
-                "l",
-                "m",
-                "n",
-                "o",
-                "p",
-                "q",
-                "r",
-                "s",
-                "t",
-                "u",
-                "v",
-                "w",
-                "x",
-                "y",
-                "z",
-                "'",
-            ]
-            vocab_file = "/tmp/char_vocab.txt"
-            with open(vocab_file, "w") as f:
-                [f.write(f'"{ch}"\n') for ch in chars]
-
-            self.tokenizer_grapheme = CharTokenizer(vocab_file=vocab_file)
+        # TODO load unk token symbols from config
+        self.tokenizer_grapheme = self.setup_grapheme_tokenizer(cfg)
 
         # Setup phoneme tokenizer
         self._setup_tokenizer(cfg.tokenizer)
@@ -137,7 +97,31 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):  # ! ASR dependency here
             zero_infinity=True,
             reduction=self._cfg.get("ctc_reduction", "mean_batch"),
         )
-        logging.info("\n\n----> DONE with init()\n\n")
+
+    def setup_grapheme_tokenizer(self, cfg):
+        """ Initialized grapheme tokenizer"""
+
+        # TODO: save to model artifacts
+
+        if self.mode == "byt5":
+            # Load appropriate tokenizer from HuggingFace
+            grapheme_tokenizer = AutoTokenizer.from_pretrained(cfg.tokenizer_grapheme.pretrained)
+            self.max_source_len = cfg.get("max_source_len", grapheme_tokenizer.model_max_length)
+            self.max_target_len = cfg.get("max_target_len", grapheme_tokenizer.model_max_length)
+        else:
+            grapheme_unk_token = cfg.grapheme_unk_token
+            punctuation_marks = string.punctuation.replace('"', "").replace("\\", "")
+            chars = string.ascii_lowercase + string.ascii_uppercase + punctuation_marks + grapheme_unk_token + " "
+            vocab_file = "/tmp/char_vocab.txt"
+            with open(vocab_file, "w") as f:
+                [f.write(f'"{ch}"\n') for ch in chars]
+                f.write('"\\""\n')  # add " to the vocab
+
+            grapheme_tokenizer = CharTokenizer(vocab_file=vocab_file, unk_token=grapheme_unk_token)
+            self.max_source_len = cfg.get("max_source_len", 512)
+            self.max_target_len = cfg.get("max_target_len", 512)
+
+        return grapheme_tokenizer
 
     def _setup_encoder(self):
         if self.mode == "byt5":
