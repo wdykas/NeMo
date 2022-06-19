@@ -15,7 +15,10 @@ model:
     transformer: bert-base-cased #google/byt5-small
     dropout: null
 
-  tokenizer: ${model.encoder.transformer}
+  tokenizer_grapheme:
+    pretrained: ${model.encoder.transformer}
+    grapheme_unk_token: "҂"
+    vocab_file: null # will be filled during training
 
 #  classifier_head:
 #    num_output_layers: 2

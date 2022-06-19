@@ -17,6 +17,8 @@ model:
 
   tokenizer_grapheme:
     pretrained: ${model.encoder.transformer}
+    grapheme_unk_token: "҂" # in the data, T5 unk_token is still <unk>
+    vocab_file: null # will be filled during training
 
   decoder:
     _target_: nemo.collections.asr.modules.ConvASRDecoder
@@ -35,7 +37,7 @@ model:
     dataloader_params:
       drop_last: false
       shuffle: true
-      batch_size: 32 #32
+      batch_size: 16 #32
       num_workers: 4
 
   validation_ds:
@@ -45,7 +47,7 @@ model:
     dataloader_params:
       drop_last: false
       shuffle: false
-      batch_size: 32 #64
+      batch_size: 16 #64
       num_workers: 4
 
   test_ds:

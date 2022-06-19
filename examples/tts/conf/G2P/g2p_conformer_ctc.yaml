@@ -11,11 +11,11 @@ model:
   max_source_len: 512
   max_target_len: 512
 
-  graphemes_tokenizer:
-    _target_: nemo.collections.asr.modules.ConformerEncoder
-    grapheme_unk_token:
-    vocab: [ " ", "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m",
-             "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z", "'" ] # if null, the vocab will be created during model init and fill out
+  tokenizer_grapheme:
+    _target_: nemo.collections.common.tokenizers.char_tokenizer.CharTokenizer
+    grapheme_unk_token: "҂" # in the data, T5 unk_token is still <unk>
+    vocab_file: null # will be filled during training
+
   embedding:
     d_model: 300
   encoder:

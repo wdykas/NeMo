@@ -75,11 +75,12 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
         if self.mode not in supported_modes:
             raise ValueError(f"{self.mode} is not supported, choose from {supported_modes}")
 
-        # TODO load unk token symbols from config
-        self.tokenizer_grapheme = self.setup_grapheme_tokenizer(cfg)
-
         # Setup phoneme tokenizer
         self._setup_tokenizer(cfg.tokenizer)
+
+        # Setup grapheme tokenizer
+        # TODO load unk token symbols from config
+        self.tokenizer_grapheme = self.setup_grapheme_tokenizer(cfg)
 
         # Initialize vocabulary
         vocabulary = self.tokenizer.tokenizer.get_vocab()
@@ -108,8 +109,11 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
             grapheme_tokenizer = AutoTokenizer.from_pretrained(cfg.tokenizer_grapheme.pretrained)
             self.max_source_len = cfg.get("max_source_len", grapheme_tokenizer.model_max_length)
             self.max_target_len = cfg.get("max_target_len", grapheme_tokenizer.model_max_length)
+
+            # TODO store byt5 vocab file
+            # self.register_artifact(cfg.tokenizer_grapheme.vocab_file, vocab_file)
         else:
-            grapheme_unk_token = cfg.grapheme_unk_token
+            grapheme_unk_token = cfg.tokenizer_grapheme.grapheme_unk_token
             punctuation_marks = string.punctuation.replace('"', "").replace("\\", "")
             chars = string.ascii_lowercase + string.ascii_uppercase + punctuation_marks + grapheme_unk_token + " "
             vocab_file = "/tmp/char_vocab.txt"
@@ -117,6 +121,8 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
                 [f.write(f'"{ch}"\n') for ch in chars]
                 f.write('"\\""\n')  # add " to the vocab
 
+            self.register_artifact(cfg.tokenizer_grapheme.vocab_file, vocab_file)
+            # TODO use target from conf
             grapheme_tokenizer = CharTokenizer(vocab_file=vocab_file, unk_token=grapheme_unk_token)
             self.max_source_len = cfg.get("max_source_len", 512)
             self.max_target_len = cfg.get("max_target_len", 512)
