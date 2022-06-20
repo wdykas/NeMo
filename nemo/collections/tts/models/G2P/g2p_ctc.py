@@ -123,16 +123,17 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
             # self.register_artifact(cfg.tokenizer_grapheme.vocab_file, vocab_file)
         else:
             grapheme_unk_token = cfg.tokenizer_grapheme.unk_token
-            tokenizer_grapheme_kwargs = {}
-            tokenizer_grapheme_kwargs["unk_token"] = grapheme_unk_token
             vocab_file = cfg.tokenizer_grapheme.vocab_file
 
             if vocab_file is None:
-                punctuation_marks = string.punctuation.replace('"', "").replace("\\", "")
-                chars = string.ascii_lowercase + punctuation_marks + grapheme_unk_token + " "
+                chars = string.ascii_lowercase + grapheme_unk_token + " "
 
-                if not cfg.do_lower:
+                if not cfg.tokenizer_grapheme.do_lower:
                     chars += string.ascii_uppercase
+
+                if cfg.tokenizer_grapheme.add_punctuation:
+                    punctuation_marks = string.punctuation.replace('"', "").replace("\\", "")
+                    chars += punctuation_marks
 
                 vocab_file = "/tmp/char_vocab.txt"
                 with open(vocab_file, "w") as f:
@@ -144,9 +145,7 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
                 if not os.path.exists(vocab_file):
                     raise ValueError(f"Vocab_file {vocab_file} not found, check 'cfg.tokenizer_grapheme.vocab_file'")
 
-            tokenizer_grapheme_kwargs["vocab_file"] = vocab_file
-            # TODO use target from conf
-            grapheme_tokenizer = instantiate(cfg.tokenizer_grapheme, **tokenizer_grapheme_kwargs)
+            grapheme_tokenizer = CharTokenizer(unk_token=grapheme_unk_token, vocab_file=vocab_file)
             self.max_source_len = cfg.get("max_source_len", 512)
             self.max_target_len = cfg.get("max_target_len", 512)
 
@@ -323,7 +322,7 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
             manifest_filepath=manifest_filepath,
             tokenizer_graphemes=self.tokenizer_grapheme,
             tokenizer_phonemes=self.tokenizer,
-            do_lower=self._cfg.do_lower,
+            do_lower=self._cfg.tokenizer_grapheme.do_lower,
             labels=self.vocabulary,
             max_source_len=self._cfg.max_source_len,
             with_labels=False,
@@ -437,7 +436,7 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
         dataset = CTCG2PBPEDataset(
             manifest_filepath=cfg.manifest_filepath,
             tokenizer_graphemes=self.tokenizer_grapheme,
-            do_lower=self._cfg.do_lower,
+            do_lower=self._cfg.tokenizer_grapheme.do_lower,
             tokenizer_phonemes=self.tokenizer,
             labels=self.vocabulary,
             max_source_len=self.max_source_len,

@@ -10,12 +10,13 @@ model:
   model_name: conformer_bpe # choose from {byt5, conformer_bpe}
   max_source_len: 512
   max_target_len: 512
-  do_lower: true # whether to lower case graphemes
 
   tokenizer_grapheme:
-    _target_: nemo.collections.common.tokenizers.char_tokenizer.CharTokenizer
+#    _target_: nemo.collections.common.tokenizers.char_tokenizer.CharTokenizer
     unk_token: "҂" # in the data, T5 unk_token is still <unk>
     vocab_file: null # will be filled during training
+    do_lower: true # whether to lower case graphemes
+    add_punctuation: true # whether to add punctuation symbols
 
   embedding:
     d_model: 300
