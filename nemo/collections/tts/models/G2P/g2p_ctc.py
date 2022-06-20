@@ -19,24 +19,30 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Union
 
 import torch
+from hydra.utils import instantiate
 from omegaconf import DictConfig, ListConfig, open_dict
 from pytorch_lightning import Trainer
 from torch import nn
 from tqdm import tqdm
 from transformers import AutoConfig, AutoModel, AutoTokenizer
 
-from nemo.collections.asr.losses.ctc import CTCLoss
-from nemo.collections.asr.metrics.wer import word_error_rate
-from nemo.collections.asr.models import EncDecCTCModel
-from nemo.collections.asr.models.asr_model import ASRModel, ExportableEncDecModel
-from nemo.collections.asr.parts.mixins import ASRBPEMixin
 from nemo.collections.common.tokenizers.char_tokenizer import CharTokenizer
-from nemo.collections.nlp.models.nlp_model import NLPModel
 from nemo.collections.tts.torch.data import CTCG2PBPEDataset
 from nemo.core.classes.common import PretrainedModelInfo, typecheck
 from nemo.core.classes.modelPT import ModelPT
 from nemo.core.neural_types import LabelsType, LossType, MaskType, NeuralType, TokenIndex
 from nemo.utils import logging
+
+try:
+    from nemo.collections.asr.losses.ctc import CTCLoss
+    from nemo.collections.asr.metrics.wer import word_error_rate
+    from nemo.collections.asr.models import EncDecCTCModel
+    from nemo.collections.asr.parts.mixins import ASRBPEMixin
+
+    ASR_AVAILABLE = True
+except (ModuleNotFoundError, ImportError) as e:
+    ASR_AVAILABLE = False
+
 
 __all__ = ['CTCG2PModel']
 
@@ -65,6 +71,9 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
     #     return {"loss": NeuralType((), LossType())}
 
     def __init__(self, cfg: DictConfig, trainer: Trainer = None):
+        if not ASR_AVAILABLE:
+            raise ValueError(f"NeMo ASR collection is required.")
+
         self.world_size = 1
         if trainer is not None:
             self.world_size = trainer.num_nodes * trainer.num_gpus
@@ -113,21 +122,31 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
             # TODO store byt5 vocab file
             # self.register_artifact(cfg.tokenizer_grapheme.vocab_file, vocab_file)
         else:
-            grapheme_unk_token = cfg.tokenizer_grapheme.grapheme_unk_token
-            punctuation_marks = string.punctuation.replace('"', "").replace("\\", "")
-            chars = string.ascii_lowercase + punctuation_marks + grapheme_unk_token + " "
+            grapheme_unk_token = cfg.tokenizer_grapheme.unk_token
+            tokenizer_grapheme_kwargs = {}
+            tokenizer_grapheme_kwargs["unk_token"] = grapheme_unk_token
+            vocab_file = cfg.tokenizer_grapheme.vocab_file
 
-            if not cfg.tokenizer_grapheme.do_lower:
-                chars += string.ascii_uppercase
+            if vocab_file is None:
+                punctuation_marks = string.punctuation.replace('"', "").replace("\\", "")
+                chars = string.ascii_lowercase + punctuation_marks + grapheme_unk_token + " "
 
-            vocab_file = "/tmp/char_vocab.txt"
-            with open(vocab_file, "w") as f:
-                [f.write(f'"{ch}"\n') for ch in chars]
-                f.write('"\\""\n')  # add " to the vocab
+                if not cfg.do_lower:
+                    chars += string.ascii_uppercase
 
-            self.register_artifact(cfg.tokenizer_grapheme.vocab_file, vocab_file)
+                vocab_file = "/tmp/char_vocab.txt"
+                with open(vocab_file, "w") as f:
+                    [f.write(f'"{ch}"\n') for ch in chars]
+                    f.write('"\\""\n')  # add " to the vocab
+
+                self.register_artifact("tokenizer_grapheme.vocab_file", vocab_file)
+            else:
+                if not os.path.exists(vocab_file):
+                    raise ValueError(f"Vocab_file {vocab_file} not found, check 'cfg.tokenizer_grapheme.vocab_file'")
+
+            tokenizer_grapheme_kwargs["vocab_file"] = vocab_file
             # TODO use target from conf
-            grapheme_tokenizer = CharTokenizer(vocab_file=vocab_file, unk_token=grapheme_unk_token)
+            grapheme_tokenizer = instantiate(cfg.tokenizer_grapheme, **tokenizer_grapheme_kwargs)
             self.max_source_len = cfg.get("max_source_len", 512)
             self.max_target_len = cfg.get("max_target_len", 512)
 
@@ -304,7 +323,7 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
             manifest_filepath=manifest_filepath,
             tokenizer_graphemes=self.tokenizer_grapheme,
             tokenizer_phonemes=self.tokenizer,
-            do_lower=self._cfg.tokenizer_grapheme.do_lower,
+            do_lower=self._cfg.do_lower,
             labels=self.vocabulary,
             max_source_len=self._cfg.max_source_len,
             with_labels=False,
@@ -418,7 +437,7 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
         dataset = CTCG2PBPEDataset(
             manifest_filepath=cfg.manifest_filepath,
             tokenizer_graphemes=self.tokenizer_grapheme,
-            do_lower=self._cfg.tokenizer_grapheme.do_lower,
+            do_lower=self._cfg.do_lower,
             tokenizer_phonemes=self.tokenizer,
             labels=self.vocabulary,
             max_source_len=self.max_source_len,

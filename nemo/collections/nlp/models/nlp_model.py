@@ -142,7 +142,7 @@ class NLPModel(ModelPT, Exportable):
 
     @rank_zero_only
     def register_bert_model(self):
-        """Adds encoder config to .nemo archive for Jarvis.
+        """Adds encoder config to .nemo archive for Riva.
         """
         # check if there is an encoder, warn if not
         if self.bert_model is not None:
@@ -154,7 +154,7 @@ class NLPModel(ModelPT, Exportable):
                 pretrained_model_name = pretrained_model_name.replace("/", "_")
                 encoder_config_path = pretrained_model_name + '_encoder_config'
                 encoder_config_src = os.path.join(NEMO_NLP_TMP, encoder_config_path + '.json')
-                self.bert_model.config.to_json_file(encoder_config_src)  # name requested by jarvis team
+                self.bert_model.config.to_json_file(encoder_config_src)  # name requested by Riva team
                 self.register_artifact('language_model.config_file', encoder_config_src)  # for .nemo
             # MegatronBertModel's superclass is NLP model, hence can't check for isinstance of self.bert_modelel
             elif hasattr(self, 'pretrained_model_name') and 'megatron' in self.pretrained_model_name:
