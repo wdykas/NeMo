@@ -19,6 +19,7 @@ model:
     pretrained: ${model.encoder.transformer}
     grapheme_unk_token: "҂" # in the data, T5 unk_token is still <unk>
     vocab_file: null # will be filled during training
+    do_lower: true # whether to lower case graphemes
 
   decoder:
     _target_: nemo.collections.asr.modules.ConvASRDecoder

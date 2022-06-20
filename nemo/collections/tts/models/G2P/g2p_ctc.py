@@ -115,7 +115,11 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
         else:
             grapheme_unk_token = cfg.tokenizer_grapheme.grapheme_unk_token
             punctuation_marks = string.punctuation.replace('"', "").replace("\\", "")
-            chars = string.ascii_lowercase + string.ascii_uppercase + punctuation_marks + grapheme_unk_token + " "
+            chars = string.ascii_lowercase + punctuation_marks + grapheme_unk_token + " "
+
+            if not cfg.tokenizer_grapheme.do_lower:
+                chars += string.ascii_uppercase
+
             vocab_file = "/tmp/char_vocab.txt"
             with open(vocab_file, "w") as f:
                 [f.write(f'"{ch}"\n') for ch in chars]
@@ -300,6 +304,7 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
             manifest_filepath=manifest_filepath,
             tokenizer_graphemes=self.tokenizer_grapheme,
             tokenizer_phonemes=self.tokenizer,
+            do_lower=self._cfg.tokenizer_grapheme.do_lower,
             labels=self.vocabulary,
             max_source_len=self._cfg.max_source_len,
             with_labels=False,
@@ -413,6 +418,7 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
         dataset = CTCG2PBPEDataset(
             manifest_filepath=cfg.manifest_filepath,
             tokenizer_graphemes=self.tokenizer_grapheme,
+            do_lower=self._cfg.tokenizer_grapheme.do_lower,
             tokenizer_phonemes=self.tokenizer,
             labels=self.vocabulary,
             max_source_len=self.max_source_len,

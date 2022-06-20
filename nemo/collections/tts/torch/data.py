@@ -1016,6 +1016,7 @@ class CTCG2PBPEDataset(Dataset):
         manifest_filepath: str,
         tokenizer_graphemes: PreTrainedTokenizerBase,
         tokenizer_phonemes: PreTrainedTokenizerBase,
+        do_lower: bool = True,
         labels: List[str] = None,
         max_source_len: int = 512,
         max_target_len: int = 512,
@@ -1051,10 +1052,10 @@ class CTCG2PBPEDataset(Dataset):
                     num_filtered += 1
                     continue
                 """
-                item["text_graphemes"] = item["text_graphemes"].lower()
+                if do_lower:
+                    item["text_graphemes"] = item["text_graphemes"].lower()
 
                 if with_labels:
-                    item["text"] = item["text"].lower()
                     target_tokens = self.tokenizer_phonemes.text_to_ids(item["text"])
                     target_len = len(target_tokens)
 
