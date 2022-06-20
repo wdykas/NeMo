@@ -1,5 +1,8 @@
+import csv
 import json
+import os
 import re
+from glob import glob
 from typing import List, Optional
 
 from nemo_text_processing.text_normalization.normalize import Normalizer
@@ -14,6 +17,7 @@ class IPAG2PProcessor(IPAG2P):
         self,
         phoneme_dict,
         word_tokenize_func=english_word_tokenize,
+        do_lower=True,
         ignore_ambiguous_words=True,
         heteronyms=None,
         grapheme_unk_token="҂",
@@ -25,6 +29,7 @@ class IPAG2PProcessor(IPAG2P):
 
         self.grapheme_unk_token = grapheme_unk_token
         self.ipa_unk_token = ipa_unk_token
+        self.do_lower = do_lower
 
         super().__init__(
             phoneme_dict=phoneme_dict,
@@ -44,6 +49,7 @@ class IPAG2PProcessor(IPAG2P):
         """
 		Returns parsed `word` and `status` (bool: False if word wasn't handled, True otherwise).
 		"""
+        word = word.lower()
         if self.set_graphemes_upper:
             word = word.upper()
 
@@ -99,13 +105,21 @@ class IPAG2PProcessor(IPAG2P):
         # use ipa_unk_token for OOV words
         return self.apply_to_oov_word(word), False
 
-    def __call__(self, text):
-        words = self.word_tokenize_func(text)
-
+    def __call__(self, text, wordid_to_cmu_dict):
+        words = self.word_tokenize_func(text, lower=self.do_lower)
         prons = []
         graphemes = []
         for word, without_changes in words:
-            pron, phon_is_handled = self.parse_one_word(word)
+            if isinstance(word, list):
+                if len(word) == 1 and word[0] in wordid_to_cmu_dict:
+                    prons.append(wordid_to_cmu_dict[word[0]])
+                    word = word[0].split("_")[0]
+                    graphemes.append(word)
+                    continue
+                else:
+                    raise ValueError(f"Input won't be processed: {text}")
+            else:
+                pron, phon_is_handled = self.parse_one_word(word)
 
             if phon_is_handled:
                 graphemes.append(word)
@@ -137,82 +151,92 @@ class IPAG2PProcessor(IPAG2P):
         return prons, graphemes
 
 
+def read_wikihomograph_normalized_file(file: str) -> (List[str], List[List[int]], List[str], List[str]):
+    """
+    Reads .tsv file from WikiHomograph dataset,
+    e.g. https://github.com/google-research-datasets/WikipediaHomographData/blob/master/data/eval/live.tsv
+
+    Args:
+        file: path to .tsv file
+    Returns:
+        sentences: Text.
+        start_end_indices: Start and end indices of the homograph in the sentence.
+        homographs: Target homographs for each sentence (TODO: check that multiple homograph for sent are supported).
+        word_ids: Word_ids corresponding to each homograph, i.e. label.
+    """
+    normalized_sentences = []
+    word_ids = []
+    with open(file, "r", encoding="utf-8") as f:
+        tsv_file = csv.reader(f, delimiter="\t")
+        for i, line in enumerate(tsv_file):
+            if i == 0:
+                continue
+            _, wordid, _, sentence_normalized = line
+            normalized_sentences.append(sentence_normalized)
+            word_ids.append(wordid)
+    return normalized_sentences, word_ids
+
+
 if __name__ == "__main__":
+    # to replace heteronyms with correct IPA form
+    wordid_to_nemo_cmu = {}
+
+    with open("wordid_to_nemo_cmu.tsv", "r", encoding="utf-8") as f:
+        for line in f:
+            word_id, ipa = line.strip().split("\t")
+            wordid_to_nemo_cmu[word_id] = ipa
+
     ipa_tok = IPAG2PProcessor(
         phoneme_dict="/home/ebakhturina/NeMo/scripts/tts_dataset_files/ipa_cmudict-0.7b_nv22.06.txt",
         heteronyms="/home/ebakhturina/NeMo/scripts/tts_dataset_files/heteronyms-052722",
         grapheme_unk_token="҂",
         ipa_unk_token="҂",
+        do_lower=False,
         ignore_ambiguous_words=False,
         set_graphemes_upper=False,
         use_stresses=True,
     )
 
-    text = "how to use the contents?"
-    gt_ipa = "ˈhaʊ ˈtu ҂ ðə ˈkɑntɛnts?"
-    gt_graphemes = "how to ҂ the contents?"
-    pred_phons, pred_graphemes = ipa_tok(text)
+    text = "How to |addict_vrb| hjls the Contents?"
+    gt_ipa = "ˈhaʊ ˈtu əˈdɪkt ҂ ðə ˈkɑntɛnts?"
+    gt_graphemes = "How to addict ҂ the Contents?"
+    pred_phons, pred_graphemes = ipa_tok(text, wordid_to_nemo_cmu)
     assert pred_phons == gt_ipa and pred_graphemes == gt_graphemes
 
-    text = "hello-world-waveglow!"
+    text = "hello-World-waveglow!"
     gt_ipa = "həˈɫoʊ-ˈwɝɫd-ˈweɪvˌɡɫoʊ!"
-    gt_graphemes = "hello-world-waveglow!"
-    pred_phons, pred_graphemes = ipa_tok(text)
+    gt_graphemes = "hello-World-waveglow!"
+    pred_phons, pred_graphemes = ipa_tok(text, wordid_to_nemo_cmu)
     assert pred_phons == gt_ipa and pred_graphemes == gt_graphemes
 
+    DO_LOWER = True
     for subset in ["train", "eval"]:
-        from glob import glob
-        from tqdm import tqdm
-        import csv
-
-        # from nemo.collections.tts.torch.g2p_classification_data import read_wikihomograph_file
-
         # normalized data and saves in "WikipediaHomographData-master/data/{subset}_normalized"
         # is output file is present, skips normalization
         # normalize_wikihomograph_data(subset)
 
-        def read_wikihomograph_normalized_file(file: str) -> (List[str], List[List[int]], List[str], List[str]):
-            """
-            Reads .tsv file from WikiHomograph dataset,
-            e.g. https://github.com/google-research-datasets/WikipediaHomographData/blob/master/data/eval/live.tsv
-
-            Args:
-                file: path to .tsv file
-            Returns:
-                sentences: Text.
-                start_end_indices: Start and end indices of the homograph in the sentence.
-                homographs: Target homographs for each sentence (TODO: check that multiple homograph for sent are supported).
-                word_ids: Word_ids corresponding to each homograph, i.e. label.
-            """
-            normalized_sentences = []
-            word_ids = []
-            with open(file, "r", encoding="utf-8") as f:
-                tsv_file = csv.reader(f, delimiter="\t")
-                for i, line in enumerate(tsv_file):
-                    if i == 0:
-                        continue
-                    _, wordid, _, sentence_normalized = line
-                    normalized_sentences.append(sentence_normalized)
-                    word_ids.append(wordid)
-            return normalized_sentences, word_ids
-
         normalized_data = f"/home/ebakhturina/g2p_scripts/WikipediaHomographData-master/data/{subset}_normalized/"
         files = glob(f"{normalized_data}/*.tsv")
 
-        manifest = f"/mnt/sdb_4/g2p/data_ipa/with_unicode_token/{subset}_wikihomograph.json"
+        dir_name = f"/mnt/sdb_4/g2p/data_ipa/with_unicode_token/lower_{DO_LOWER}"
+        os.makedirs(dir_name, exist_ok=True)
+        manifest = f"{dir_name}/{subset}_wikihomograph.json"
         with open(manifest, "w", encoding="utf-8") as f_out:
             for file in tqdm(files):
                 sentences, word_ids = read_wikihomograph_normalized_file(file)
-                for idx, sent in enumerate(sentences):
-                    ipa_, graphemes_ = ipa_tok(sent)
+                for word_id, sent in zip(word_ids, sentences):
+                    sent = sent.replace(word_id, f"|{word_id}|")
+                    ipa_, graphemes_ = ipa_tok(sent, wordid_to_nemo_cmu)
+                    if DO_LOWER:
+                        graphemes_ = graphemes_.lower()
                     entry = {
                         "text": ipa_,
                         "text_graphemes": graphemes_,
-                        "wordid": word_ids[idx],
+                        "original_sentence": sent,
+                        "wordid": word_id,
                         "duration": 0.001,
                         "audio_filepath": "n/a",
                     }
-
                     f_out.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
         print(f"Data for {subset.upper()} saved at {manifest}")

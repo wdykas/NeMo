@@ -46,12 +46,12 @@ def english_text_preprocessing(text, lower=True):
     return text
 
 
-def english_word_tokenize(text):
+def english_word_tokenize(text, lower=True):
     """
     Convert text (str) to List[Tuple[Union[str, List[str]], bool]] where every tuple denotes word representation and flag whether to leave unchanged or not.
     Word can be one of: valid english word, any substring starts from | to | (unchangeable word) or punctuation marks.
     This function expects that unchangeable word is carefully divided by spaces (e.g. HH AH L OW).
-    Unchangeable word will be splitted by space and represented as List[str], other cases are represented as str.
+    Unchangeable word will be split by space and represented as List[str], other cases are represented as str.
     """
     words = _WORDS_RE.findall(text)
     result = []
@@ -60,7 +60,9 @@ def english_word_tokenize(text):
 
         if maybe_word != '':
             without_changes = False
-            result.append((maybe_word.lower(), without_changes))
+            if lower:
+                maybe_word = maybe_word.lower()
+            result.append((maybe_word, without_changes))
         elif maybe_punct != '':
             without_changes = False
             result.append((maybe_punct, without_changes))
