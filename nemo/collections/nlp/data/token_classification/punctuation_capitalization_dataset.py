@@ -985,7 +985,10 @@ class BertPunctuationCapitalizationDataset(Dataset):
 
         # wait until the master process writes to the processed data files
         if not master_device:
-            torch.distributed.barrier()
+            while features is None and not os.path.exists(self.features_pkl):
+                print(f'\n\nSLEEPING -- global rank: {is_global_rank_zero()}  local rank: {get_envint("LOCAL_RANK", 0)} -- torch.distributed.is_initialized(): {torch.distributed.is_initialized()}')
+                import time
+                time.sleep(10)
 
         if features is None:
             features = pickle.load(self.features_pkl.open('rb'))
