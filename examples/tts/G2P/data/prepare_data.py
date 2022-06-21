@@ -4,6 +4,7 @@ import os
 import re
 from glob import glob
 from typing import List, Optional
+import string
 
 from nemo_text_processing.text_normalization.normalize import Normalizer
 from tqdm import tqdm
@@ -151,6 +152,18 @@ class IPAG2PProcessor(IPAG2P):
         return prons, graphemes
 
 
+def remove_punctuation(text: str, exclude=None):
+    all_punct_marks = string.punctuation
+
+    if exclude is not None:
+        for p in exclude:
+            all_punct_marks = all_punct_marks.replace(p, "")
+    text = re.sub("[" + all_punct_marks + "]", " ", text)
+
+    text = re.sub(r" +", " ", text)
+    return text.strip()
+
+
 def read_wikihomograph_normalized_file(file: str) -> (List[str], List[List[int]], List[str], List[str]):
     """
     Reads .tsv file from WikiHomograph dataset,
@@ -186,6 +199,9 @@ if __name__ == "__main__":
             word_id, ipa = line.strip().split("\t")
             wordid_to_nemo_cmu[word_id] = ipa
 
+    DO_LOWER = True
+    ADD_PUNCT = False
+
     ipa_tok = IPAG2PProcessor(
         phoneme_dict="/home/ebakhturina/NeMo/scripts/tts_dataset_files/ipa_cmudict-0.7b_nv22.06.txt",
         heteronyms="/home/ebakhturina/NeMo/scripts/tts_dataset_files/heteronyms-052722",
@@ -209,7 +225,6 @@ if __name__ == "__main__":
     pred_phons, pred_graphemes = ipa_tok(text, wordid_to_nemo_cmu)
     assert pred_phons == gt_ipa and pred_graphemes == gt_graphemes
 
-    DO_LOWER = True
     for subset in ["train", "eval"]:
         # normalized data and saves in "WikipediaHomographData-master/data/{subset}_normalized"
         # is output file is present, skips normalization
@@ -218,7 +233,7 @@ if __name__ == "__main__":
         normalized_data = f"/home/ebakhturina/g2p_scripts/WikipediaHomographData-master/data/{subset}_normalized/"
         files = glob(f"{normalized_data}/*.tsv")
 
-        dir_name = f"/mnt/sdb_4/g2p/data_ipa/with_unicode_token/lower_{DO_LOWER}"
+        dir_name = f"/mnt/sdb_4/g2p/data_ipa/with_unicode_token/lower_{DO_LOWER}_{ADD_PUNCT}punct"
         os.makedirs(dir_name, exist_ok=True)
         manifest = f"{dir_name}/{subset}_wikihomograph.json"
         with open(manifest, "w", encoding="utf-8") as f_out:
@@ -229,6 +244,11 @@ if __name__ == "__main__":
                     ipa_, graphemes_ = ipa_tok(sent, wordid_to_nemo_cmu)
                     if DO_LOWER:
                         graphemes_ = graphemes_.lower()
+
+                    if not ADD_PUNCT:
+                        ipa_ = remove_punctuation(ipa_)
+                        graphemes_ = remove_punctuation(graphemes_)
+
                     entry = {
                         "text": ipa_,
                         "text_graphemes": graphemes_,

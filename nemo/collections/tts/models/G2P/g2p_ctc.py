@@ -293,12 +293,13 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
 
         # TODO: Add better PER calculation and logging.
         avg_per = sum([x["per"] for x in outputs]) / len(outputs)
-        self.log(f"{split}_per", avg_per)
 
         if split == "test":
             dataloader_name = self._test_names[dataloader_idx].upper()
         else:
             dataloader_name = self._validation_names[dataloader_idx].upper()
+
+        self.log(f"{split}_per_{dataloader_name}", avg_per)
 
         logging.info(f"--> PER: {round(avg_per*100, 2)}% {dataloader_name}")
 
