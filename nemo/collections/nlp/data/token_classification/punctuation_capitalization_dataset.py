@@ -991,7 +991,7 @@ class BertPunctuationCapitalizationDataset(Dataset):
 
         # wait until the master process writes to the processed data files
         from nemo.utils.env_var_parsing import get_envint
-        from time import time
+        import time
         rank = get_envint("RANK", None)
         slurm_rank = get_envint("SLURM_PROCID", None)
         node_rank = get_envint("NODE_RANK", get_envint("GROUP_RANK", 0))
@@ -1003,19 +1003,20 @@ class BertPunctuationCapitalizationDataset(Dataset):
         )
         rank_file.parent.mkdir(parents=True, exist_ok=True)
         out_f = rank_file.open('w')
-        out_f.write(f"before file check: {time()}\n")
+        out_f.write(f"before file check: {time.time()}\n")
         out_f.flush()
         if not master_device:
-            out_f.write(f"before barrier: {time()}\n")
+            out_f.write(f"before barrier: {time.time()}\n")
             out_f.flush()
             while features is None and not os.path.exists(self.features_pkl):
                 print(
-                    f'\n\nSLEEPING -- global rank: {is_global_rank_zero()}  local rank: {get_envint("LOCAL_RANK", 0)} -- torch.distributed.is_initialized(): {torch.distributed.is_initialized()}'
+                    f'\n\nSLEEPING -- global rank: {is_global_rank_zero()}  local rank: {get_envint("LOCAL_RANK", 0)} '
+                    f'-- torch.distributed.is_initialized(): {torch.distributed.is_initialized()}'
                 )
                 import time
 
                 time.sleep(10)
-        out_f.write(f"after barrier: {time()}\n")
+        out_f.write(f"after barrier: {time.time()}\n")
         out_f.close()
         if features is None:
             features = pickle.load(self.features_pkl.open('rb'))
