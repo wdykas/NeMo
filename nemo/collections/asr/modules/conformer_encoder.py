@@ -15,6 +15,8 @@
 import math
 from collections import OrderedDict
 from typing import List, Optional
+import os
+import logging
 
 import torch
 import torch.distributed
@@ -32,6 +34,14 @@ from nemo.core.classes.module import NeuralModule
 from nemo.core.neural_types import AcousticEncodedRepresentation, LengthsType, NeuralType, SpectrogramType
 
 __all__ = ['ConformerEncoder']
+
+LAYER_NORM = 0
+LN = os.getenv('LAYER_NORM')
+if LN is not None:
+    if LN == 1:
+        LAYER_NORM = 1
+    elif LN == 2:
+        LAYER_NORM = 2
 
 
 class ConformerEncoder(NeuralModule, Exportable):
@@ -197,6 +207,10 @@ class ConformerEncoder(NeuralModule, Exportable):
         else:
             raise ValueError(f"Not valid self_attention_model: '{self_attention_model}'!")
 
+        # adding one layer norm layer only if needed
+        if LAYER_NORM > 0:
+            self.norm = nn.LayerNorm(d_model)
+
         self.layers = nn.ModuleList()
         for i in range(n_layers):
             layer = ConformerLayer(
@@ -260,7 +274,16 @@ class ConformerEncoder(NeuralModule, Exportable):
         else:
             audio_signal, length = self.pre_encode(audio_signal, length)
 
+        if LAYER_NORM == 1:
+            logging.warn("applying layernorm before pos enc")
+            audio_signal = self.norm(audio_signal)
+
         audio_signal, pos_emb = self.pos_enc(audio_signal)
+
+        if LAYER_NORM == 2:
+            logging.warn("applying layernorm after pos enc")
+            audio_signal = self.norm(audio_signal)
+
         # adjust size
         max_audio_length = audio_signal.size(1)
         # Create the self-attention and padding masks

@@ -16,6 +16,13 @@ import math
 
 import torch
 import torch.nn as nn
+import os
+import logging
+
+FORCE_CONV2D_32 = False
+if os.getenv('FORCE_CONV2D_32') is not None:
+    logging.warning("forcing conv2d to 32 bit!")
+    FORCE_CONV2D_32 = True
 
 
 class StackingSubsampling(torch.nn.Module):
@@ -138,7 +145,8 @@ class ConvSubsampling(torch.nn.Module):
             repeat_num=self._sampling_num,
         )
         x = x.unsqueeze(1)
-        if self._subsampling == 'striding':
+        # only if this flag is set explicitly
+        if FORCE_CONV2D_32 and self._subsampling == 'striding':
             # added in order to prevent slowdown in torch.nn.Conv2d with bfloat16 / CUDNN v8 API
             # to be removed once the above is fixed in cudnn
             with torch.cuda.amp.autocast(dtype=torch.float32):
