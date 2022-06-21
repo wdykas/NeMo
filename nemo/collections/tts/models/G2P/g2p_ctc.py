@@ -122,17 +122,19 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
             # TODO store byt5 vocab file
             # self.register_artifact(cfg.tokenizer_grapheme.vocab_file, vocab_file)
         else:
-            grapheme_unk_token = cfg.tokenizer_grapheme.unk_token
+            grapheme_unk_token = (
+                cfg.tokenizer_grapheme.unk_token if cfg.tokenizer_grapheme.unk_token is not None else ""
+            )
             vocab_file = cfg.tokenizer_grapheme.vocab_file
 
             if vocab_file is None:
-                chars = string.ascii_lowercase + grapheme_unk_token + " "
+                chars = string.ascii_lowercase + grapheme_unk_token + " " + "'"
 
                 if not cfg.tokenizer_grapheme.do_lower:
                     chars += string.ascii_uppercase
 
                 if cfg.tokenizer_grapheme.add_punctuation:
-                    punctuation_marks = string.punctuation.replace('"', "").replace("\\", "")
+                    punctuation_marks = string.punctuation.replace('"', "").replace("\\", "").replace("'", "")
                     chars += punctuation_marks
 
                 vocab_file = "/tmp/char_vocab.txt"
