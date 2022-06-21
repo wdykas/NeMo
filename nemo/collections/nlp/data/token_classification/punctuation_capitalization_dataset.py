@@ -943,7 +943,18 @@ class BertPunctuationCapitalizationDataset(Dataset):
         master_device = is_global_rank_zero()
         self.features_pkl = self._get_path_to_pkl_features(self.text_file, cache_dir, max_seq_length, num_samples)
         features = None
+        from nemo.utils.env_var_parsing import get_envint
+
+        print(
+            f'\n\nIN DATASET -- global rank: {is_global_rank_zero()} local rank: {get_envint("LOCAL_RANK", 0)} -- torch.distributed.is_initialized(): {torch.distributed.is_initialized()}'
+        )
         if master_device and not (self.features_pkl.is_file() and use_cache):
+            from nemo.utils.env_var_parsing import get_envint
+
+            print(
+                f'\n\nIN MASTER -- global rank: {is_global_rank_zero()}  local rank: {get_envint("LOCAL_RANK", 0)} -- torch.distributed.is_initialized(): {torch.distributed.is_initialized()}'
+            )
+
             if verbose:
                 logging.info(f'Processing {self.text_file}')
             res = self._read_dataset(self.text_file, self.labels_file, num_samples)
@@ -994,10 +1005,16 @@ class BertPunctuationCapitalizationDataset(Dataset):
         out_f = rank_file.open('w')
         out_f.write(f"before file check: {time()}\n")
         out_f.flush()
-        if features is None and not os.path.exists(self.features_pkl):
+        if not master_device:
             out_f.write(f"before barrier: {time()}\n")
             out_f.flush()
-            torch.distributed.barrier()
+            while features is None and not os.path.exists(self.features_pkl):
+                print(
+                    f'\n\nSLEEPING -- global rank: {is_global_rank_zero()}  local rank: {get_envint("LOCAL_RANK", 0)} -- torch.distributed.is_initialized(): {torch.distributed.is_initialized()}'
+                )
+                import time
+
+                time.sleep(10)
         out_f.write(f"after barrier: {time()}\n")
         out_f.close()
         if features is None:
