@@ -326,7 +326,7 @@ class ModelPT(LightningModule, Model):
         checkpoint = None
         try:
             cls._set_model_restore_state(is_being_restored=True)
-
+            print(checkpoint_path, *args, map_location, hparams_file, strict, **kwargs)
             checkpoint = super().load_from_checkpoint(
                 checkpoint_path=checkpoint_path,
                 *args,
