@@ -1056,6 +1056,8 @@ class CTCG2PBPEDataset(Dataset):
         self.with_labels = with_labels
 
         num_removed_or_truncated = 0
+        seq_lengths = []
+        sentences = []
         with open(manifest_filepath, 'r') as f_in:
             logging.info(f"Loading dataset from: {manifest_filepath}")
             for i, line in enumerate(tqdm(f_in)):
@@ -1077,6 +1079,8 @@ class CTCG2PBPEDataset(Dataset):
 
                     if target_len > len(item["text_graphemes"]) or target_len > max_target_len:
                         num_removed_or_truncated += 1
+                        # seq_lengths.append(len(item["text_graphemes"]))
+                        # sentences.append(item["text_graphemes"])
                         continue
 
                     self.data.append(
@@ -1099,6 +1103,8 @@ class CTCG2PBPEDataset(Dataset):
         logging.info(
             f"Number of samples removed or truncated {num_removed_or_truncated} examples from {manifest_filepath}"
         )
+        # import pdb; pdb.set_trace()
+        # print()
 
     def __len__(self):
         return len(self.data)

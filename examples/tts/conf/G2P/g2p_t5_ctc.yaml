@@ -94,6 +94,6 @@ exp_manager:
   create_checkpoint_callback: True
   checkpoint_callback_params:
     save_top_k: 3
-    monitor: "val_loss"
+    monitor: "val_per"
     mode: "min"
     save_best_model: true

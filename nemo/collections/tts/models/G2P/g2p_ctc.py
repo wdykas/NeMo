@@ -122,36 +122,75 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
             # TODO store byt5 vocab file
             # self.register_artifact(cfg.tokenizer_grapheme.vocab_file, vocab_file)
         else:
-            grapheme_unk_token = (
-                cfg.tokenizer_grapheme.unk_token if cfg.tokenizer_grapheme.unk_token is not None else ""
-            )
-            vocab_file = cfg.tokenizer_grapheme.vocab_file
-
-            if vocab_file is None:
-                chars = string.ascii_lowercase + grapheme_unk_token + " " + "'"
-
-                if not cfg.tokenizer_grapheme.do_lower:
-                    chars += string.ascii_uppercase
-
-                if cfg.tokenizer_grapheme.add_punctuation:
-                    punctuation_marks = string.punctuation.replace('"', "").replace("\\", "").replace("'", "")
-                    chars += punctuation_marks
-
-                vocab_file = "/tmp/char_vocab.txt"
-                with open(vocab_file, "w") as f:
-                    [f.write(f'"{ch}"\n') for ch in chars]
-                    f.write('"\\""\n')  # add " to the vocab
-
-                self.register_artifact("tokenizer_grapheme.vocab_file", vocab_file)
-            else:
-                if not os.path.exists(vocab_file):
-                    raise ValueError(f"Vocab_file {vocab_file} not found, check 'cfg.tokenizer_grapheme.vocab_file'")
-
-            grapheme_tokenizer = CharTokenizer(unk_token=grapheme_unk_token, vocab_file=vocab_file)
-            self.max_source_len = cfg.get("max_source_len", 512)
-            self.max_target_len = cfg.get("max_target_len", 512)
+            # grapheme_unk_token = (
+            #     cfg.tokenizer_grapheme.unk_token if cfg.tokenizer_grapheme.unk_token is not None else ""
+            # )
+            # vocab_file = cfg.tokenizer_grapheme.vocab_file
+            #
+            # if vocab_file is None:
+            #     chars = string.ascii_lowercase + grapheme_unk_token + " " + "'"
+            #
+            #     if not cfg.tokenizer_grapheme.do_lower:
+            #         chars += string.ascii_uppercase
+            #
+            #     if cfg.tokenizer_grapheme.add_punctuation:
+            #         punctuation_marks = string.punctuation.replace('"', "").replace("\\", "").replace("'", "")
+            #         chars += punctuation_marks
+            #
+            #     vocab_file = "/tmp/char_vocab.txt"
+            #     with open(vocab_file, "w") as f:
+            #         [f.write(f'"{ch}"\n') for ch in chars]
+            #         f.write('"\\""\n')  # add " to the vocab
+            #
+            #     self.register_artifact("tokenizer_grapheme.vocab_file", vocab_file)
+            # else:
+            #     if not os.path.exists(vocab_file):
+            #         raise ValueError(f"Vocab_file {vocab_file} not found, check 'cfg.tokenizer_grapheme.vocab_file'")
+            #
+            # grapheme_tokenizer = CharTokenizer(unk_token=grapheme_unk_token, vocab_file=vocab_file)
+            # self.max_source_len = cfg.get("max_source_len", 512)
+            # self.max_target_len = cfg.get("max_target_len", 512)
+            grapheme_tokenizer = self.setup_old_conformer_tokenizer()
 
         return grapheme_tokenizer
+
+    def setup_old_conformer_tokenizer(self):
+        # set up grapheme tokenizer
+        chars = [
+            " ",
+            "a",
+            "b",
+            "c",
+            "d",
+            "e",
+            "f",
+            "g",
+            "h",
+            "i",
+            "j",
+            "k",
+            "l",
+            "m",
+            "n",
+            "o",
+            "p",
+            "q",
+            "r",
+            "s",
+            "t",
+            "u",
+            "v",
+            "w",
+            "x",
+            "y",
+            "z",
+            "'",
+        ]
+        vocab_file = "/tmp/char_vocab.txt"
+        with open(vocab_file, "w") as f:
+            [f.write(f'"{ch}"\n') for ch in chars]
+
+        return CharTokenizer(vocab_file=vocab_file)
 
     def _setup_encoder(self):
         if self.mode == "byt5":
@@ -301,6 +340,9 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
         else:
             dataloader_name = self._validation_names[dataloader_idx].upper()
 
+        # to minimize val_per
+        self.log(f"{split}_per", avg_per)
+        # to save all PER values for each dataset in WANDB
         self.log(f"{split}_per_{dataloader_name}", avg_per)
 
         logging.info(f"--> PER: {round(avg_per*100, 2)}% {dataloader_name}")
