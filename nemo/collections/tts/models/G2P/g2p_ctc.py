@@ -148,8 +148,8 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
             #         raise ValueError(f"Vocab_file {vocab_file} not found, check 'cfg.tokenizer_grapheme.vocab_file'")
             #
             # grapheme_tokenizer = CharTokenizer(unk_token=grapheme_unk_token, vocab_file=vocab_file)
-            # self.max_source_len = cfg.get("max_source_len", 512)
-            # self.max_target_len = cfg.get("max_target_len", 512)
+            self.max_source_len = cfg.get("max_source_len", 512)
+            self.max_target_len = cfg.get("max_target_len", 512)
             grapheme_tokenizer = self.setup_old_conformer_tokenizer()
 
         return grapheme_tokenizer
