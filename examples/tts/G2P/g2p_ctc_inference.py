@@ -174,14 +174,15 @@ def main(cfg: TranscriptionConfig) -> TranscriptionConfig:
         )
         print(f"IPA predictions saved in {cfg.output_file}")
 
-        output_file_with_unk = cfg.output_file.replace(".json", "_with_unk.json")
-        model.convert_graphemes_to_phonemes(
-            manifest_filepath=manifest_filepath_with_unk,
-            output_manifest_filepath=output_file_with_unk,
-            batch_size=cfg.batch_size,
-            num_workers=cfg.num_workers,
-            target_field=cfg.target_field,
-        )
+        if cfg.pretrained_heteronyms_model:
+            output_file_with_unk = cfg.output_file.replace(".json", "_with_unk.json")
+            model.convert_graphemes_to_phonemes(
+                manifest_filepath=manifest_filepath_with_unk,
+                output_manifest_filepath=output_file_with_unk,
+                batch_size=cfg.batch_size,
+                num_workers=cfg.num_workers,
+                target_field=cfg.target_field,
+            )
 
     if cfg.pretrained_heteronyms_model:
         with torch.no_grad():

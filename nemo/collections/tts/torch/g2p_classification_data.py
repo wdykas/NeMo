@@ -23,6 +23,7 @@ import torch
 from tqdm import tqdm
 from transformers import AutoTokenizer, PreTrainedTokenizerBase
 
+from nemo.collections.tts.torch.g2p_utils.data_utils import read_wikihomograph_file, read_wordids
 from nemo.core.classes import Dataset
 from nemo.utils import logging
 
@@ -80,18 +81,14 @@ class G2PClassificationDataset(Dataset):
         self.data = []
         self.pad_token = 0
         self.with_labels = with_labels
-        # IDs for special tokens for encoding inputs of the decoder models
-        EXTRA_ID_0 = '<extra_id_0>'
-        EXTRA_ID_1 = '<extra_id_1>'
 
         wiki_homograph_dict, target_ipa, self.target_ipa_label_to_id = read_wordids(wordid_map)
 
-        for file in glob(f"{dir_name}/*.tsv"):
+        for file in tqdm(glob(f"{dir_name}/*.tsv")):
             file_data = read_wikihomograph_file(file)
 
-            for sentence, start_end_index, homograph, word_id in file_data:
+            for sentence, start_end_index, homograph, word_id in zip(*file_data):
                 start, end = start_end_index
-                sentence, start, end = correct_wikihomograph_data(sentence, start, end)
                 homograph_span = sentence[start:end]
                 l_context_len = len(tokenizer.tokenize(sentence[:start], add_special_tokens=False))
                 r_context_len = len(tokenizer.tokenize(sentence[end:], add_special_tokens=False))
@@ -303,84 +300,3 @@ class G2PClassificationInferDataset(Dataset):
 
         output = (input_ids, attention_mask, target_and_negatives_mask, pred_mask)
         return output
-
-
-def correct_wikihomograph_data(sentence, start, end):
-    if (
-        sentence
-        == "It is traditionally composed of 85–99% tin, mixed with copper, antimony, bismuth, and sometimes lead, although the use of lead is less common today."
-    ):
-        start, end = 96, 100
-    if (
-        sentence
-        == "Pierrefonds Airport on Réunion recorded just 18 mm (0.71 in) of rainfall from November to January, a record minimum."
-    ):
-        start, end = 101, 107
-    sentence = sentence.replace("2014Coordinate", "2014 Coordinate")
-    return sentence, start, end
-
-
-def read_wikihomograph_file(file: str) -> (List[str], List[List[int]], List[str], List[str]):
-    """
-    Reads .tsv file from WikiHomograph dataset,
-    e.g. https://github.com/google-research-datasets/WikipediaHomographData/blob/master/data/eval/live.tsv
-
-    Args:
-        file: path to .tsv file
-    Returns:
-        sentences: Text.
-        start_end_indices: Start and end indices of the homograph in the sentence.
-        homographs: Target homographs for each sentence (TODO: check that multiple homograph for sent are supported).
-        word_ids: Word_ids corresponding to each homograph, i.e. label.
-    """
-    sentences = []
-    start_end_indices = []
-    homographs = []
-    word_ids = []
-    with open(file, "r", encoding="utf-8") as f:
-        tsv_file = csv.reader(f, delimiter="\t")
-        for i, line in enumerate(tsv_file):
-            if i == 0:
-                continue
-            homograph, wordid, sentence, start, end = line
-            start, end = int(start), int(end)
-            homograph_span = sentence[start:end]
-            if homograph_span != homograph and sentence.lower().count(homograph) == 1:
-                start = sentence.lower().index(homograph)
-                end = start + len(homograph)
-                homograph_span = sentence[start:end].lower()
-
-                if homograph != homograph_span.lower():
-                    import pdb
-
-                    pdb.set_trace()
-                    print()
-
-            homographs.append(homograph)
-            start_end_indices.append([start, end])
-            sentences.append(sentence)
-            word_ids.append(wordid)
-    return sentences, start_end_indices, homographs, word_ids
-
-
-def read_wordids(wordid_map):
-    wiki_homograph_dict = {}
-    target_ipa = []
-    target_ipa_label_to_id = {}
-
-    with open(wordid_map, "r", encoding="utf-8") as f:
-        tsv_file = csv.reader(f, delimiter="\t")
-
-        for i, line in enumerate(tsv_file):
-            if i == 0:
-                continue
-
-            grapheme = line[0]
-            word_id = line[1]
-            ipa_form = line[3]
-            target_ipa_label_to_id[word_id] = len(target_ipa)
-            target_ipa.append(ipa_form)
-            if grapheme not in wiki_homograph_dict:
-                wiki_homograph_dict[grapheme] = {}
-            wiki_homograph_dict[grapheme][word_id] = ipa_form
-    return wiki_homograph_dict, target_ipa, target_ipa_label_to_id

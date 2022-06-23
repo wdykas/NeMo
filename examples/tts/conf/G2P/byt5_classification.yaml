@@ -7,7 +7,6 @@ do_testing: False
 pretrained_model: null # .nemo
 
 model:
-  model_name: byt5
   max_sequence_len: 512
 
   encoder:
@@ -15,10 +14,7 @@ model:
     transformer: bert-base-cased #google/byt5-small
     dropout: null
 
-  tokenizer_grapheme:
-    pretrained: ${model.encoder.transformer}
-    grapheme_unk_token: "҂"
-    vocab_file: null # will be filled during training
+  tokenizer: ${model.encoder.transformer}
 
 #  classifier_head:
 #    num_output_layers: 2

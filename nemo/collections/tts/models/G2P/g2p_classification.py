@@ -42,6 +42,7 @@ class G2PClassificationModel(ModelPT):
     # @proper  lf
 
     def __init__(self, cfg: DictConfig, trainer: Trainer = None):
+        # import pdb; pdb.set_trace()
         self.tokenizer = AutoTokenizer.from_pretrained(cfg.tokenizer, add_prefix_space=True)
         self.max_sequence_len = cfg.get('max_sequence_len', self.tokenizer.model_max_length)
 
