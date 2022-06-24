@@ -23,7 +23,11 @@ import torch
 from tqdm import tqdm
 from transformers import AutoTokenizer, PreTrainedTokenizerBase
 
-from nemo.collections.tts.torch.g2p_utils.data_utils import read_wikihomograph_file, read_wordids
+from nemo.collections.tts.torch.g2p_utils.data_utils import (
+    correct_wikihomograph_data,
+    read_wikihomograph_file,
+    read_wordids,
+)
 from nemo.core.classes import Dataset
 from nemo.utils import logging
 
@@ -206,9 +210,6 @@ class G2PClassificationInferDataset(Dataset):
         self.data = []
         self.pad_token = 0
         self.with_labels = with_labels
-        # IDs for special tokens for encoding inputs of the decoder models
-        EXTRA_ID_0 = '<extra_id_0>'
-        EXTRA_ID_1 = '<extra_id_1>'
 
         wiki_homograph_dict, target_ipa, self.target_ipa_label_to_id = read_wordids(wordid_map)
 

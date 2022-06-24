@@ -23,6 +23,7 @@ from omegaconf import OmegaConf
 
 from nemo.collections.tts.models.G2P.g2p_classification import G2PClassificationModel
 from nemo.collections.tts.models.G2P.g2p_ctc import CTCG2PModel
+from nemo.collections.tts.torch.en_utils import english_word_tokenize
 from nemo.collections.tts.torch.g2p_classification_data import read_wordids
 from nemo.core.config import hydra_runner
 from nemo.utils import logging
@@ -39,7 +40,7 @@ python G2P/g2p_ctc_inference.py \
     
     target_field=pred_text
 
-python ../../tools/speech_data_explorer/data_explorer.py dev_clean_ambiguous_checked_fields_updated_word_boundaries_ipa_path_pred.json --disable-caching-metrics --port 8052
+python ../../tools/speech_data_explorer/data_explorer.py --disable-caching-metrics dev_clean_ambiguous_checked_fields_updated_word_boundaries_ipa_path_pred.json --port 8052
 
 WER 1.64%
 CER 0.57%
@@ -51,6 +52,14 @@ CER 0.61%
 
 1.64
 0.57
+
+
+python G2P/g2p_ctc_inference.py \
+pretrained_model=/mnt/sdb_4/g2p/chpts/byt5/3043007_cased_with_punct/g2p/G2PCTC/2022-06-22_00-20-21/checkpoints/G2PCTC.nemo \
+manifest_filepath=/mnt/sdb_4/g2p/data_ipa/with_unicode_token/lower_False_Truepunct/eval_wikihomograph.json \
+output_file=cases_with_punct_eval_wiki.json pretrained_heteronyms_model=/mnt/sdb_4/g2p/chpts/homographs_classification/G2PClassification.nemo 
+
+
 """
 
 
@@ -110,6 +119,20 @@ def main(cfg: TranscriptionConfig) -> TranscriptionConfig:
     model.set_trainer(trainer)
     model = model.eval()
 
+    if cfg.output_file is None:
+        cfg.output_file = cfg.manifest_filepath.replace(".json", "_phonemes.json")
+
+    with torch.no_grad():
+        model.convert_graphemes_to_phonemes(
+            manifest_filepath=cfg.manifest_filepath,
+            output_manifest_filepath=cfg.output_file,
+            batch_size=cfg.batch_size,
+            num_workers=cfg.num_workers,
+            target_field=cfg.target_field,
+        )
+        print(f"IPA predictions saved in {cfg.output_file}")
+
+    # disambiguate heteronyms using IPA-classification model
     if cfg.pretrained_heteronyms_model is not None:
         if os.path.exists(cfg.pretrained_heteronyms_model):
             heteronyms_model = G2PClassificationModel.restore_from(
@@ -123,6 +146,7 @@ def main(cfg: TranscriptionConfig) -> TranscriptionConfig:
             raise ValueError(
                 f'Invalid path to the pre-trained .nemo checkpoint or model name for G2PClassificationModel'
             )
+
         heteronyms_model.set_trainer(trainer)
         heteronyms_model = heteronyms_model.eval()
 
@@ -138,57 +162,26 @@ def main(cfg: TranscriptionConfig) -> TranscriptionConfig:
         wiki_homograph_dict, target_ipa, target_ipa_label_to_id = read_wordids(
             "/home/ebakhturina/g2p_scripts/WikipediaHomographData-master/data/wordids.tsv"
         )
-        grapheme_unk_token = "<unk>"
-        ipa_unk_token = "§"
+        grapheme_unk_token = "҂"
+        ipa_unk_token = "҂"
         (
-            manifest_filepath_with_unk,
             sentences,
-            sent_ids,
-            start_end_indices,
+            sentence_id_to_meta_info,
+            start_end_indices_graphemes,
             homographs,
             heteronyms_ipa,
         ) = add_unk_token_to_manifest(
-            cfg.manifest_filepath, heteronyms, wiki_homograph_dict, grapheme_unk_token="<unk>", ipa_unk_token="§"
+            cfg.output_file,
+            heteronyms,
+            wiki_homograph_dict,
+            grapheme_unk_token=grapheme_unk_token,
+            ipa_unk_token=ipa_unk_token,
         )
 
-    # if cfg.do_testing:
-    #     import pdb; pdb.set_trace()
-    #     if not hasattr(cfg.model, 'test_ds'):
-    #         logging.error(f'model.test_ds was not found in the config, skipping evaluation')
-    #     elif model.prepare_test(trainer):
-    #         model.setup_test_data(cfg.model.test_ds)
-    #         trainer.test(model)
-    # else:
-    #     logging.error('Skipping the evaluation. The trainer is not setup properly.')
-
-    if cfg.output_file is None:
-        cfg.output_file = cfg.manifest_filepath.replace(".json", "_phonemes.json")
-
-    with torch.no_grad():
-        model.convert_graphemes_to_phonemes(
-            manifest_filepath=cfg.manifest_filepath,
-            output_manifest_filepath=cfg.output_file,
-            batch_size=cfg.batch_size,
-            num_workers=cfg.num_workers,
-            target_field=cfg.target_field,
-        )
-        print(f"IPA predictions saved in {cfg.output_file}")
-
-        if cfg.pretrained_heteronyms_model:
-            output_file_with_unk = cfg.output_file.replace(".json", "_with_unk.json")
-            model.convert_graphemes_to_phonemes(
-                manifest_filepath=manifest_filepath_with_unk,
-                output_manifest_filepath=output_file_with_unk,
-                batch_size=cfg.batch_size,
-                num_workers=cfg.num_workers,
-                target_field=cfg.target_field,
-            )
-
-    if cfg.pretrained_heteronyms_model:
         with torch.no_grad():
             heteronyms_preds = heteronyms_model.disambiguate(
                 sentences=sentences,
-                start_end_indices=start_end_indices,
+                start_end_indices=start_end_indices_graphemes,
                 homographs=homographs,
                 batch_size=cfg.batch_size,
                 num_workers=cfg.num_workers,
@@ -202,87 +195,168 @@ def main(cfg: TranscriptionConfig) -> TranscriptionConfig:
                 line = line.strip().split("\t")
                 wordid_to_nemo_cmu[line[0]] = line[1]
 
-        # replace <unk> token
+        # replace unknown token
         heteronyms_sent_id = 0
         # TODO fall back if the UNK token is not predicted -> could lead to mismatch
         manifest_corrected_heteronyms = cfg.output_file.replace(".json", "_corrected_heteronyms.json")
-        with open(output_file_with_unk, "r", encoding="utf-8") as f_in, open(
+        with open(cfg.output_file, "r", encoding="utf-8") as f_default, open(
             manifest_corrected_heteronyms, "w", encoding="utf-8"
-        ) as f_out:
-            for idx, line in enumerate(f_in):
+        ) as f_corrected:
+            for sent_id, line in enumerate(f_default):
                 line = json.loads(line)
-                line["text"] = line["text_original"]
 
-                if idx in sent_ids:
-                    count_unk = line["text_graphemes"].count(grapheme_unk_token)
-                    for i in range(count_unk):
+                corrected_pred_text = line["pred_text"]
+                offset = 0
+                if sent_id in sentence_id_to_meta_info:
+                    for start_end_idx in sentence_id_to_meta_info[sent_id]["unk_indices"]:
+                        start_idx, end_idx = start_end_idx
                         word_id = target_ipa_id_to_label[heteronyms_preds[heteronyms_sent_id]]
                         ipa_pred = wordid_to_nemo_cmu[word_id]
-
-                        # replace first occurance of the unk_token
-                        idx_unk_token = line["pred_text"].find(ipa_unk_token)
-                        line["pred_text"] = (
-                            line["pred_text"][: idx_unk_token + 1].replace(ipa_unk_token, ipa_pred)
-                            + line["pred_text"][idx_unk_token + 1 :]
-                        )
+                        if sent_id == 0 and start_idx == 0:
+                            ipa_pred = ipa_pred[:-2]
                         heteronyms_sent_id += 1
-                f_out.write(json.dumps(line, ensure_ascii=False) + "\n")
+                        start_idx += offset
+                        end_idx += offset
+                        corrected_pred_text = (
+                            corrected_pred_text[:start_idx] + ipa_pred + corrected_pred_text[end_idx:]
+                        )
+                        # offset to correct indices, since ipa form chosen during classification could differ in length
+                        # from the predicted one
+                        offset += len(ipa_pred) - (end_idx - start_idx)
 
-        print(f"{heteronyms_sent_id} replacements done out of {len(sentences)}")
+                line["pred_text"] = corrected_pred_text
+                f_corrected.write(json.dumps(line, ensure_ascii=False) + "\n")
+
         print(f"Saved in {manifest_corrected_heteronyms}")
 
 
-def add_unk_token_to_manifest(
-    manifest, heteronyms, wiki_homograph_dict, grapheme_unk_token="<unk>", ipa_unk_token="§"
-):
-    """ TODO: update to handle text with punctuation """
-    tmp_manifest = f"/tmp/{os.path.basename(manifest)}"
+def _get_ipa_parts(words_per_segment, cur_ipa):
+    try:
+        current_ipa = []
+        ipa_end_idx = 0
+        add_previous = False
+        for k, word in enumerate(words_per_segment):
+            if word.isalpha():
+                if add_previous:
+                    import pdb
 
+                    pdb.set_trace()
+                    raise ValueError()
+                if k == len(words_per_segment) - 1:
+                    current_ipa.append(cur_ipa[ipa_end_idx:])
+                else:
+                    add_previous = True
+            else:
+                if add_previous:
+                    new_ipa_end_idx = cur_ipa.index(word, ipa_end_idx)
+                    current_ipa.append(cur_ipa[ipa_end_idx:new_ipa_end_idx])
+                    ipa_end_idx = new_ipa_end_idx
+                    add_previous = False
+
+                word_len = len(word)
+                current_ipa.append(cur_ipa[ipa_end_idx : ipa_end_idx + word_len])
+                ipa_end_idx += word_len
+
+        assert len(current_ipa) == len(words_per_segment)
+    except Exception as e:
+        return None
+    return current_ipa
+
+
+def add_unk_token_to_manifest(manifest, heteronyms, wiki_homograph_dict, grapheme_unk_token, ipa_unk_token):
+    """ Replace heteronyms in graphemes ("text_grapheme") and their ipa prediction () with UNKNOWN token"""
     sentences = []
-    start_end_indices = []
+    # here we're going to store sentence id (in the originla manifest file) and homograph start indices present
+    # in this sentences. These values willbe later use to replace unknown tokens with classification model predictions.
+    sentence_id_to_meta_info = {}
+    start_end_indices_graphemes = []
     homographs = []
     heteronyms_ipa = []
-    sent_ids = []
 
-    with open(manifest, "r", encoding="utf-8") as f_in, open(tmp_manifest, "w", encoding="utf-8",) as f_out:
+    with open(manifest, "r", encoding="utf-8") as f_in:
         for sent_id, line in enumerate(f_in):
             line = json.loads(line)
-            ipa = line["text"].split()
-            graphemes = line["text_graphemes"].split()
+            ipa = line["pred_text"].split()
+            graphemes = line["text_graphemes"]
             line["text_graphemes_original"] = line["text_graphemes"]
-            line["text_original"] = line["text"]
+            line["pred_text_default"] = line["pred_text"]
 
-            assert len(graphemes) == len(ipa)
+            if len(graphemes.split()) != len(ipa):
+                print(f"len(graphemes+ != len(ipa), {line}, skipping...")
+                f_out.write(json.dumps(line, ensure_ascii=False) + '\n')
+                continue
 
-            graphemes_with_unk = []
-            ipa_with_unk = []
-
+            graphemes_with_unk = ""
+            ipa_with_unk = ""
             heteronym_present = False
-            for i, word in enumerate(graphemes):
-                if word.lower() in heteronyms and word.lower() in wiki_homograph_dict:
-                    graphemes_with_unk.append(grapheme_unk_token)
-                    ipa_with_unk.append(ipa_unk_token)
+            for i, segment in enumerate(graphemes.split()):
+                cur_graphemes_with_unk = []
+                cur_ipa_with_unk = []
+                words_per_segment = [w for w, _ in english_word_tokenize(segment, lower=False)]
 
-                    # collect data for G2P classification
-                    start_idx = line["text_graphemes"].index(word, len(" ".join(graphemes[:i])))
-                    end_idx = start_idx + len(word)
-                    start_end_indices.append([start_idx, end_idx])
-                    sentences.append(line["text_graphemes"])
-                    homographs.append(word.lower())
-                    heteronyms_ipa.append(ipa[i])
-                    heteronym_present = True
-                    sent_ids.append(sent_id)
+                # get ipa segments that match words, i.e. split punctuation marks from words
+                current_ipa = _get_ipa_parts(words_per_segment, ipa[i])
+
+                # unmatched ipa and graphemes, e.g. incorrect punctuation mark predicted
+                if current_ipa is None:
+                    cur_graphemes_with_unk.append(segment)
+                    cur_ipa_with_unk.append(ipa[i])
                 else:
-                    graphemes_with_unk.append(word)
-                    ipa_with_unk.append(ipa[i])
+                    for j, word in enumerate(words_per_segment):
+                        if word.lower() in heteronyms and word.lower() in wiki_homograph_dict:
+                            cur_graphemes_with_unk.append(grapheme_unk_token)
+                            cur_ipa_with_unk.append(ipa_unk_token)
+
+                            # collect data for G2P classification
+                            # start and end indices for heteronyms in grapheme form
+                            start_idx_grapheme = line["text_graphemes"].index(
+                                word, len(" ".join(graphemes.split()[:i]))
+                            )
+                            end_idx_grapheme = start_idx_grapheme + len(word)
+                            start_end_indices_graphemes.append([start_idx_grapheme, end_idx_grapheme])
+
+                            # start and end indices for heteronyms in ipa form ("pred_text" field to later replace
+                            # unk token with classification model prediction)
+                            start_idx_ipa = line["pred_text"].index(current_ipa[j], len(" ".join(ipa[:i])))
+                            end_idx_ipa = start_idx_ipa + len(current_ipa[j])
+
+                            if sent_id not in sentence_id_to_meta_info:
+                                sentence_id_to_meta_info[sent_id] = {}
+                                sentence_id_to_meta_info[sent_id]["unk_indices"] = []
+                                sentence_id_to_meta_info[sent_id]["default_pred"] = []
+
+                            sentence_id_to_meta_info[sent_id]["unk_indices"].append([start_idx_ipa, end_idx_ipa])
+                            sentence_id_to_meta_info[sent_id]["default_pred"].append(current_ipa[j])
+
+                            sentences.append(graphemes)
+                            homographs.append(word.lower())
+                            heteronym_present = True
+                        else:
+                            cur_graphemes_with_unk.append(word)
+                            cur_ipa_with_unk.append(current_ipa[j])
+
+                graphemes_with_unk += " " + "".join(cur_graphemes_with_unk)
+
+                ipa_with_unk += " " + "".join(cur_ipa_with_unk)
+                cur_ipa_with_unk = []
+                cur_grapheme_unk_token = []
 
             if heteronym_present:
-                line["text_graphemes"] = " ".join(graphemes_with_unk)
-                line["text"] = " ".join(ipa_with_unk)
-
-            f_out.write(json.dumps(line, ensure_ascii=False) + '\n')
-    return tmp_manifest, sentences, sent_ids, start_end_indices, homographs, heteronyms_ipa
+                line["text_graphemes"] = graphemes_with_unk.strip()
+    return (
+        sentences,
+        sentence_id_to_meta_info,
+        start_end_indices_graphemes,
+        homographs,
+        heteronyms_ipa,
+    )
 
 
 if __name__ == '__main__':
     main()
+
+
+"""
+python G2P/g2p_ctc_inference.py     pretrained_model=/mnt/sdb_4/g2p/chpts/byt5/3043007_cased_with_punct/g2p/G2PCTC/2022-06-22_00-20-21/checkpoints/G2PCTC.nemo manifest_filepath=sample.json output_file=sample_PRED.json pretrained_heteronyms_model=/mnt/sdb_4/g2p/chpts/homographs_classification/G2PClassification.nemo 
+
+"""

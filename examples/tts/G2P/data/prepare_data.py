@@ -12,6 +12,8 @@ from tqdm import tqdm
 from nemo.collections.tts.torch.en_utils import english_word_tokenize
 from nemo.collections.tts.torch.g2ps import IPAG2P
 
+VOCAB = string.punctuation + string.ascii_letters + " "
+
 
 class IPAG2PProcessor(IPAG2P):
     def __init__(
@@ -164,6 +166,16 @@ def remove_punctuation(text: str, exclude=None):
     return text.strip()
 
 
+def post_process(text):
+    text = text.replace("—", "-")
+    return text
+
+
+def is_valid(text):
+    # contains only letters and punctuation marks
+    return len(set(text).difference(set(VOCAB))) == 0
+
+
 def read_wikihomograph_normalized_file(file: str) -> (List[str], List[List[int]], List[str], List[str]):
     """
     Reads .tsv file from WikiHomograph dataset,
@@ -185,6 +197,12 @@ def read_wikihomograph_normalized_file(file: str) -> (List[str], List[List[int]]
             if i == 0:
                 continue
             _, wordid, _, sentence_normalized = line
+
+            sentence_normalized = post_process(sentence_normalized)
+            if not is_valid(sentence_normalized):
+                print(sentence_normalized)
+                continue
+
             normalized_sentences.append(sentence_normalized)
             word_ids.append(wordid)
     return normalized_sentences, word_ids
@@ -199,8 +217,8 @@ if __name__ == "__main__":
             word_id, ipa = line.strip().split("\t")
             wordid_to_nemo_cmu[word_id] = ipa
 
-    DO_LOWER = True
-    ADD_PUNCT = False
+    DO_LOWER = False
+    ADD_PUNCT = True
 
     ipa_tok = IPAG2PProcessor(
         phoneme_dict="/home/ebakhturina/NeMo/scripts/tts_dataset_files/ipa_cmudict-0.7b_nv22.06.txt",
@@ -225,7 +243,7 @@ if __name__ == "__main__":
     pred_phons, pred_graphemes = ipa_tok(text, wordid_to_nemo_cmu)
     assert pred_phons == gt_ipa and pred_graphemes == gt_graphemes
 
-    for subset in ["train", "eval"]:
+    for subset in ["eval"]:  # "train",
         # normalized data and saves in "WikipediaHomographData-master/data/{subset}_normalized"
         # is output file is present, skips normalization
         # normalize_wikihomograph_data(subset)
