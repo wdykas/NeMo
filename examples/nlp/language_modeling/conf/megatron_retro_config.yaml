@@ -71,6 +71,8 @@ model:
   dump_debug_info: False # dump out the debug information
   dump_debug_info_to_file: False # dump out the debug information to files
 
+  add_embedding_normalization: False # add extra embedding normalization
+
   # retro architecture
   chunk_size: 64   # the chunk size used to retrive
   enc_num_layers: 4    # total number of encoder layers

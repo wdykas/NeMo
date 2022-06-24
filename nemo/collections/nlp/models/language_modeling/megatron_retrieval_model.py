@@ -153,6 +153,7 @@ class MegatronRetrievalModel(MegatronBaseModel):
                 'add_position_embedding', False
             ),  # whether use the absolute postion encoding
             tokenizer=self.tokenizer,
+            add_embedding_normalization=self.cfg.get('add_embedding_normalization', False), # add extra embedding normalization
         )
         return model
 

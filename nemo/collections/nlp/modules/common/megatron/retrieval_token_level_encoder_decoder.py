@@ -20,6 +20,7 @@ from nemo.collections.nlp.modules.common.megatron.megatron_decoders import get_d
 from nemo.collections.nlp.modules.common.megatron.megatron_encoders import get_encoder_model
 from nemo.collections.nlp.modules.common.megatron.module import MegatronModule
 from nemo.collections.nlp.modules.common.megatron.token_level_encoder_decoder import MegatronTokenLevelHead
+from nemo.collections.nlp.modules.common.megatron.fused_layer_norm import get_layer_norm
 from nemo.collections.nlp.modules.common.megatron.utils import (
     ApexGuardDefaults,
     build_position_ids,
@@ -30,6 +31,7 @@ from nemo.collections.nlp.modules.common.megatron.utils import (
 try:
     from apex.transformer import tensor_parallel
     from apex.transformer.enums import ModelType
+    from apex.normalization import MixedFusedRMSNorm
 
     HAVE_APEX = True
 except (ImportError, ModuleNotFoundError):
@@ -90,6 +92,7 @@ class MegatronRetrievalTokenLevelEncoderDecoderModule(MegatronModule):
         dec_cross_attention=[3, 5],  # layer numbers for chunked cross attention
         add_position_embedding=False,
         tokenizer=None,  # tokenizer
+        add_embedding_normalization=False, # add extra embedding normalization
     ):
         super(MegatronRetrievalTokenLevelEncoderDecoderModule, self).__init__()
 
@@ -105,6 +108,7 @@ class MegatronRetrievalTokenLevelEncoderDecoderModule(MegatronModule):
         self.eod_id = tokenizer.eos_id
         self.transformer_block_type = transformer_block_type
         self.num_chunked_cross_attention = len(dec_cross_attention)
+        self.add_embedding_normalization = add_embedding_normalization
 
         if kv_channels is None:
             assert (
@@ -288,6 +292,15 @@ class MegatronRetrievalTokenLevelEncoderDecoderModule(MegatronModule):
             init_method=init_method_normal(init_method_std), vocab_size=vocab_size, hidden_size=hidden_size
         )
 
+        if add_embedding_normalization:
+            # extra layer norm for embedding
+            if normalization == 'layernorm':
+                self.encoder_embedding_layernorm = get_layer_norm(hidden_size, layernorm_epsilon, persist_layer_norm)
+                self.decoder_embedding_layernorm = get_layer_norm(hidden_size, layernorm_epsilon, persist_layer_norm)
+            else:
+                self.encoder_embedding_layernorm = MixedFusedRMSNorm(hidden_size, layernorm_epsilon)
+                self.decoder_embedding_layernorm = MixedFusedRMSNorm(hidden_size, layernorm_epsilon)
+
         if add_decoder and post_process:
             self.tokens_head = MegatronTokenLevelHead(self.word_embeddings_weight().size(0), parallel_output)
             self._tokens_head_key = 'tokens_head'
@@ -321,6 +334,8 @@ class MegatronRetrievalTokenLevelEncoderDecoderModule(MegatronModule):
                 else:
                     input_position_ids = None
                 input_emb = self.encoder_embedding(input_ids, input_position_ids, token_type_ids=token_type_ids)
+                if self.add_embedding_normalization:
+                    input_emb = self.decoder_embedding_layernorm(input_emb)
             else:
                 input_emb = None
 
@@ -332,6 +347,8 @@ class MegatronRetrievalTokenLevelEncoderDecoderModule(MegatronModule):
             else:
                 retrieved_position_ids = None
             retrieved_emb = self.encoder_embedding(retrieved_ids, retrieved_position_ids)
+            if self.add_embedding_normalization:
+                retrieved_emb = self.encoder_embedding_layernorm(retrieved_emb)
 
         if self.add_decoder:
             hidden = self.pre_decoder(
