@@ -21,6 +21,7 @@ import pytorch_lightning as pl
 import torch
 from omegaconf import OmegaConf
 
+from nemo.collections.asr.metrics.wer import word_error_rate
 from nemo.collections.tts.models.G2P.g2p_classification import G2PClassificationModel
 from nemo.collections.tts.models.G2P.g2p_ctc import CTCG2PModel
 from nemo.collections.tts.torch.en_utils import english_word_tokenize
@@ -132,6 +133,8 @@ def main(cfg: TranscriptionConfig) -> TranscriptionConfig:
         )
         print(f"IPA predictions saved in {cfg.output_file}")
 
+    get_metrics(cfg.output_file)
+
     # disambiguate heteronyms using IPA-classification model
     if cfg.pretrained_heteronyms_model is not None:
         if os.path.exists(cfg.pretrained_heteronyms_model):
@@ -199,6 +202,7 @@ def main(cfg: TranscriptionConfig) -> TranscriptionConfig:
         heteronyms_sent_id = 0
         # TODO fall back if the UNK token is not predicted -> could lead to mismatch
         manifest_corrected_heteronyms = cfg.output_file.replace(".json", "_corrected_heteronyms.json")
+
         with open(cfg.output_file, "r", encoding="utf-8") as f_default, open(
             manifest_corrected_heteronyms, "w", encoding="utf-8"
         ) as f_corrected:
@@ -228,6 +232,7 @@ def main(cfg: TranscriptionConfig) -> TranscriptionConfig:
                 f_corrected.write(json.dumps(line, ensure_ascii=False) + "\n")
 
         print(f"Saved in {manifest_corrected_heteronyms}")
+        get_metrics(manifest_corrected_heteronyms)
 
 
 def _get_ipa_parts(words_per_segment, cur_ipa):
@@ -283,7 +288,6 @@ def add_unk_token_to_manifest(manifest, heteronyms, wiki_homograph_dict, graphem
 
             if len(graphemes.split()) != len(ipa):
                 print(f"len(graphemes+ != len(ipa), {line}, skipping...")
-                f_out.write(json.dumps(line, ensure_ascii=False) + '\n')
                 continue
 
             graphemes_with_unk = ""
@@ -352,11 +356,33 @@ def add_unk_token_to_manifest(manifest, heteronyms, wiki_homograph_dict, graphem
     )
 
 
+def get_metrics(manifest: str):
+    all_preds = []
+    all_references = []
+    with open(manifest, "r") as f:
+        for line in f:
+            line = json.loads(line)
+            all_preds.append(line["pred_text"])
+            all_references.append(line["text"])
+
+    wer = word_error_rate(hypotheses=all_preds, references=all_references)
+    per = word_error_rate(hypotheses=all_preds, references=all_references, use_cer=True)
+
+    print("=" * 40)
+    print(f"{manifest}: WER: {wer * 100:.2f}%, PER: {per * 100:.2f}%")
+    print("=" * 40)
+    return wer, per
+
+
 if __name__ == '__main__':
     main()
 
 
 """
-python G2P/g2p_ctc_inference.py     pretrained_model=/mnt/sdb_4/g2p/chpts/byt5/3043007_cased_with_punct/g2p/G2PCTC/2022-06-22_00-20-21/checkpoints/G2PCTC.nemo manifest_filepath=sample.json output_file=sample_PRED.json pretrained_heteronyms_model=/mnt/sdb_4/g2p/chpts/homographs_classification/G2PClassification.nemo 
+python G2P/g2p_ctc_inference.py \
+pretrained_model=/mnt/sdb_4/g2p/chpts/byt5/3043007_cased_with_punct/g2p/G2PCTC/2022-06-22_00-20-21/checkpoints/G2PCTC.nemo manifest_filepath=sample.json output_file=sample_PRED.json pretrained_heteronyms_model=/mnt/sdb_4/g2p/chpts/homographs_classification/G2PClassification.nemo 
+
+
+/mnt/sdb_4/g2p/data_ipa/evaluation_sets/dev_cmu_phonemes.json: WER: 82.69%, PER: 35.66%
 
 """

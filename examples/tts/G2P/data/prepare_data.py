@@ -208,42 +208,37 @@ def read_wikihomograph_normalized_file(file: str) -> (List[str], List[List[int]]
     return normalized_sentences, word_ids
 
 
-if __name__ == "__main__":
-    # to replace heteronyms with correct IPA form
-    wordid_to_nemo_cmu = {}
-
-    with open("wordid_to_nemo_cmu.tsv", "r", encoding="utf-8") as f:
-        for line in f:
-            word_id, ipa = line.strip().split("\t")
-            wordid_to_nemo_cmu[word_id] = ipa
-
-    DO_LOWER = False
-    ADD_PUNCT = True
-
-    ipa_tok = IPAG2PProcessor(
-        phoneme_dict="/home/ebakhturina/NeMo/scripts/tts_dataset_files/ipa_cmudict-0.7b_nv22.06.txt",
-        heteronyms="/home/ebakhturina/NeMo/scripts/tts_dataset_files/heteronyms-052722",
-        grapheme_unk_token="҂",
-        ipa_unk_token="҂",
+def setup_tokenizer(
+    phoneme_dict: str = "/home/ebakhturina/NeMo/scripts/tts_dataset_files/ipa_cmudict-0.7b_nv22.06.txt",
+    heteronyms: str = "/home/ebakhturina/NeMo/scripts/tts_dataset_files/heteronyms-052722",
+    unk_token: str = "҂",
+):
+    return IPAG2PProcessor(
+        phoneme_dict=phoneme_dict,
+        heteronyms=heteronyms,
+        grapheme_unk_token=unk_token,
+        ipa_unk_token=unk_token,
         do_lower=False,
         ignore_ambiguous_words=False,
         set_graphemes_upper=False,
         use_stresses=True,
     )
 
-    text = "How to |addict_vrb| hjls the Contents?"
-    gt_ipa = "ˈhaʊ ˈtu əˈdɪkt ҂ ðə ˈkɑntɛnts?"
-    gt_graphemes = "How to addict ҂ the Contents?"
-    pred_phons, pred_graphemes = ipa_tok(text, wordid_to_nemo_cmu)
-    assert pred_phons == gt_ipa and pred_graphemes == gt_graphemes
 
-    text = "hello-World-waveglow!"
-    gt_ipa = "həˈɫoʊ-ˈwɝɫd-ˈweɪvˌɡɫoʊ!"
-    gt_graphemes = "hello-World-waveglow!"
-    pred_phons, pred_graphemes = ipa_tok(text, wordid_to_nemo_cmu)
-    assert pred_phons == gt_ipa and pred_graphemes == gt_graphemes
+def prepare_wiki_data(
+    do_lower: bool = False,
+    add_punct: bool = True,
+    splits: List[str] = ["train", "eval"],
+    phoneme_dict: str = "/home/ebakhturina/NeMo/scripts/tts_dataset_files/ipa_cmudict-0.7b_nv22.06.txt",
+    heteronyms: str = "/home/ebakhturina/NeMo/scripts/tts_dataset_files/heteronyms-052722",
+):
 
-    for subset in ["eval"]:  # "train",
+    # to replace heteronyms with correct IPA form
+    wordid_to_nemo_cmu = get_wordid_to_nemo_cmu()
+
+    ipa_tok = setup_tokenizer(phoneme_dict=phoneme_dict, heteronyms=heteronyms)
+
+    for subset in splits:
         # normalized data and saves in "WikipediaHomographData-master/data/{subset}_normalized"
         # is output file is present, skips normalization
         # normalize_wikihomograph_data(subset)
@@ -251,7 +246,7 @@ if __name__ == "__main__":
         normalized_data = f"/home/ebakhturina/g2p_scripts/WikipediaHomographData-master/data/{subset}_normalized/"
         files = glob(f"{normalized_data}/*.tsv")
 
-        dir_name = f"/mnt/sdb_4/g2p/data_ipa/with_unicode_token/lower_{DO_LOWER}_{ADD_PUNCT}punct"
+        dir_name = f"/mnt/sdb_4/g2p/data_ipa/with_unicode_token/lower_{do_lower}_{add_punct}punct"
         os.makedirs(dir_name, exist_ok=True)
         manifest = f"{dir_name}/{subset}_wikihomograph.json"
         with open(manifest, "w", encoding="utf-8") as f_out:
@@ -260,10 +255,10 @@ if __name__ == "__main__":
                 for word_id, sent in zip(word_ids, sentences):
                     sent = sent.replace(word_id, f"|{word_id}|")
                     ipa_, graphemes_ = ipa_tok(sent, wordid_to_nemo_cmu)
-                    if DO_LOWER:
+                    if do_lower:
                         graphemes_ = graphemes_.lower()
 
-                    if not ADD_PUNCT:
+                    if not add_punct:
                         ipa_ = remove_punctuation(ipa_)
                         graphemes_ = remove_punctuation(graphemes_)
 
@@ -279,16 +274,42 @@ if __name__ == "__main__":
 
         print(f"Data for {subset.upper()} saved at {manifest}")
 
-    # with open("test.json", "r") as f:
-    #     for line in f:
-    #         line = json.loads(line)
-    #         text = line["text_graphemes"]
-    #         ipa = line["text"]
-    #         prons, graphemes = ipa_tok(text)
-    #         print("=" * 40)
-    #         print(f"GT   -> {text}")
-    #         print(f"PRED -> {graphemes}\n")
-    #         print(f"IPA GT   -> {ipa}")
-    #         print(f"IPA PRED -> {prons}")
-    #
-    # print("".join(ipa_tok("Hello, world!")))
+
+def get_wordid_to_nemo_cmu():
+    # to replace heteronyms with correct IPA form
+    wordid_to_nemo_cmu = {}
+    with open("wordid_to_nemo_cmu.tsv", "r", encoding="utf-8") as f:
+        for line in f:
+            word_id, ipa = line.strip().split("\t")
+            wordid_to_nemo_cmu[word_id] = ipa
+    return wordid_to_nemo_cmu
+
+
+def run_test():
+    wordid_to_nemo_cmu = get_wordid_to_nemo_cmu()
+    ipa_tok = setup_tokenizer()
+
+    text = "How to |addict_vrb| hjls the Contents?"
+    gt_ipa = "ˈhaʊ ˈtu əˈdɪkt ҂ ðə ˈkɑntɛnts?"
+    gt_graphemes = "How to addict ҂ the Contents?"
+    pred_phons, pred_graphemes = ipa_tok(text, wordid_to_nemo_cmu)
+    assert pred_phons == gt_ipa and pred_graphemes == gt_graphemes
+
+    text = "hello-World-waveglow!"
+    gt_ipa = "həˈɫoʊ-ˈwɝɫd-ˈweɪvˌɡɫoʊ!"
+    gt_graphemes = "hello-World-waveglow!"
+    pred_phons, pred_graphemes = ipa_tok(text, wordid_to_nemo_cmu)
+    assert pred_phons == gt_ipa and pred_graphemes == gt_graphemes
+
+    text = "It has used other Treasury law"
+    pred_phons, pred_graphemes = ipa_tok(text, {})
+    print(pred_phons)
+    print(pred_graphemes)
+    import pdb
+
+    pdb.set_trace()
+    print()
+
+
+if __name__ == "__main__":
+    run_test()
