@@ -15,7 +15,7 @@
 import json
 import re
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 
 import torch
 from hydra.utils import instantiate
@@ -28,6 +28,7 @@ from nemo.collections.tts.torch.data import T5G2PDataset
 from nemo.core.classes.common import PretrainedModelInfo, typecheck
 from nemo.core.classes.modelPT import ModelPT
 from nemo.core.neural_types import LabelsType, LossType, MaskType, NeuralType, TokenIndex
+from nemo.utils import logging
 
 __all__ = ['T5G2PModel']
 
@@ -99,7 +100,7 @@ class T5G2PModel(ModelPT):  # TODO: Check parent class
         return super().training_epoch_end(outputs)
 
     # ===== Validation Functions ===== #
-    def validation_step(self, batch, batch_idx):
+    def validation_step(self, batch, batch_idx, dataloader_idx=0, split="val"):
         input_ids, attention_mask, labels = batch
 
         # Get loss from forward step
@@ -113,22 +114,39 @@ class T5G2PModel(ModelPT):  # TODO: Check parent class
         )
         generated_str, _, _ = self._generate_predictions(input_ids=input_ids, model_max_target_len=self.max_target_len)
         per = word_error_rate(hypotheses=generated_str, references=labels_str)
-        return {'val_loss': val_loss, 'per': per}
+        return {f"{split}_loss": val_loss, 'per': per}
 
-    def validation_epoch_end(self, outputs):
+    def test_step(self, batch, batch_idx, dataloader_idx=0):
+        """
+        Lightning calls this inside the test loop with the data from the test dataloader
+        passed in as `batch`.
+        """
+        return self.validation_step(batch, batch_idx, dataloader_idx, split="test")
+
+    def multi_validation_epoch_end(self, outputs, dataloader_idx=0, split="val"):
         """
         Called at the end of validation to aggregate outputs (reduces across batches, not workers).
         """
         # TODO: Does this need a no_grad?
         avg_loss = torch.stack([x['val_loss'] for x in outputs]).mean()
-        self.log('val_loss', avg_loss, sync_dist=True)
+        self.log(f"{split}_loss", avg_loss, sync_dist=True)
+
+        if split == "test":
+            dataloader_name = self._test_names[dataloader_idx].upper()
+        else:
+            dataloader_name = self._validation_names[dataloader_idx].upper()
 
         # TODO: Add better PER calculation and logging.
         avg_per = sum([x['per'] for x in outputs]) / len(outputs)
-        self.log('val_per', avg_per)
-        print(f"---------------> PER: {avg_per}")
+        self.log(f"{split}_per", avg_per)
+        # to save all PER values for each dataset in WANDB
+        self.log(f"{split}_per_{dataloader_name}", avg_per)
 
+        logging.info(f"--> PER: {round(avg_per * 100, 2)}% {dataloader_name}")
         return {'loss': avg_loss}
+
+    def multi_test_epoch_end(self, outputs, dataloader_idx=0):
+        self.multi_validation_epoch_end(outputs, dataloader_idx, split="test")
 
     @torch.no_grad()
     def _generate_predictions(self, input_ids: torch.Tensor, model_max_target_len: int = 512):
@@ -146,14 +164,10 @@ class T5G2PModel(ModelPT):  # TODO: Check parent class
 
     # ===== Dataset Setup Functions ===== #
     def _setup_dataloader_from_config(self, cfg, name):
-        if "dataset" not in cfg or not isinstance(cfg.dataset, DictConfig):
-            raise ValueError(f"No dataset for {name}")
         if "dataloader_params" not in cfg or not isinstance(cfg.dataloader_params, DictConfig):
             raise ValueError(f"No dataloader_params for {name}")
 
-        dataset = T5G2PDataset(
-            cfg.dataset.manifest_filepath, self._tokenizer, self.max_source_len, self.max_target_len
-        )
+        dataset = T5G2PDataset(cfg.manifest_filepath, self._tokenizer, self.max_source_len, self.max_target_len)
 
         return torch.utils.data.DataLoader(dataset, collate_fn=dataset.collate_fn, **cfg.dataloader_params)
 
@@ -165,6 +179,18 @@ class T5G2PModel(ModelPT):  # TODO: Check parent class
 
     def setup_test_data(self, cfg):
         self._test_dl = self._setup_dataloader_from_config(cfg, name="test")
+
+    def setup_multiple_validation_data(self, val_data_config: Union[DictConfig, Dict] = None):
+        if not val_data_config or val_data_config.manifest_filepath is None:
+            self._validation_dl = None
+            return
+        return super().setup_multiple_validation_data(val_data_config)
+
+    def setup_multiple_test_data(self, test_data_config: Union[DictConfig, Dict] = None):
+        if not test_data_config or test_data_config.manifest_filepath is None:
+            self._test_dl = None
+            return
+        return super().setup_multiple_test_data(test_data_config)
 
     # ===== List Available Models - N/A =====$
     @classmethod
