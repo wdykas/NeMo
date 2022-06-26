@@ -21,6 +21,7 @@ from nemo.collections.common.tokenizers.tabular_tokenizer import TabularTokenize
 from nemo.collections.nlp.modules.common.megatron.utils import get_ltor_masks_and_position_ids
 from nemo.collections.nlp.modules.common.transformer.text_generation import LengthParam, OutputType, SamplingParam
 from nemo.utils import AppState
+from nemo.collections.nlp.models.language_modeling.megatron_lm_encoder_decoder_model import MegatronLMEncoderDecoderModel
 
 try:
     from apex.transformer import parallel_state, tensor_parallel
@@ -599,7 +600,8 @@ def forward_step(model, batch, tensor_shape):
     # Should call MegatronGPTPPromptLearningModel's forward method
     if isinstance(model, MegatronGPTPromptLearningModel):
         forward_model = model
-
+    elif isinstance(model, MegatronLMEncoderDecoderModel):
+        forward_model = model.enc_dec_model
     # Should call GPTModel's forward method
     else:
         forward_model = model.model
@@ -612,6 +614,7 @@ def forward_step(model, batch, tensor_shape):
             forward_only=True,
             tensor_shape=tensor_shape,
             dtype=model.autocast_dtype,
+            decoder_sequence_length=batch[1].size(1)
         )
     else:
         output_tensor = forward_backward_no_pipelining(

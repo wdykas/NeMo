@@ -810,7 +810,32 @@ class MegatronLMEncoderDecoderModel(MegatronBaseModel, TextGeneration):
         logging.info(f"response: {response}")
         return response
 
-    def decode(
+    '''
+    def predict_step(self, batch: Any, batch_idx: int, dataloader_idx: Optional[int] = None) -> Any:
+        inference_config = self.get_inference_config()
+        if inference_config is None:
+            return None
+        else:
+            # need to overwrite some configuration, make it immutable
+            inference_config = inference_config.copy()
+            compute_logprob = inference_config['compute_logprob']
+            if compute_logprob:
+                del inference_config['compute_logprob']
+                inference_config['inputs'] = batch
+                inference_config['tokens_to_generate'] = 1
+                inference_config['all_probs'] = True
+                inference_config["add_BOS"] = False
+                inference_config['greedy'] = True
+                response = generate(self, **inference_config)
+                compute_prob_response = get_computeprob_response(self.tokenizer, response, batch)
+                return compute_prob_response
+            else:
+                del inference_config['compute_logprob']
+                inference_config['inputs'] = batch
+                return generate(self, **inference_config)
+    '''
+
+    def fast_decode(
         self,
         inputs: Union[List[str], torch.Tensor, List[dict]],
         length_params: LengthParam,
@@ -845,12 +870,48 @@ class MegatronLMEncoderDecoderModel(MegatronBaseModel, TextGeneration):
         if length_params is None:
             length_params = get_default_length_params()
 
+                # If classes that inherit from this class are using a different tokenizer,
+        tokenizer = self.tokenizer if tokenizer is None else tokenizer
+        app_state = AppState()
+        global_batch_per_gpu = tokens_enc.size(0)
+
+        num_micro_batches_before_decode = get_num_microbatches()
+        # Reconfigure microbatch calculator here to set num microbatches to 1 while decoding since its not clear how to decode with "grad acc".
+        # TODO: reconfigure back to how things were before decode?
+        _reconfigure_microbatch_calculator(
+            rank=app_state.global_rank,
+            rampup_batch_size=None,
+            global_batch_size=global_batch_per_gpu * parallel_state.get_data_parallel_world_size(),
+            micro_batch_size=global_batch_per_gpu,  # Make sure that there is no "grad acc" while decoding.
+            data_parallel_size=parallel_state.get_data_parallel_world_size(),
+        )
         return megatron_enc_dec_generate(self.cuda(), inputs, self.tokenizer, length_params, sampling_params)
+
+    def decode(self, tokens_enc, enc_mask, num_tokens_to_generate, encoder_input=None, tokenizer=None):
+        # Check whether the DDP is initialized. This is needed when running inference outside of training loop.
+        if parallel_state.is_unitialized():
+
+            def dummy():
+                return
+
+            if self.trainer.strategy.launcher is not None:
+                self.trainer.strategy.launcher.launch(dummy, trainer=self.trainer)
+            self.trainer.strategy.setup_environment()
+
+            # Reconfigure microbatch sizes here because on model restore, this will contain the micro/global batch configuration used while training.
+            _reconfigure_microbatch_calculator(
+                rank=0,  # This doesn't matter since it is only used for logging
+                rampup_batch_size=None,
+                global_batch_size=1,
+                micro_batch_size=1,  # Make sure that there is no "grad acc" while decoding.
+                data_parallel_size=1,  # We check above to make sure that dataparallel size is always 1 at inference.
+            )
 
         # If classes that inherit from this class are using a different tokenizer,
         tokenizer = self.tokenizer if tokenizer is None else tokenizer
         app_state = AppState()
         global_batch_per_gpu = tokens_enc.size(0)
+
         num_micro_batches_before_decode = get_num_microbatches()
         # Reconfigure microbatch calculator here to set num microbatches to 1 while decoding since its not clear how to decode with "grad acc".
         # TODO: reconfigure back to how things were before decode?
