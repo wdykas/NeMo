@@ -27,7 +27,6 @@ from tqdm import tqdm
 from transformers import AutoConfig, AutoModel, AutoTokenizer
 
 from nemo.collections.common.tokenizers.char_tokenizer import CharTokenizer
-from nemo.collections.tts.models.G2P.decoding import G2PCTCDecoding
 from nemo.collections.tts.torch.data import CTCG2PBPEDataset
 from nemo.core.classes.common import PretrainedModelInfo, typecheck
 from nemo.core.classes.modelPT import ModelPT
