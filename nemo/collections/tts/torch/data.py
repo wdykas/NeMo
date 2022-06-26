@@ -1073,11 +1073,12 @@ class CTCG2PBPEDataset(Dataset):
                 if do_lower:
                     item["text_graphemes"] = item["text_graphemes"].lower()
 
+                grapheme_tokens = self.tokenizer_graphemes.text_to_ids(item["text_graphemes"])
                 if with_labels:
                     target_tokens = self.tokenizer_phonemes.text_to_ids(item["text"])
                     target_len = len(target_tokens)
 
-                    if target_len > len(item["text_graphemes"]) or target_len > max_target_len:
+                    if target_len > len(grapheme_tokens) or len(grapheme_tokens) > max_source_len:
                         num_removed_or_truncated += 1
                         # seq_lengths.append(len(item["text_graphemes"]))
                         # sentences.append(item["text_graphemes"])
@@ -1092,19 +1093,16 @@ class CTCG2PBPEDataset(Dataset):
                         }
                     )
                 else:
-                    if len(item["text_graphemes"]) > max_source_len:
+                    if len(grapheme_tokens) > max_source_len:
                         item["text_graphemes"] = item["text_graphemes"][:max_source_len]
                         num_removed_or_truncated += 1
                     self.data.append(
                         {"graphemes": item["text_graphemes"],}
                     )
 
-        # print(f"=======> Filtered {num_filtered} entries.")
         logging.info(
             f"Number of samples removed or truncated {num_removed_or_truncated} examples from {manifest_filepath}"
         )
-        # import pdb; pdb.set_trace()
-        # print()
 
     def __len__(self):
         return len(self.data)
