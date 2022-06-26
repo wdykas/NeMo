@@ -1,7 +1,7 @@
 import json
 import os
 import string
-from typing import List
+from typing import List, Optional
 
 from prepare_data import IPAG2PProcessor, remove_punctuation, setup_tokenizer
 from tqdm import tqdm
@@ -16,8 +16,8 @@ def process_text(text):
     return text
 
 
-def is_valid(text):
-    return len(set(text).difference(set(string.ascii_letters + " " + string.punctuation))) == 0
+def is_valid(text, unk_token="҂"):
+    return len(set(text).difference(set(unk_token + string.ascii_letters + " " + string.punctuation))) == 0
 
 
 def _prepare_ljspeech_split(
@@ -107,20 +107,34 @@ def prepare_hifi_tts(
             f_out.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
-def drop_examples_with_eval_phoneme_dict(manifest, output_dir, graphemes_to_exclude: List[str]):
+def drop_examples(manifest, output_dir, graphemes_to_exclude: Optional[List[str]] = None):
+    """
+    Drop examples with graphems in the exclude list, e.g. for training set we can't used graphems from
+    dev/test cmu dicts splits. Also we need ot drop sentences with OOV symbols,
+    otherwise we're going have issues with comformer tokenization.
+    """
     os.makedirs(output_dir, exist_ok=True)
     num_dropped = 0
     with open(manifest, "r") as f_in, open(f"{output_dir}/{os.path.basename(manifest)}", "w") as f_out:
         for line in f_in:
             dev_test_words_present = False
-            text = json.loads(line)["text_graphemes"]
+            line = json.loads(line)
+            text = line["text_graphemes"]
+            text = process_text(text)
+
+            if not is_valid(text):
+                num_dropped += 1
+                continue
+
             words = remove_punctuation(text).lower().split()
             for w in words:
-                if w in graphemes_to_exclude:
+                if graphemes_to_exclude is not None and w in graphemes_to_exclude:
                     dev_test_words_present = True
                 break
             if not dev_test_words_present:
-                f_out.write(line)
+                line["text_grapheme"] = text
+                line["text"] = process_text(line["text"])
+                f_out.write(json.dumps(line, ensure_ascii=False) + "\n")
             else:
                 num_dropped += 1
     print(f"Dropped {num_dropped} from {manifest}")
@@ -185,16 +199,20 @@ if __name__ == "__main__":
     librispeech_train_manifest = (
         "/mnt/sdb_4/g2p/data_ipa/with_unicode_token/phoneme_train_all_fields_updated_word_boundaries_ipa.json"
     )
-    drop_examples_with_eval_phoneme_dict(
+    drop_examples(
         librispeech_train_manifest,
         output_dir=TRAINING_DATA_DIR,
         graphemes_to_exclude=[x.lower() for x in eval_graphemes["dev"] + eval_graphemes["test"]],
     )
     wiki_train_manifest = "/mnt/sdb_4/g2p/data_ipa/with_unicode_token/lower_False/train_wikihomograph.json"
-    drop_examples_with_eval_phoneme_dict(
+    drop_examples(
         wiki_train_manifest,
         output_dir=TRAINING_DATA_DIR,
         graphemes_to_exclude=[x.lower() for x in eval_graphemes["dev"] + eval_graphemes["test"]],
+    )
+    wiki_eval_manifest = "/mnt/sdb_4/g2p/data_ipa/with_unicode_token/lower_False/eval_wikihomograph.json"
+    drop_examples(
+        wiki_eval_manifest, output_dir=EVAL_DATA_DIR, graphemes_to_exclude=None,
     )
 
     # PREPARE HIFITTS DATA
