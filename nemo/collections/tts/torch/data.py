@@ -1073,12 +1073,17 @@ class CTCG2PBPEDataset(Dataset):
                 if do_lower:
                     item["text_graphemes"] = item["text_graphemes"].lower()
 
-                grapheme_tokens = self.tokenizer_graphemes.text_to_ids(item["text_graphemes"])
+                if isinstance(self.tokenizer_graphemes, PreTrainedTokenizerBase):
+                    grapheme_tokens = self.tokenizer_graphemes(item["text_graphemes"])
+                    grapheme_tokens_len = len(grapheme_tokens['input_ids'])
+                else:
+                    grapheme_tokens_len = len(self.tokenizer_graphemes.text_to_ids(item["text_graphemes"]))
+
                 if with_labels:
                     target_tokens = self.tokenizer_phonemes.text_to_ids(item["text"])
                     target_len = len(target_tokens)
 
-                    if target_len > len(grapheme_tokens) or len(grapheme_tokens) > max_source_len:
+                    if target_len > grapheme_tokens_len or len(grapheme_tokens) > max_source_len:
                         num_removed_or_truncated += 1
                         # seq_lengths.append(len(item["text_graphemes"]))
                         # sentences.append(item["text_graphemes"])
