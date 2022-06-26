@@ -609,9 +609,6 @@ class EncDecCTCModel(ASRModel, ExportableEncDecModel, ASRModuleMixin):
         loss_value = self.loss(
             log_probs=log_probs, targets=transcript, input_lengths=encoded_len, target_lengths=transcript_len
         )
-        import pdb
-
-        pdb.set_trace()
         self._wer.update(
             predictions=log_probs, targets=transcript, target_lengths=transcript_len, predictions_lengths=encoded_len
         )

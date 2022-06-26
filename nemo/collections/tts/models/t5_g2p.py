@@ -142,7 +142,7 @@ class T5G2PModel(ModelPT):  # TODO: Check parent class
         # to save all PER values for each dataset in WANDB
         self.log(f"{split}_per_{dataloader_name}", avg_per)
 
-        logging.info(f"--> PER: {round(avg_per * 100, 2)}% {dataloader_name}")
+        logging.info(f"--> PER: {round(avg_per * 100, 2)}% {dataloader_name}, {len(outputs)}examples")
         return {'loss': avg_loss}
 
     def multi_test_epoch_end(self, outputs, dataloader_idx=0):

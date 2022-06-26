@@ -20,13 +20,14 @@ from typing import Any, Dict, List, Optional, Union
 
 import torch
 from hydra.utils import instantiate
-from omegaconf import DictConfig, ListConfig, open_dict
+from omegaconf import DictConfig, ListConfig, OmegaConf, open_dict
 from pytorch_lightning import Trainer
 from torch import nn
 from tqdm import tqdm
 from transformers import AutoConfig, AutoModel, AutoTokenizer
 
 from nemo.collections.common.tokenizers.char_tokenizer import CharTokenizer
+from nemo.collections.tts.models.G2P.decoding import G2PCTCDecoding
 from nemo.collections.tts.torch.data import CTCG2PBPEDataset
 from nemo.core.classes.common import PretrainedModelInfo, typecheck
 from nemo.core.classes.modelPT import ModelPT
@@ -35,7 +36,7 @@ from nemo.utils import logging
 
 try:
     from nemo.collections.asr.losses.ctc import CTCLoss
-    from nemo.collections.asr.metrics.wer import word_error_rate
+    from nemo.collections.asr.metrics.wer_bpe import WERBPE, CTCBPEDecoding, CTCBPEDecodingConfig
     from nemo.collections.asr.models import EncDecCTCModel
     from nemo.collections.asr.parts.mixins import ASRBPEMixin
 
@@ -108,6 +109,20 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
             reduction=self._cfg.get("ctc_reduction", "mean_batch"),
         )
 
+        # Setup decoding objects
+        decoding_cfg = self.cfg.get('decoding', None)
+
+        # In case decoding config not found, use default config
+        if decoding_cfg is None:
+            decoding_cfg = OmegaConf.structured(CTCBPEDecodingConfig)
+            with open_dict(self.cfg):
+                self.cfg.decoding = decoding_cfg
+
+        self.decoding = CTCBPEDecoding(self.cfg.decoding, tokenizer=self.tokenizer)
+
+        self._wer = WERBPE(decoding=self.decoding, use_cer=False, log_prediction=False, dist_sync_on_step=True,)
+        self._per = WERBPE(decoding=self.decoding, use_cer=True, log_prediction=False, dist_sync_on_step=True,)
+
     def setup_grapheme_tokenizer(self, cfg):
         """ Initialized grapheme tokenizer"""
 
@@ -125,28 +140,21 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
             grapheme_unk_token = (
                 cfg.tokenizer_grapheme.unk_token if cfg.tokenizer_grapheme.unk_token is not None else ""
             )
-            vocab_file = cfg.tokenizer_grapheme.vocab_file
+            chars = string.ascii_lowercase + grapheme_unk_token + " " + "'"
 
-            if vocab_file is None:
-                chars = string.ascii_lowercase + grapheme_unk_token + " " + "'"
+            if not cfg.tokenizer_grapheme.do_lower:
+                chars += string.ascii_uppercase
 
-                if not cfg.tokenizer_grapheme.do_lower:
-                    chars += string.ascii_uppercase
+            if cfg.tokenizer_grapheme.add_punctuation:
+                punctuation_marks = string.punctuation.replace('"', "").replace("\\", "").replace("'", "")
+                chars += punctuation_marks
 
-                if cfg.tokenizer_grapheme.add_punctuation:
-                    punctuation_marks = string.punctuation.replace('"', "").replace("\\", "").replace("'", "")
-                    chars += punctuation_marks
+            vocab_file = "/tmp/char_vocab.txt"
+            with open(vocab_file, "w") as f:
+                [f.write(f'"{ch}"\n') for ch in chars]
+                f.write('"\\""\n')  # add " to the vocab
 
-                vocab_file = "/tmp/char_vocab.txt"
-                with open(vocab_file, "w") as f:
-                    [f.write(f'"{ch}"\n') for ch in chars]
-                    f.write('"\\""\n')  # add " to the vocab
-
-                self.register_artifact("tokenizer_grapheme.vocab_file", vocab_file)
-            else:
-                if not os.path.exists(vocab_file):
-                    raise ValueError(f"Vocab_file {vocab_file} not found, check 'cfg.tokenizer_grapheme.vocab_file'")
-
+            self.register_artifact("tokenizer_grapheme.vocab_file", vocab_file)
             grapheme_tokenizer = CharTokenizer(vocab_file=vocab_file)
             self.max_source_len = cfg.get("max_source_len", 512)
             self.max_target_len = cfg.get("max_target_len", 512)
@@ -260,11 +268,31 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
             log_probs=log_probs, targets=targets, input_lengths=encoded_len, target_lengths=target_lengths
         )
 
-        preds_str = self.ctc_decoder_predictions_tensor(greedy_predictions.tolist())
-        targets_str = [self.decode_ids_to_str(t) for t in targets.tolist()]
-        per = word_error_rate(hypotheses=preds_str, references=targets_str)
+        # preds_str = self.ctc_decoder_predictions_tensor(greedy_predictions.tolist())
+        # targets_str = [self.decode_ids_to_str(t) for t in targets.tolist()]
+
+        self._wer.update(
+            predictions=log_probs, targets=targets, target_lengths=target_lengths, predictions_lengths=encoded_len
+        )
+        wer, wer_num, wer_denom = self._wer.compute()
+        self._wer.reset()
+
+        self._per.update(
+            predictions=log_probs, targets=targets, target_lengths=target_lengths, predictions_lengths=encoded_len
+        )
+        per, per_num, per_denom = self._per.compute()
+        self._per.reset()
+
         self.log(f"{split}_loss", val_loss)
-        return {f"{split}_loss": val_loss, "per": per}
+        return {
+            f"{split}_loss": val_loss,
+            f"{split}_wer_num": wer_num,
+            f"{split}_wer_denom": wer_denom,
+            f"{split}_wer": wer,
+            f"{split}_per_num": per_num,
+            f"{split}_per_denom": per_denom,
+            f"{split}_per": per,
+        }
 
     def test_step(self, batch, batch_idx, dataloader_idx=0):
         """
@@ -272,57 +300,6 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
         passed in as `batch`.
         """
         return self.validation_step(batch, batch_idx, dataloader_idx, split="test")
-
-    def decode_ids_to_str(self, ids: List[int]) -> str:
-        blank_id = len(self.labels_id2tkn)
-        ids = [t for t in ids if t != blank_id]
-        decoded = self.tokenizer.ids_to_text(ids)
-
-        # TODO figure out the cause for this
-        while decoded.endswith(" ˈ"):
-            decoded = decoded[:-2]
-        return decoded
-
-    def ctc_decoder_predictions_tensor(self, predictions: List[List[int]], predictions_len=None) -> List[str]:
-        """
-        Decodes a sequence of labels to words
-
-        Args:
-            predictions: An integer torch.Tensor of shape [Batch, Time] (if ``batch_index_dim == 0``) or [Time, Batch]
-                (if ``batch_index_dim == 1``) of integer indices that correspond to the index of some character in the
-                label set.
-            predictions_len: Optional tensor of length `Batch` which contains the integer lengths
-                of the sequence in the padded `predictions` tensor.
-            return_hypotheses: Bool flag whether to return just the decoding predictions of the model
-                or a Hypothesis object that holds information such as the decoded `text`,
-                the `alignment` of emited by the CTC Model, and the `length` of the sequence (if available).
-                May also contain the log-probabilities of the decoder (if this method is called via
-                transcribe())
-
-        Returns:
-            Either a list of str which represent the CTC decoded strings per sample,
-            or a list of Hypothesis objects containing additional information.
-        """
-
-        blank_id = len(self.labels_id2tkn)
-        hypotheses = []
-
-        # iterate over batch
-        for ind, prediction in enumerate(predictions):
-            if predictions_len is not None:
-                prediction = prediction[: predictions_len[ind]]
-
-            # CTC decoding procedure
-            decoded_prediction = []
-            previous = blank_id
-            for p in prediction:
-                if (p != previous or previous == blank_id) and p != blank_id:
-                    decoded_prediction.append(p)
-                previous = p
-
-            text = self.decode_ids_to_str(decoded_prediction)
-            hypotheses.append(text)
-        return hypotheses
 
     def multi_validation_epoch_end(self, outputs, dataloader_idx=0, split="val"):
         """
@@ -332,20 +309,32 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
         avg_loss = torch.stack([x[f"{split}_loss"] for x in outputs]).mean()
         self.log(f"{split}_loss", avg_loss, prog_bar=True)
 
-        # TODO: Add better PER calculation and logging.
-        avg_per = sum([x["per"] for x in outputs]) / len(outputs)
+        wer_num = torch.stack([x[f"{split}_wer_num"] for x in outputs]).sum()
+        wer_denom = torch.stack([x[f"{split}_wer_denom"] for x in outputs]).sum()
+        wer = wer_num / wer_denom
+
+        per_num = torch.stack([x[f"{split}_per_num"] for x in outputs]).sum()
+        per_denom = torch.stack([x[f"{split}_per_denom"] for x in outputs]).sum()
+        per = per_num / per_denom
 
         if split == "test":
             dataloader_name = self._test_names[dataloader_idx].upper()
         else:
             dataloader_name = self._validation_names[dataloader_idx].upper()
 
+        self.log(f"{split}_wer", wer)
+        self.log(f"{split}_per", per)
+
+        # TODO: Add better PER calculation and logging.
+        avg_per = sum([x[f"{split}_per"] for x in outputs]) / len(outputs)
+
         # to minimize val_per
         self.log(f"{split}_per", avg_per)
         # to save all PER values for each dataset in WANDB
-        self.log(f"{split}_per_{dataloader_name}", avg_per)
+        self.log(f"{split}_per_{dataloader_name}", per)
 
-        logging.info(f"--> PER: {round(avg_per*100, 2)}% {dataloader_name}")
+        logging.info(f"--> PER: {per * 100}% {dataloader_name}")
+        logging.info(f"--> WER: {wer * 100}% {dataloader_name}")
 
     def multi_test_epoch_end(self, outputs, dataloader_idx=0):
         self.multi_validation_epoch_end(outputs, dataloader_idx, split="test")
