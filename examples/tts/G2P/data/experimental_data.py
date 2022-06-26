@@ -6,11 +6,18 @@ from typing import List
 from prepare_data import IPAG2PProcessor, remove_punctuation, setup_tokenizer
 from tqdm import tqdm
 
+from nemo.utils import logging
+
 # download ipa dict splits using get_open_dict_splits.sh
 
 
+def process_text(text):
+    text = text.replace('“', '"').replace('”', '"')
+    return text
+
+
 def is_valid(text):
-    return len(set(text).difference(set(string.ascii_letters + "'"))) == 0
+    return len(set(text).difference(set(string.ascii_letters + " " + string.punctuation))) == 0
 
 
 def _prepare_ljspeech_split(
@@ -20,17 +27,21 @@ def _prepare_ljspeech_split(
     heteronyms: str = "/home/ebakhturina/NeMo/scripts/tts_dataset_files/heteronyms-052722",
 ):
 
+    num_dropped = 0
     os.makedirs(output_dir, exist_ok=True)
-    train_manifest = f"{output_dir}/{os.path.basename(manifest).replace('.json', '_ipa.json')}"
+    manifest_out = f"{output_dir}/{os.path.basename(manifest).replace('.json', '_ipa.json')}"
     ipa_tok = setup_tokenizer(phoneme_dict=phoneme_dict, heteronyms=heteronyms)
 
-    with open(train_manifest, "w", encoding="utf-8") as f_out, open(manifest, "r", encoding="utf-8") as f_in:
+    with open(manifest_out, "w", encoding="utf-8") as f_out, open(manifest, "r", encoding="utf-8") as f_in:
         for line in tqdm(f_in):
             line = json.loads(line)
 
-            if not is_valid(line["text"]):
+            text = process_text(line["text"])
+            if not is_valid(text):
+                logging.debug(set(text).difference(set(string.ascii_letters + " " + string.punctuation)))
+                num_dropped += 1
                 continue
-            ipa_, graphemes_ = ipa_tok(line["text"], {})
+            ipa_, graphemes_ = ipa_tok(text, {})
 
             entry = {
                 "text": ipa_,
@@ -40,6 +51,7 @@ def _prepare_ljspeech_split(
                 "audio_filepath": "n/a",
             }
             f_out.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    print(f"Dropped {num_dropped} from {manifest}")
 
 
 def prepare_ljspeech_data(output_dir, split, cmu_dict):
@@ -51,13 +63,7 @@ def prepare_ljspeech_data(output_dir, split, cmu_dict):
         "test": "/mnt/sdb/DATA/LJSpeech-1.1/nvidia_ljspeech_test.json",
     }
 
-    if split == "train":
-        # convert LJSpeech train split to ipa format using train subset of open_dict
-        _prepare_ljspeech_split(lj_data["train"], phoneme_dict=cmu_dict, output_dir=output_dir)
-
-    # process dev/test sets and use all CMU dict
-    if split in ["dev", "test"]:
-        _prepare_ljspeech_split(lj_data[split], phoneme_dict=complete_nemo_ipa_cmu, output_dir=output_dir)
+    _prepare_ljspeech_split(lj_data[split], phoneme_dict=cmu_dict, output_dir=output_dir)
 
 
 def prepare_cmu(file, output_dir):
@@ -101,7 +107,7 @@ def prepare_hifi_tts(
             f_out.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
-def prepare_librispeech_data(manifest, output_dir, graphemes_to_exclude: List[str]):
+def drop_examples_with_eval_phoneme_dict(manifest, output_dir, graphemes_to_exclude: List[str]):
     os.makedirs(output_dir, exist_ok=True)
     num_dropped = 0
     with open(manifest, "r") as f_in, open(f"{output_dir}/{os.path.basename(manifest)}", "w") as f_out:
@@ -145,9 +151,7 @@ if __name__ == "__main__":
             for line in f_in:
                 grapheme, _ = line.strip().split("\t")
                 eval_graphemes[split].append(grapheme.upper())
-    import pdb
 
-    pdb.set_trace()
     BASE_DIR = "/mnt/sdb_4/g2p/data_ipa"
     CMU_DICT_SPLITS_DIR = f"{BASE_DIR}/nemo_cmu_splits"
     os.makedirs(CMU_DICT_SPLITS_DIR, exist_ok=True)
@@ -166,29 +170,35 @@ if __name__ == "__main__":
             for ph in phonemes:
                 f.write(f"{grapheme}  {ph}\n")
 
-    TRAINING_DATA_DIR = f"{BASE_DIR}/training_data_v1"
+    TRAINING_DATA_DIR = f"{BASE_DIR}/training_data_v1/raw_files"
     EVAL_DATA_DIR = f"{BASE_DIR}/evaluation_sets"
 
     # PREPARE LJSPEECH DATA
     train_cmu_dict = "/mnt/sdb_4/g2p/data_ipa/nemo_cmu_splits/train.txt"
     complete_nemo_ipa_cmu = "/home/ebakhturina/NeMo/scripts/tts_dataset_files/ipa_cmudict-0.7b_nv22.06.txt"
-    prepare_ljspeech_data(TRAINING_DATA_DIR, split="train", cmu_dict=f"{CMU_DICT_SPLITS_DIR}/train.txt")
-    prepare_ljspeech_data(TRAINING_DATA_DIR, split="dev", cmu_dict=complete_nemo_ipa_cmu)
-    prepare_ljspeech_data(TRAINING_DATA_DIR, split="test", cmu_dict=complete_nemo_ipa_cmu)
 
+    prepare_ljspeech_data(TRAINING_DATA_DIR, split="train", cmu_dict=train_cmu_dict)
+    prepare_ljspeech_data(EVAL_DATA_DIR, split="dev", cmu_dict=complete_nemo_ipa_cmu)
+    prepare_ljspeech_data(EVAL_DATA_DIR, split="test", cmu_dict=complete_nemo_ipa_cmu)
+
+    # REMOVE GRAPHEMES FROM DEV AND TEST PHONEME DICTS FROM LIBRISPEECH AND WIKI DATA
     librispeech_train_manifest = (
         "/mnt/sdb_4/g2p/data_ipa/with_unicode_token/phoneme_train_all_fields_updated_word_boundaries_ipa.json"
     )
-    prepare_librispeech_data(
+    drop_examples_with_eval_phoneme_dict(
         librispeech_train_manifest,
+        output_dir=TRAINING_DATA_DIR,
+        graphemes_to_exclude=[x.lower() for x in eval_graphemes["dev"] + eval_graphemes["test"]],
+    )
+    wiki_train_manifest = "/mnt/sdb_4/g2p/data_ipa/with_unicode_token/lower_False/train_wikihomograph.json"
+    drop_examples_with_eval_phoneme_dict(
+        wiki_train_manifest,
         output_dir=TRAINING_DATA_DIR,
         graphemes_to_exclude=[x.lower() for x in eval_graphemes["dev"] + eval_graphemes["test"]],
     )
 
     # PREPARE HIFITTS DATA
-    prepare_hifi_tts(
-        f"{BASE_DIR}/all_hifi_tts.json", output_dir=TRAINING_DATA_DIR, phoneme_dict=f"{CMU_DICT_SPLITS_DIR}/train.txt"
-    )
+    prepare_hifi_tts(f"{BASE_DIR}/all_hifi_tts.json", output_dir=TRAINING_DATA_DIR, phoneme_dict=train_cmu_dict)
 
     # PREPARE CMU DATA
     prepare_cmu(f"{CMU_DICT_SPLITS_DIR}/dev.txt", EVAL_DATA_DIR)
