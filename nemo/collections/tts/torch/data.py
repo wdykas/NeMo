@@ -1083,7 +1083,7 @@ class CTCG2PBPEDataset(Dataset):
                     target_tokens = self.tokenizer_phonemes.text_to_ids(item["text"])
                     target_len = len(target_tokens)
 
-                    if target_len > grapheme_tokens_len or len(grapheme_tokens) > max_source_len:
+                    if target_len > grapheme_tokens_len or grapheme_tokens_len > max_source_len:
                         num_removed_or_truncated += 1
                         # seq_lengths.append(len(item["text_graphemes"]))
                         # sentences.append(item["text_graphemes"])
