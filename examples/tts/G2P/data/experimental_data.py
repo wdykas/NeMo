@@ -1,8 +1,9 @@
 import json
 import os
 import string
+from typing import List
 
-from prepare_data import IPAG2PProcessor, setup_tokenizer
+from prepare_data import IPAG2PProcessor, remove_punctuation, setup_tokenizer
 from tqdm import tqdm
 
 # download ipa dict splits using get_open_dict_splits.sh
@@ -100,7 +101,30 @@ def prepare_hifi_tts(
             f_out.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
+def prepare_librispeech_data(manifest, output_dir, graphemes_to_exclude: List[str]):
+    os.makedirs(output_dir, exist_ok=True)
+    num_dropped = 0
+    with open(manifest, "r") as f_in, open(f"{output_dir}/{os.path.basename(manifest)}", "w") as f_out:
+        for line in f_in:
+            dev_test_words_present = False
+            text = json.loads(line)["text_graphemes"]
+            words = remove_punctuation(text).lower().split()
+            for w in words:
+                if w in graphemes_to_exclude:
+                    dev_test_words_present = True
+                break
+            if not dev_test_words_present:
+                f_out.write(line)
+            else:
+                num_dropped += 1
+    print(f"Dropped {num_dropped} from {manifest}")
+
+
 if __name__ == "__main__":
+    """
+    Use only CMU train dict part for training datasets, all CMU entries for eval/dev sets
+    """
+
     # read nemo ipa cmu dict to get the order of words
     nemo_cmu = "/home/ebakhturina/NeMo/scripts/tts_dataset_files/ipa_cmudict-0.7b_nv22.06.txt"
     nemo_cmu, _ = IPAG2PProcessor._parse_as_cmu_dict(phoneme_dict_path=nemo_cmu)
@@ -121,7 +145,9 @@ if __name__ == "__main__":
             for line in f_in:
                 grapheme, _ = line.strip().split("\t")
                 eval_graphemes[split].append(grapheme.upper())
+    import pdb
 
+    pdb.set_trace()
     BASE_DIR = "/mnt/sdb_4/g2p/data_ipa"
     CMU_DICT_SPLITS_DIR = f"{BASE_DIR}/nemo_cmu_splits"
     os.makedirs(CMU_DICT_SPLITS_DIR, exist_ok=True)
@@ -143,16 +169,28 @@ if __name__ == "__main__":
     TRAINING_DATA_DIR = f"{BASE_DIR}/training_data_v1"
     EVAL_DATA_DIR = f"{BASE_DIR}/evaluation_sets"
 
+    # PREPARE LJSPEECH DATA
     train_cmu_dict = "/mnt/sdb_4/g2p/data_ipa/nemo_cmu_splits/train.txt"
     complete_nemo_ipa_cmu = "/home/ebakhturina/NeMo/scripts/tts_dataset_files/ipa_cmudict-0.7b_nv22.06.txt"
     prepare_ljspeech_data(TRAINING_DATA_DIR, split="train", cmu_dict=f"{CMU_DICT_SPLITS_DIR}/train.txt")
     prepare_ljspeech_data(TRAINING_DATA_DIR, split="dev", cmu_dict=complete_nemo_ipa_cmu)
     prepare_ljspeech_data(TRAINING_DATA_DIR, split="test", cmu_dict=complete_nemo_ipa_cmu)
 
+    librispeech_train_manifest = (
+        "/mnt/sdb_4/g2p/data_ipa/with_unicode_token/phoneme_train_all_fields_updated_word_boundaries_ipa.json"
+    )
+    prepare_librispeech_data(
+        librispeech_train_manifest,
+        output_dir=TRAINING_DATA_DIR,
+        graphemes_to_exclude=[x.lower() for x in eval_graphemes["dev"] + eval_graphemes["test"]],
+    )
+
+    # PREPARE HIFITTS DATA
     prepare_hifi_tts(
         f"{BASE_DIR}/all_hifi_tts.json", output_dir=TRAINING_DATA_DIR, phoneme_dict=f"{CMU_DICT_SPLITS_DIR}/train.txt"
     )
 
+    # PREPARE CMU DATA
     prepare_cmu(f"{CMU_DICT_SPLITS_DIR}/dev.txt", EVAL_DATA_DIR)
     prepare_cmu(f"{CMU_DICT_SPLITS_DIR}/test.txt", EVAL_DATA_DIR)
     prepare_cmu(f"{CMU_DICT_SPLITS_DIR}/train.txt", TRAINING_DATA_DIR)
