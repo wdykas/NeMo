@@ -16,8 +16,12 @@ def process_text(text):
     return text
 
 
-def is_valid(text, unk_token="҂"):
-    return len(set(text).difference(set(unk_token + string.ascii_letters + " " + string.punctuation))) == 0
+def is_valid(text, unk_token="҂", verbose=False):
+    invalid_symbols = set(text).difference(set(unk_token + string.ascii_letters + " " + string.punctuation))
+
+    if verbose and len(invalid_symbols) > 0:
+        print(invalid_symbols)
+    return len(invalid_symbols) == 0
 
 
 def _prepare_ljspeech_split(
@@ -74,14 +78,15 @@ def prepare_cmu(file, output_dir):
         for line in f_in:
             graphemes, phonemes = line.strip().split()
             phonemes = phonemes.split(",")[0]
-            entry = {
-                "text": phonemes,
-                "text_graphemes": graphemes.lower(),
-                "duration": 0.001,
-                "audio_filepath": "n/a",
-            }
-            f_out.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
+            if is_valid(graphemes):
+                entry = {
+                    "text": phonemes,
+                    "text_graphemes": graphemes.lower(),
+                    "duration": 0.001,
+                    "audio_filepath": "n/a",
+                }
+                f_out.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 def prepare_hifi_tts(
     manifest,
