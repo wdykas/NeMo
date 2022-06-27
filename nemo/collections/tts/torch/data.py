@@ -1077,7 +1077,8 @@ class CTCG2PBPEDataset(Dataset):
                     grapheme_tokens = self.tokenizer_graphemes(item["text_graphemes"])
                     grapheme_tokens_len = len(grapheme_tokens['input_ids'])
                 else:
-                    grapheme_tokens_len = len(self.tokenizer_graphemes.text_to_ids(item["text_graphemes"]))
+                    grapheme_tokens = self.tokenizer_graphemes.text_to_ids(item["text_graphemes"])
+                    grapheme_tokens_len = len(grapheme_tokens)
 
                 if with_labels:
                     target_tokens = self.tokenizer_phonemes.text_to_ids(item["text"])

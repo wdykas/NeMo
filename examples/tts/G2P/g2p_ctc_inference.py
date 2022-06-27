@@ -43,16 +43,6 @@ python G2P/g2p_ctc_inference.py \
 
 python ../../tools/speech_data_explorer/data_explorer.py --disable-caching-metrics dev_clean_ambiguous_checked_fields_updated_word_boundaries_ipa_path_pred.json --port 8052
 
-WER 1.64%
-CER 0.57%
-
-
-/mnt/sdb_4/g2p/chpts/conformer/BPE/3018285
-WER 1.69%
-CER 0.61%
-
-1.64
-0.57
 
 
 python G2P/g2p_ctc_inference.py \
@@ -369,7 +359,7 @@ def get_metrics(manifest: str):
     per = word_error_rate(hypotheses=all_preds, references=all_references, use_cer=True)
 
     print("=" * 40)
-    print(f"{manifest}: WER: {wer * 100:.2f}%, PER: {per * 100:.2f}%")
+    print(f"{manifest}: PER: {per * 100:.2f}%, WER: {wer * 100:.2f}%")
     print("=" * 40)
     return wer, per
 

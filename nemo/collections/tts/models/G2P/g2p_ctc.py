@@ -400,7 +400,9 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
                     input_len=input_len.to(device),
                 )
 
-                preds_str = self.ctc_decoder_predictions_tensor(greedy_predictions.tolist())
+                preds_str, _ = self.decoding.ctc_decoder_predictions_tensor(
+                    log_probs, decoder_lengths=encoded_len, return_hypotheses=False
+                )
                 all_preds.extend(preds_str)
 
                 del greedy_predictions

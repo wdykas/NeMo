@@ -88,6 +88,7 @@ def prepare_cmu(file, output_dir):
                 }
                 f_out.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
+
 def prepare_hifi_tts(
     manifest,
     phoneme_dict,
