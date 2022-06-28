@@ -360,8 +360,11 @@ class IPAG2P(BaseG2p):
                         word = word.upper()
                     else:
                         word = word.lower()
-
-                    pronunciation = parts[1].strip()
+                    try:
+                        pronunciation = parts[1].strip()
+                    except:
+                        import pdb; pdb.set_trace()
+                        print()
                     if not use_stresses:
                         for stress_symbol in stress_symbols:
                             pronunciation = pronunciation.replace(stress_symbol, '')

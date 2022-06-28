@@ -80,7 +80,7 @@ def prepare_cmu(file, output_dir):
             graphemes, phonemes = line.strip().split()
             phonemes = phonemes.split(",")[0]
 
-            if is_valid(graphemes):
+            if is_valid(graphemes) and not graphemes.startswith("'"):
                 entry = {
                     "text": phonemes,
                     "text_graphemes": graphemes.lower(),
@@ -152,10 +152,12 @@ if __name__ == "__main__":
     """
     Use only CMU train dict part for training datasets, all CMU entries for eval/dev sets
     """
-
+    STRESS_SYMBOLS = ["ˈ", "ˌ"]
     # read nemo ipa cmu dict to get the order of words
     nemo_cmu = "/home/ebakhturina/NeMo/scripts/tts_dataset_files/ipa_cmudict-0.7b_nv22.06.txt"
-    nemo_cmu, _ = IPAG2PProcessor._parse_as_cmu_dict(phoneme_dict_path=nemo_cmu)
+    nemo_cmu, _ = IPAG2PProcessor._parse_as_cmu_dict(
+        phoneme_dict_path=nemo_cmu, use_stresses=True, stress_symbols=STRESS_SYMBOLS, upper=True
+    )
 
     ipa_dicts = {
         "train": "/mnt/sdb_4/g2p/data_ipa/CharsiuG2P_data_splits/train_eng-us.tsv",
@@ -163,34 +165,50 @@ if __name__ == "__main__":
         "test": "/mnt/sdb_4/g2p/data_ipa/CharsiuG2P_data_splits/test_eng-us.tsv",
     }
 
-    # read dev and test graphemes for CharsiuG2P,
-    # we're going to use NeMo CMU phonemes since they have proper defaults for ambiguous cases
-    eval_graphemes = {}
-
-    for split in ["dev", "test"]:
-        with open(ipa_dicts[split], "r") as f_in:
-            eval_graphemes[split] = []
+    for split in ["train", "dev", "test"]:
+        tmp_file = (
+            f"/tmp/{split}.txt"  # temp file store Ch CMU dict but in nemo format "  " instead "\t" separated values
+        )
+        with open(tmp_file, "w") as f_out, open(ipa_dicts[split], "r") as f_in:
             for line in f_in:
-                grapheme, _ = line.strip().split("\t")
-                eval_graphemes[split].append(grapheme.upper())
+                grapheme, phonemes = line.strip().split("\t")
+                f_out.write(f"{grapheme.upper()}  {phonemes}\n")
+        ipa_dicts[split] = tmp_file
+
+    CharsiuG2P_cmu = {}
+    for split in ["train", "dev", "test"]:
+        CharsiuG2P_cmu[split] = IPAG2PProcessor._parse_as_cmu_dict(
+            phoneme_dict_path=ipa_dicts[split], use_stresses=True, stress_symbols=STRESS_SYMBOLS, upper=True
+        )[0]
 
     BASE_DIR = "/mnt/sdb_4/g2p/data_ipa"
     CMU_DICT_SPLITS_DIR = f"{BASE_DIR}/nemo_cmu_splits"
     os.makedirs(CMU_DICT_SPLITS_DIR, exist_ok=True)
+    # create a train.txt CMU file that contains all CharsiuG2P_cmu["train"] entries but NeMo default order for multiple entries
     # create train/dev/test dict
-    with open(f"{CMU_DICT_SPLITS_DIR}/train.txt", "w") as train_f, open(f"{CMU_DICT_SPLITS_DIR}/dev.txt", "w") as dev_f, open(f"{CMU_DICT_SPLITS_DIR}/test.txt", "w") as test_f:
-        for grapheme, phonemes in nemo_cmu.items():
-            # use only default phoneme
-            phonemes = ["".join(x) for x in nemo_cmu[grapheme.upper()]][0]
-            if grapheme in eval_graphemes["dev"]:
-                f = dev_f
-            elif grapheme in eval_graphemes["test"]:
-                f = test_f
-            else:
-                f = train_f
-            f.write(f"{grapheme}  {phonemes}\n")
+    with open(f"{CMU_DICT_SPLITS_DIR}/train.txt", "w") as train_f, open(
+        f"{CMU_DICT_SPLITS_DIR}/dev.txt", "w"
+    ) as dev_f, open(f"{CMU_DICT_SPLITS_DIR}/test.txt", "w") as test_f:
+        for split in ["train", "test", "dev"]:
+            for grapheme, phonemes in CharsiuG2P_cmu[split].items():
+                phonemes = ["".join(x) for x in phonemes]
 
-    TRAINING_DATA_DIR = f"{BASE_DIR}/training_data_v2/raw_files"
+                if len(phonemes) > 1 and grapheme.upper() in nemo_cmu:
+                    # check if the word is present in nemo dict, if so, use NeMo's default form
+                    nemo_phonemes = ["".join(x) for x in nemo_cmu[grapheme.upper()]][0]
+                else:
+                    phonemes = phonemes[0]
+
+                if split == "dev":
+                    f = dev_f
+                elif split == "test":
+                    f = test_f
+                else:
+                    f = train_f
+
+                f.write(f"{grapheme}  {phonemes}\n")
+
+    TRAINING_DATA_DIR = f"{BASE_DIR}/training_data_v3/raw_files"
     EVAL_DATA_DIR = f"{BASE_DIR}/evaluation_sets"
 
     # PREPARE CMU DATA
@@ -210,16 +228,18 @@ if __name__ == "__main__":
     librispeech_train_manifest = (
         "/mnt/sdb_4/g2p/data_ipa/with_unicode_token/phoneme_train_all_fields_updated_word_boundaries_ipa.json"
     )
+
+    DEV_TEST_GRAPHEMES = []
+    for split in ["dev", "test"]:
+        for grapheme in CharsiuG2P_cmu["dev"].keys():
+            DEV_TEST_GRAPHEMES.append(grapheme.lower())
+
     drop_examples(
-        librispeech_train_manifest,
-        output_dir=TRAINING_DATA_DIR,
-        graphemes_to_exclude=[x.lower() for x in eval_graphemes["dev"] + eval_graphemes["test"]],
+        librispeech_train_manifest, output_dir=TRAINING_DATA_DIR, graphemes_to_exclude=DEV_TEST_GRAPHEMES,
     )
     wiki_train_manifest = "/mnt/sdb_4/g2p/data_ipa/with_unicode_token/lower_False/train_wikihomograph.json"
     drop_examples(
-        wiki_train_manifest,
-        output_dir=TRAINING_DATA_DIR,
-        graphemes_to_exclude=[x.lower() for x in eval_graphemes["dev"] + eval_graphemes["test"]],
+        wiki_train_manifest, output_dir=TRAINING_DATA_DIR, graphemes_to_exclude=DEV_TEST_GRAPHEMES,
     )
     wiki_eval_manifest = "/mnt/sdb_4/g2p/data_ipa/with_unicode_token/lower_False/eval_wikihomograph.json"
     drop_examples(
@@ -228,5 +248,3 @@ if __name__ == "__main__":
 
     # PREPARE HIFITTS DATA
     prepare_hifi_tts(f"{BASE_DIR}/all_hifi_tts.json", output_dir=TRAINING_DATA_DIR, phoneme_dict=train_cmu_dict)
-
-

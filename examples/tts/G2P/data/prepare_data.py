@@ -77,7 +77,7 @@ class IPAG2PProcessor(IPAG2P):
         ):
             if word[-3] == 'T':
                 # Case like "airport's"
-                return self.phoneme_dict[word[:-2]][0] + ["t", "s"], True
+                return self.phoneme_dict[word[:-2]][0] + ["s"], True
             elif word[-3] == 'S':
                 # Case like "jones's"
                 return self.phoneme_dict[word[:-2]][0] + ["ɪ", "z"], True
@@ -94,10 +94,7 @@ class IPAG2PProcessor(IPAG2P):
         ):
             if word[-2] == 'T':
                 # Case like "airports"
-                return self.phoneme_dict[word[:-1]][0] + ["t", "s"], True
-            elif word.endswith("IES"):
-                # Case like "flies", "brandies", don't handle -> multiple possible IPA endings
-                return self.apply_to_oov_word(word), False
+                return self.phoneme_dict[word[:-1]][0] + ["s"], True
             else:
                 return self.phoneme_dict[word[:-1]][0] + ["z"], True
 
