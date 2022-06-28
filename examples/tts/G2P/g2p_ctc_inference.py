@@ -14,12 +14,15 @@
 
 import json
 import os
+import sys
 from dataclasses import dataclass, is_dataclass
 from typing import Optional
 
 import pytorch_lightning as pl
 import torch
+from experimental_data import remove_punctuation
 from omegaconf import OmegaConf
+from tqdm import tqdm
 
 from nemo.collections.asr.metrics.wer import word_error_rate
 from nemo.collections.tts.models.G2P.g2p_classification import G2PClassificationModel
@@ -28,6 +31,8 @@ from nemo.collections.tts.torch.en_utils import english_word_tokenize
 from nemo.collections.tts.torch.g2p_classification_data import read_wordids
 from nemo.core.config import hydra_runner
 from nemo.utils import logging
+
+sys.path.append("/home/ebakhturina/NeMo/examples/tts/G2P/data")
 
 
 """
@@ -62,6 +67,7 @@ class TranscriptionConfig:
     pretrained_heteronyms_model: Optional[
         str
     ] = None  # Path to a .nemo file or a Name of a pretrained model to disambiguage heteronyms (Optional)
+    clean: bool = False
 
     # General configs
     output_file: Optional[str] = None
@@ -112,6 +118,45 @@ def main(cfg: TranscriptionConfig) -> TranscriptionConfig:
 
     if cfg.output_file is None:
         cfg.output_file = cfg.manifest_filepath.replace(".json", "_phonemes.json")
+
+    if cfg.clean:
+        tmp_clean_manifest = f"/tmp/{os.path.basename(cfg.manifest_filepath)}"
+        with open(cfg.manifest_filepath, "r") as f_in, open(tmp_clean_manifest, "w") as f_out:
+            for line in tqdm(f_in):
+                line = json.loads(line)
+
+                clean_graphemes = clean(line["text_graphemes"])
+                clean_phonemes = clean(line["text"])
+                line["ipa_text"] = line["text"]
+                line["text"] = clean_phonemes
+
+                tmp_file = "/tmp/tmp.json"
+                with open(tmp_file, "w") as f_tmp:
+                    clean_graphemes = clean_graphemes.split()
+                    clean_phonemes = clean_phonemes.split()
+                    if len(clean_graphemes) != len(clean_phonemes):
+                        print(f"{clean_graphemes} != {clean_phonemes}")
+                        import pdb
+
+                        pdb.set_trace()
+                        print()
+                    for g, p, in zip(clean_graphemes, clean_phonemes):
+                        entry = {"text_graphemes": g}
+                        f_tmp.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+                with torch.no_grad():
+                    preds = model.convert_graphemes_to_phonemes(
+                        manifest_filepath=tmp_file,
+                        output_manifest_filepath=cfg.output_file,
+                        batch_size=cfg.batch_size,
+                        num_workers=cfg.num_workers,
+                        target_field=cfg.target_field,
+                    )
+                preds = " ".join(preds)
+                line["pred_text"] = preds
+                f_out.write(json.dumps(line, ensure_ascii=False) + "\n")
+        get_metrics(tmp_clean_manifest)
+        exit()
 
     with torch.no_grad():
         model.convert_graphemes_to_phonemes(
@@ -346,6 +391,15 @@ def add_unk_token_to_manifest(manifest, heteronyms, wiki_homograph_dict, graphem
     )
 
 
+def clean(text):
+    exclude_punct = "'ˈˌ"
+    text = text.lower()
+    text = text.replace("long-term", "longterm").replace(" x-ray ", " xray ").replace("t-shirts", "tshirts")
+    text = remove_punctuation(text.lower(), exclude=exclude_punct)
+    text = text.replace("҂", "").replace("  ", " ").strip()
+    return text
+
+
 def get_metrics(manifest: str):
     all_preds = []
     all_references = []
@@ -359,7 +413,7 @@ def get_metrics(manifest: str):
     per = word_error_rate(hypotheses=all_preds, references=all_references, use_cer=True)
 
     print("=" * 40)
-    print(f"{manifest}: PER: {per * 100:.2f}%, WER: {wer * 100:.2f}%")
+    print(f"{manifest}: PER: {per * 100:.2f}%, WER: {wer * 100:.2f}%, lines: {len(all_references)}")
     print("=" * 40)
     return wer, per
 

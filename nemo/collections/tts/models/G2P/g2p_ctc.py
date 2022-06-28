@@ -36,6 +36,7 @@ from nemo.utils import logging
 try:
     from nemo.collections.asr.losses.ctc import CTCLoss
     from nemo.collections.asr.metrics.wer_bpe import WERBPE, CTCBPEDecoding, CTCBPEDecodingConfig
+    from nemo.collections.asr.metrics.wer import word_error_rate
     from nemo.collections.asr.models import EncDecCTCModel
     from nemo.collections.asr.parts.mixins import ASRBPEMixin
 

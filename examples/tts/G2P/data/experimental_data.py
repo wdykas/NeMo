@@ -72,9 +72,10 @@ def prepare_ljspeech_data(output_dir, split, cmu_dict):
 
 def prepare_cmu(file, output_dir):
     os.makedirs(output_dir, exist_ok=True)
-    with open(file, "r") as f_in, open(
-        f"{output_dir}/{os.path.splitext(os.path.basename(file))[0]}_cmu.json", "w"
-    ) as f_out:
+
+    output_file_json = f"{output_dir}/{os.path.splitext(os.path.basename(file))[0]}_cmu.json"
+    output_file_tsv = f"{output_dir}/{os.path.splitext(os.path.basename(file))[0]}_cmu.tsv"
+    with open(file, "r") as f_in, open(output_file_json, "w") as f_out_json, open(output_file_tsv, "w") as f_out_tsv:
         for line in f_in:
             graphemes, phonemes = line.strip().split()
             phonemes = phonemes.split(",")[0]
@@ -86,7 +87,8 @@ def prepare_cmu(file, output_dir):
                     "duration": 0.001,
                     "audio_filepath": "n/a",
                 }
-                f_out.write(json.dumps(entry, ensure_ascii=False) + "\n")
+                f_out_json.write(json.dumps(entry, ensure_ascii=False) + "\n")
+                f_out_tsv.write(f"{graphemes.lower()}\t{phonemes}\n")
 
 
 def prepare_hifi_tts(
