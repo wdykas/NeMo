@@ -178,22 +178,25 @@ if __name__ == "__main__":
     CMU_DICT_SPLITS_DIR = f"{BASE_DIR}/nemo_cmu_splits"
     os.makedirs(CMU_DICT_SPLITS_DIR, exist_ok=True)
     # create train/dev/test dict
-    with open(f"{CMU_DICT_SPLITS_DIR}/train.txt", "w") as train_f, open(
-        f"{CMU_DICT_SPLITS_DIR}/dev.txt", "w"
-    ) as dev_f, open(f"{CMU_DICT_SPLITS_DIR}/test.txt", "w") as test_f:
+    with open(f"{CMU_DICT_SPLITS_DIR}/train.txt", "w") as train_f, open(f"{CMU_DICT_SPLITS_DIR}/dev.txt", "w") as dev_f, open(f"{CMU_DICT_SPLITS_DIR}/test.txt", "w") as test_f:
         for grapheme, phonemes in nemo_cmu.items():
-            phonemes = ["".join(x) for x in nemo_cmu[grapheme.upper()]]
+            # use only default phoneme
+            phonemes = ["".join(x) for x in nemo_cmu[grapheme.upper()]][0]
             if grapheme in eval_graphemes["dev"]:
                 f = dev_f
             elif grapheme in eval_graphemes["test"]:
                 f = test_f
             else:
                 f = train_f
-            for ph in phonemes:
-                f.write(f"{grapheme}  {ph}\n")
+            f.write(f"{grapheme}  {phonemes}\n")
 
-    TRAINING_DATA_DIR = f"{BASE_DIR}/training_data_v1/raw_files"
+    TRAINING_DATA_DIR = f"{BASE_DIR}/training_data_v2/raw_files"
     EVAL_DATA_DIR = f"{BASE_DIR}/evaluation_sets"
+
+    # PREPARE CMU DATA
+    prepare_cmu(f"{CMU_DICT_SPLITS_DIR}/dev.txt", EVAL_DATA_DIR)
+    prepare_cmu(f"{CMU_DICT_SPLITS_DIR}/test.txt", EVAL_DATA_DIR)
+    prepare_cmu(f"{CMU_DICT_SPLITS_DIR}/train.txt", TRAINING_DATA_DIR)
 
     # PREPARE LJSPEECH DATA
     train_cmu_dict = "/mnt/sdb_4/g2p/data_ipa/nemo_cmu_splits/train.txt"
@@ -226,7 +229,4 @@ if __name__ == "__main__":
     # PREPARE HIFITTS DATA
     prepare_hifi_tts(f"{BASE_DIR}/all_hifi_tts.json", output_dir=TRAINING_DATA_DIR, phoneme_dict=train_cmu_dict)
 
-    # PREPARE CMU DATA
-    prepare_cmu(f"{CMU_DICT_SPLITS_DIR}/dev.txt", EVAL_DATA_DIR)
-    prepare_cmu(f"{CMU_DICT_SPLITS_DIR}/test.txt", EVAL_DATA_DIR)
-    prepare_cmu(f"{CMU_DICT_SPLITS_DIR}/train.txt", TRAINING_DATA_DIR)
+

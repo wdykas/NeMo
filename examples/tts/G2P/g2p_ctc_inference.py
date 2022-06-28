@@ -20,6 +20,8 @@ from typing import Optional
 
 import pytorch_lightning as pl
 import torch
+
+sys.path.append("/home/ebakhturina/NeMo/examples/tts/G2P/data")
 from experimental_data import remove_punctuation
 from omegaconf import OmegaConf
 from tqdm import tqdm
@@ -32,7 +34,6 @@ from nemo.collections.tts.torch.g2p_classification_data import read_wordids
 from nemo.core.config import hydra_runner
 from nemo.utils import logging
 
-sys.path.append("/home/ebakhturina/NeMo/examples/tts/G2P/data")
 
 
 """
@@ -394,7 +395,29 @@ def add_unk_token_to_manifest(manifest, heteronyms, wiki_homograph_dict, graphem
 def clean(text):
     exclude_punct = "'ˈˌ"
     text = text.lower()
-    text = text.replace("long-term", "longterm").replace(" x-ray ", " xray ").replace("t-shirts", "tshirts").replace("twenty-five", "twentyfive")
+    text = (
+        text.replace("long-term", "longterm")
+        .replace(" x-ray ", " xray ")
+        .replace("t-shirts", "tshirts")
+        .replace("twenty-five", "twentyfive")
+        .replace("spider-man", "spiderman")
+        .replace("full-time", "fulltime")
+        .replace("three-year", "threeyear")
+        .replace("one-year", "oneyear")
+        .replace("five-year", "fiveyear")
+        .replace("two-dimensional", "twodimensional")
+        .replace("three-dimensional", "threedimensional")
+        .replace("computer-generated", "computergenerated")
+        .replace("long-range", "longrange")
+        .replace("non-zero", "nonzero")
+        .replace("air-conditioning", "airconditioning")
+        .replace("pre-season", "preseason")
+        .replace("build-up", "buildup")
+        .replace("one-off", "oneoff")
+        .replace("brother-in-law", "brotherinlaw")
+        .replace("on-screen", "onscreen")
+        .replace("non-verbal", "nonverbal")
+    )
     text = remove_punctuation(text.lower(), exclude=exclude_punct)
     text = text.replace("҂", "").replace("  ", " ").strip()
     return text

@@ -458,7 +458,7 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
             per = word_error_rate(hypotheses=all_preds, references=all_targets)
             logging.info(f"Overall PER --- {round(per * 100, 2)}%")
 
-        logging.info(f"Predictions saved to {output_manifest_filepath}.")
+        logging.debug(f"Predictions saved to {output_manifest_filepath}.")
         return all_preds
 
     # ===== Dataset Setup Functions ===== #

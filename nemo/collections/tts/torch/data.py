@@ -1059,7 +1059,7 @@ class CTCG2PBPEDataset(Dataset):
         seq_lengths = []
         sentences = []
         with open(manifest_filepath, 'r') as f_in:
-            logging.info(f"Loading dataset from: {manifest_filepath}")
+            logging.debug(f"Loading dataset from: {manifest_filepath}")
             for i, line in enumerate(tqdm(f_in)):
                 item = json.loads(line)
                 """
@@ -1107,7 +1107,7 @@ class CTCG2PBPEDataset(Dataset):
                         {"graphemes": item["text_graphemes"],}
                     )
 
-        logging.info(
+        logging.debug(
             f"Number of samples removed or truncated {num_removed_or_truncated} examples from {manifest_filepath}"
         )
 
