@@ -2,7 +2,7 @@ import json
 import os
 import string
 from typing import List, Optional
-
+from glob import glob
 from prepare_data import IPAG2PProcessor, remove_punctuation, setup_tokenizer
 from tqdm import tqdm
 
@@ -148,6 +148,20 @@ def drop_examples(manifest, output_dir, graphemes_to_exclude: Optional[List[str]
     print(f"Dropped {num_dropped} from {manifest}")
 
 
+def check_data(manifest):
+    num_dropped = 0
+    with open(manifest, "r", encoding="utf-8") as f_in:
+        for line in tqdm(f_in):
+            line = json.loads(line)
+
+            text = line["text_graphemes"]
+            if not is_valid(text, verbose=True):
+                print(line)
+                num_dropped += 1
+                continue
+
+    print(f"Num dropped: {num_dropped} in {manifest}")
+
 if __name__ == "__main__":
     """
     Use only CMU train dict part for training datasets, all CMU entries for eval/dev sets
@@ -248,3 +262,7 @@ if __name__ == "__main__":
 
     # PREPARE HIFITTS DATA
     prepare_hifi_tts(f"{BASE_DIR}/all_hifi_tts.json", output_dir=TRAINING_DATA_DIR, phoneme_dict=train_cmu_dict)
+
+
+    for file in glob(f"{TRAINING_DATA_DIR}/*.json"):
+        check_data(file)
