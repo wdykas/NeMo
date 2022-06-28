@@ -394,7 +394,7 @@ def add_unk_token_to_manifest(manifest, heteronyms, wiki_homograph_dict, graphem
 def clean(text):
     exclude_punct = "'ˈˌ"
     text = text.lower()
-    text = text.replace("long-term", "longterm").replace(" x-ray ", " xray ").replace("t-shirts", "tshirts")
+    text = text.replace("long-term", "longterm").replace(" x-ray ", " xray ").replace("t-shirts", "tshirts").replace("twenty-five", "twentyfive")
     text = remove_punctuation(text.lower(), exclude=exclude_punct)
     text = text.replace("҂", "").replace("  ", " ").strip()
     return text
