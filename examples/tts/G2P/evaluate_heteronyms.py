@@ -77,8 +77,8 @@ def eval_heteronyms(manifest):
 
 if __name__ == "__main__":
 
-    # manifest = sys.argv[1]
-    manifest = "/home/ebakhturina/NeMo/examples/tts/eval_wikihomograph_preds.json"
-
-    manifest = "/home/ebakhturina/g2p_scripts/paper_experiments/eval_wikihomograph_g2pENG_preds.json"
+    manifest = sys.argv[1]
+    # manifest = "/home/ebakhturina/NeMo/examples/tts/eval_wikihomograph_preds.json"
+    #
+    # manifest = "/home/ebakhturina/g2p_scripts/paper_experiments/eval_wikihomograph_g2pENG_preds.json"
     eval_heteronyms(manifest)

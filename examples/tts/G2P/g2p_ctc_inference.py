@@ -20,6 +20,8 @@ from typing import Optional
 
 import pytorch_lightning as pl
 import torch
+import sys
+sys.path.append("/home/ebakhturina/NeMo/examples/tts/G2P/data")
 from data_preparation_utils import remove_punctuation
 from omegaconf import OmegaConf
 from tqdm import tqdm
@@ -69,7 +71,6 @@ class TranscriptionConfig:
     ] = None  # Path to a .nemo file or a Name of a pretrained model to disambiguage heteronyms (Optional)
     clean_word_level: bool = False
     clean_sent_level: bool = False
-    only_wiki_heteronyms: bool = False
 
     # General configs
     output_file: Optional[str] = None
@@ -123,12 +124,7 @@ def main(cfg: TranscriptionConfig) -> TranscriptionConfig:
         cfg.output_file = cfg.manifest_filepath.replace(".json", "_phonemes.json")
 
     if cfg.clean_sent_level or cfg.clean_word_level:
-        tmp_clean_manifest = f"/tmp/{os.path.basename(cfg.manifest_filepath)}"
-        if cfg.only_wiki_heteronyms:
-            total = 0
-            correct = 0
-
-        with open(cfg.manifest_filepath, "r") as f_in, open(tmp_clean_manifest, "w") as f_out:
+        with open(cfg.manifest_filepath, "r") as f_in, open(cfg.output_file, "w") as f_out:
             for line in tqdm(f_in):
                 line = json.loads(line)
 
@@ -152,45 +148,18 @@ def main(cfg: TranscriptionConfig) -> TranscriptionConfig:
                 with torch.no_grad():
                     preds = model.convert_graphemes_to_phonemes(
                         manifest_filepath=tmp_file,
-                        output_manifest_filepath=cfg.output_file,
+                        output_manifest_filepath=tmp_file.replace(".json", "_preds.json"),
                         batch_size=cfg.batch_size,
                         num_workers=cfg.num_workers,
                         target_field=cfg.target_field,
                     )
 
-                # if cfg.only_wiki_heteronyms:
-                #     if cfg.clean_sent_level:
-                #         clean_graphemes = clean_graphemes.split()
-                #         clean_phonemes = clean_phonemes.split()
-                #         preds = preds[0].split()
-                #         if len(clean_graphemes) != len(preds) or len(preds) != len(clean_phonemes):
-                #             print(f"LEN mismatch: {len(clean_graphemes)} -- {len(preds)} -- {len(clean_phonemes)} for {clean_graphemes}")
-                #             print()
-                #
-                #     heteronyms_preds = []
-                #     heteronyms_gt = []
-                #     for idx, gr in enumerate(clean_graphemes):
-                #         if gr in wiki_heteronyms:
-                #             heteronyms_preds.append(preds[idx])
-                #             heteronyms_gt.append(clean_phonemes[idx])
-                #     preds = heteronyms_preds
-                #     for pr, gt in zip(preds, heteronyms_gt):
-                #         if pr == gt:
-                #             correct += 1
-                #         total += 1
-                #     if len(heteronyms_gt) == 0:
-                #         import pdb; pdb.set_trace()
-                #         print()
-                #
-                #     line["text"] = " ".join(heteronyms_gt)
-
                 preds = " ".join(preds)
                 line["pred_text"] = preds
                 line["clean_graphemes"] = clean_graphemes
                 f_out.write(json.dumps(line, ensure_ascii=False) + "\n")
-        get_metrics(tmp_clean_manifest)
-        if cfg.only_wiki_heteronyms:
-            print(f"Accuracy: {correct/total*100:.2f}% ({total-correct} wrong out of {total})")
+
+        get_metrics(cfg.output_file)
         exit()
 
     with torch.no_grad():

@@ -214,7 +214,7 @@ if __name__ == "__main__":
                 f.write(f"{grapheme}  {phonemes}\n")
 
     TRAINING_DATA_DIR = f"{BASE_DIR}/training_data_v{VERSION}/raw_files"
-    EVAL_DATA_DIR = f"{BASE_DIR}/evaluation_sets"
+    EVAL_DATA_DIR = f"{BASE_DIR}/evaluation_sets_v{VERSION}"
     os.makedirs(TRAINING_DATA_DIR, exist_ok=True)
 
     # PREPARE CMU DATA
@@ -234,6 +234,9 @@ if __name__ == "__main__":
     librispeech_train_manifest = (
         "/mnt/sdb_4/g2p/data_ipa/with_unicode_token/phoneme_train_all_fields_updated_word_boundaries_ipa.json"
     )
+    librispeech_dev_manifest = (
+        "/mnt/sdb_4/g2p/data_ipa/with_unicode_token/phoneme_dev_clean_fields_updated_word_boundaries_ipa.json"
+    )
 
     DEV_TEST_GRAPHEMES = []
     for split in ["dev", "test"]:
@@ -241,13 +244,15 @@ if __name__ == "__main__":
             DEV_TEST_GRAPHEMES.append(grapheme.lower())
 
     drop_examples(librispeech_train_manifest, output_dir=TRAINING_DATA_DIR, graphemes_to_exclude=DEV_TEST_GRAPHEMES)
+    drop_examples(librispeech_dev_manifest, output_dir=EVAL_DATA_DIR, graphemes_to_exclude=DEV_TEST_GRAPHEMES)
 
     # PREPARE WIKIHOMOGRAPH DATA
-    prepare_wikihomograph_data(POST_FIX, output_dir=TRAINING_DATA_DIR, split="train", phoneme_dict=train_cmu_dict)
-    prepare_wikihomograph_data(POST_FIX, output_dir=EVAL_DATA_DIR, split="eval", phoneme_dict=complete_nemo_ipa_cmu)
-    wiki_train_manifest = f"{TRAINING_DATA_DIR}/train_wikihomograph.json"
+    WIKI_DATA_TMP_DIR = f"{BASE_DIR}/tmp"
+    prepare_wikihomograph_data(POST_FIX, output_dir=WIKI_DATA_TMP_DIR, split="train", phoneme_dict=train_cmu_dict)
+    prepare_wikihomograph_data(POST_FIX, output_dir=WIKI_DATA_TMP_DIR, split="eval", phoneme_dict=complete_nemo_ipa_cmu)
+    wiki_train_manifest = f"{WIKI_DATA_TMP_DIR}/train_wikihomograph.json"
     drop_examples(wiki_train_manifest, output_dir=TRAINING_DATA_DIR, graphemes_to_exclude=DEV_TEST_GRAPHEMES)
-    wiki_eval_manifest = f"{EVAL_DATA_DIR}/eval_wikihomograph.json"
+    wiki_eval_manifest = f"{WIKI_DATA_TMP_DIR}/eval_wikihomograph.json"
     drop_examples(wiki_eval_manifest, output_dir=EVAL_DATA_DIR, graphemes_to_exclude=None)
 
     # PREPARE HIFITTS DATA
@@ -255,3 +260,20 @@ if __name__ == "__main__":
 
     for file in glob(f"{TRAINING_DATA_DIR}/*.json"):
         check_data(file)
+
+
+
+    # SAVE MULRIPLE VALID IPA FORMS FROM CMU TEST SPLIT AS SEPARATE ENTRIES
+    cmu_test = "/mnt/sdb_4/g2p/data_ipa/CharsiuG2P_data_splits/test_eng-us.tsv"
+    output_dir = "/mnt/sdb_4/g2p/data_ipa/evaluation_sets_v4/CMU_TEST_MULTI"
+    os.makedirs(output_dir, exist_ok=True)
+    output_file = f"{output_dir}/cmu_test.json"
+
+    with open(cmu_test, "r") as f_in, open(output_file, "w") as f_out:
+        for line in f_in:
+            gr, ph = line.strip().split("\t")
+            ph = ph.split(",")
+
+            for p in ph:
+                entry = {"text": p, "text_graphemes": gr}
+                f_out.write(json.dumps(entry, ensure_ascii=False) + "\n")
