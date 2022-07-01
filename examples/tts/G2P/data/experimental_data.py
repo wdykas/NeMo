@@ -1,16 +1,23 @@
 import json
 import os
 import string
-from typing import List, Optional
 from glob import glob
-from data_preparation_utils import is_valid, post_process, setup_tokenizer, remove_punctuation, IPAG2PProcessor
+from typing import List, Optional
+
+from data_preparation_utils import (
+    IPAG2PProcessor,
+    check_data,
+    is_valid,
+    post_process,
+    remove_punctuation,
+    setup_tokenizer,
+)
+from prepare_wiki_data import prepare_wikihomograph_data
 from tqdm import tqdm
 
 from nemo.utils import logging
-from prepare_wiki_data import prepare_wikihomograph_data
 
 # download ipa dict splits using get_open_dict_splits.sh
-
 
 
 def _prepare_ljspeech_split(
@@ -141,28 +148,16 @@ def drop_examples(manifest, output_dir, graphemes_to_exclude: Optional[List[str]
                 f_out.write(json.dumps(line, ensure_ascii=False) + "\n")
             else:
                 num_dropped += 1
-    print(f"Dropped {num_dropped} from {manifest}")
+    print(f"Dropped examples with DEV/TEST graphemes {num_dropped} from {manifest}")
 
-
-def check_data(manifest):
-    num_dropped = 0
-    with open(manifest, "r", encoding="utf-8") as f_in:
-        for line in tqdm(f_in):
-            line = json.loads(line)
-
-            text = line["text_graphemes"]
-            if not is_valid(text, verbose=True):
-                print(line)
-                num_dropped += 1
-                continue
-
-    print(f"Num dropped: {num_dropped} in {manifest}")
 
 if __name__ == "__main__":
     """
     Use only CMU train dict part for training datasets, all CMU entries for eval/dev sets
     """
     STRESS_SYMBOLS = ["ˈ", "ˌ"]
+    POST_FIX = "normalized_4"
+    VERSION = 4
     # read nemo ipa cmu dict to get the order of words
     nemo_cmu = "/home/ebakhturina/NeMo/scripts/tts_dataset_files/ipa_cmudict-0.7b_nv22.06.txt"
     nemo_cmu, _ = IPAG2PProcessor._parse_as_cmu_dict(
@@ -218,7 +213,7 @@ if __name__ == "__main__":
 
                 f.write(f"{grapheme}  {phonemes}\n")
 
-    TRAINING_DATA_DIR = f"{BASE_DIR}/training_data_v4/raw_files"
+    TRAINING_DATA_DIR = f"{BASE_DIR}/training_data_v{VERSION}/raw_files"
     EVAL_DATA_DIR = f"{BASE_DIR}/evaluation_sets"
     os.makedirs(TRAINING_DATA_DIR, exist_ok=True)
 
@@ -245,25 +240,18 @@ if __name__ == "__main__":
         for grapheme in CharsiuG2P_cmu["dev"].keys():
             DEV_TEST_GRAPHEMES.append(grapheme.lower())
 
-    drop_examples(
-        librispeech_train_manifest, output_dir=TRAINING_DATA_DIR, graphemes_to_exclude=DEV_TEST_GRAPHEMES,
-    )
+    drop_examples(librispeech_train_manifest, output_dir=TRAINING_DATA_DIR, graphemes_to_exclude=DEV_TEST_GRAPHEMES)
 
     # PREPARE WIKIHOMOGRAPH DATA
-    prepare_wikihomograph_data("normalized_3", output_dir=TRAINING_DATA_DIR, split="train", phoneme_dict=train_cmu_dict)
-    prepare_wikihomograph_data("normalized_3", output_dir=EVAL_DATA_DIR, split="eval", phoneme_dict=complete_nemo_ipa_cmu)
-    # wiki_train_manifest = "/mnt/sdb_4/g2p/data_ipa/with_unicode_token/lower_False/train_wikihomograph.json"
-    # drop_examples(
-    #     wiki_train_manifest, output_dir=TRAINING_DATA_DIR, graphemes_to_exclude=DEV_TEST_GRAPHEMES,
-    # )
-    # wiki_eval_manifest = "/mnt/sdb_4/g2p/data_ipa/with_unicode_token/lower_False/eval_wikihomograph.json"
-    # drop_examples(
-    #     wiki_eval_manifest, output_dir=EVAL_DATA_DIR, graphemes_to_exclude=None,
-    # )
+    prepare_wikihomograph_data(POST_FIX, output_dir=TRAINING_DATA_DIR, split="train", phoneme_dict=train_cmu_dict)
+    prepare_wikihomograph_data(POST_FIX, output_dir=EVAL_DATA_DIR, split="eval", phoneme_dict=complete_nemo_ipa_cmu)
+    wiki_train_manifest = f"{TRAINING_DATA_DIR}/train_wikihomograph.json"
+    drop_examples(wiki_train_manifest, output_dir=TRAINING_DATA_DIR, graphemes_to_exclude=DEV_TEST_GRAPHEMES)
+    wiki_eval_manifest = f"{EVAL_DATA_DIR}/eval_wikihomograph.json"
+    drop_examples(wiki_eval_manifest, output_dir=EVAL_DATA_DIR, graphemes_to_exclude=None)
 
     # PREPARE HIFITTS DATA
     prepare_hifi_tts(f"{BASE_DIR}/all_hifi_tts.json", output_dir=TRAINING_DATA_DIR, phoneme_dict=train_cmu_dict)
-
 
     for file in glob(f"{TRAINING_DATA_DIR}/*.json"):
         check_data(file)

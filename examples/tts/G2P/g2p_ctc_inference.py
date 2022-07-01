@@ -20,7 +20,7 @@ from typing import Optional
 
 import pytorch_lightning as pl
 import torch
-
+from data_preparation_utils import remove_punctuation
 from omegaconf import OmegaConf
 from tqdm import tqdm
 
@@ -34,7 +34,6 @@ from nemo.utils import logging
 
 # fmt: off
 sys.path.append("/home/ebakhturina/NeMo/examples/tts/G2P/data")
-from data_preparation_utils import remove_punctuation
 
 """
 python G2P/g2p_ctc_inference.py \

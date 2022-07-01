@@ -1,8 +1,13 @@
+import json
+import re
 import string
+from typing import List, Optional
+
+from tqdm import tqdm
+
 from nemo.collections.tts.torch.en_utils import english_word_tokenize
 from nemo.collections.tts.torch.g2ps import IPAG2P
-from typing import List, Optional
-import re
+
 
 class IPAG2PProcessor(IPAG2P):
     def __init__(
@@ -139,9 +144,11 @@ class IPAG2PProcessor(IPAG2P):
         graphemes = self.post_process(graphemes)
         return prons, graphemes
 
+
 def post_process(text):
     text = text.replace('“', '"').replace('”', '"').replace("—", "-")
     return text
+
 
 def remove_punctuation(text: str, exclude=None):
     all_punct_marks = string.punctuation
@@ -154,12 +161,14 @@ def remove_punctuation(text: str, exclude=None):
     text = re.sub(r" +", " ", text)
     return text.strip()
 
+
 def is_valid(text, unk_token="҂", verbose=False):
     invalid_symbols = set(text).difference(set(unk_token + string.ascii_letters + " " + string.punctuation))
 
     if verbose and len(invalid_symbols) > 0:
         print(invalid_symbols)
     return len(invalid_symbols) == 0
+
 
 def setup_tokenizer(
     phoneme_dict: str = "/home/ebakhturina/NeMo/scripts/tts_dataset_files/ipa_cmudict-0.7b_nv22.06.txt",
@@ -177,7 +186,8 @@ def setup_tokenizer(
         use_stresses=True,
     )
 
-def get_wordid_to_nemo_cmu(wordid_to_nemo_file = "wordid_to_nemo_cmu.tsv"):
+
+def get_wordid_to_nemo_cmu(wordid_to_nemo_file="wordid_to_nemo_cmu.tsv"):
     # to replace heteronyms with correct IPA form
     wordid_to_nemo_cmu = {}
     with open(wordid_to_nemo_file, "r", encoding="utf-8") as f:
@@ -185,3 +195,22 @@ def get_wordid_to_nemo_cmu(wordid_to_nemo_file = "wordid_to_nemo_cmu.tsv"):
             word_id, ipa = line.strip().split("\t")
             wordid_to_nemo_cmu[word_id] = ipa
     return wordid_to_nemo_cmu
+
+
+def check_data(manifest):
+    num_dropped = 0
+    with open(manifest, "r", encoding="utf-8") as f_in:
+        for line in tqdm(f_in):
+            line = json.loads(line)
+
+            text = line["text_graphemes"]
+            if not is_valid(text, verbose=True):
+                import pdb
+
+                pdb.set_trace()
+
+                print(line)
+                num_dropped += 1
+                continue
+    if num_dropped > 0:
+        print(f"Final check_data() dropped: {num_dropped} in {manifest}")

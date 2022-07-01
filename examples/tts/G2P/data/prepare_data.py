@@ -1,12 +1,11 @@
 import csv
 import json
 import os
-
 from glob import glob
 from typing import List
 
+from data_preparation_utils import get_wordid_to_nemo_cmu, is_valid, post_process, remove_punctuation, setup_tokenizer
 from tqdm import tqdm
-from data_preparation_utils import post_process, setup_tokenizer, get_wordid_to_nemo_cmu, is_valid, remove_punctuation
 
 
 def read_wikihomograph_normalized_file(file: str) -> (List[str], List[List[int]], List[str], List[str]):
@@ -89,7 +88,6 @@ def prepare_wiki_data(
                     f_out.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
         print(f"Data for {subset.upper()} saved at {manifest}")
-
 
 
 def run_test():

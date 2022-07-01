@@ -1,17 +1,16 @@
-from tqdm import tqdm
-from nemo_text_processing.text_normalization.normalize import Normalizer
+import json
 import os
 from glob import glob
-from nemo.collections.tts.torch.g2p_utils.data_utils import read_wikihomograph_file, correct_wikihomograph_data
-import json
 
+from data_preparation_utils import check_data, get_wordid_to_nemo_cmu, is_valid, post_process, setup_tokenizer
+from nemo_text_processing.text_normalization.normalize import Normalizer
+from tqdm import tqdm
 
-from data_preparation_utils import is_valid, post_process, setup_tokenizer, get_wordid_to_nemo_cmu
-
+from nemo.collections.tts.torch.g2p_utils.data_utils import correct_wikihomograph_data, read_wikihomograph_file
 
 
 def post_process_normalization(text):
-    text = text.replace("slash ", "/ ").replace(" slash[", " slash [")
+    text = text.replace("slash ", "/ ").replace(" slash[", " slash [").replace("—", "-")
     return text
 
 
@@ -47,31 +46,33 @@ def normalize_wikihomograph_data(subset, post_fix):
                 # we'll skip examples where start/end indices are incorrect and
                 # the target homorgaph is also present in the context (ambiguous)
                 if homograph_span.lower() != homograph:
-                    import pdb; pdb.set_trace()
+                    import pdb
+
+                    pdb.set_trace()
                     num_removed += 1
                 else:
-                    sentence_to_normalize = (sent[: int(start)] + replace_token + sent[int(end) :])
+                    sentence_to_normalize = sent[: int(start)] + replace_token + sent[int(end) :]
                     try:
-                        norm_text = normalizer.normalize(text=sentence_to_normalize,verbose=False,punct_post_process=True,punct_pre_process=True,)
+                        norm_text = normalizer.normalize(
+                            text=sentence_to_normalize, verbose=False, punct_post_process=True, punct_pre_process=True,
+                        )
                     except:
                         print("TN ERROR: ", sentence_to_normalize)
                         num_removed += 1
 
                     norm_text = post_process_normalization(norm_text)
-                    entry = {"text_graphemes": norm_text,
-                             "norm_text_graphemes": norm_text.replace(replace_token, homograph_span),
-                             "start_end": [start, end],
-                             "homograph_span": homograph_span,
-                             "word_id": word_ids[i]}
+                    entry = {
+                        "text_graphemes": norm_text,
+                        "norm_text_graphemes": norm_text.replace(replace_token, homograph_span),
+                        "start_end": [start, end],
+                        "homograph_span": homograph_span,
+                        "word_id": word_ids[i],
+                    }
                     f_out.write(json.dumps(entry, ensure_ascii=False) + "\n")
     print(f"Normalized data is saved at {output_dir}, number of removed lines: {num_removed}")
 
 
-
-def _prepare_wikihomograph_data(post_fix,
-                               output_dir,
-                               phoneme_dict,
-                               split):
+def _prepare_wikihomograph_data(post_fix, output_dir, phoneme_dict, split):
     drop = []
     replace_token = "[]"
     # to replace heteronyms with correct IPA form
@@ -97,18 +98,24 @@ def _prepare_wikihomograph_data(post_fix,
                         drop.append(graphemes_)
                     else:
                         line["text_graphemes"] = graphemes_
-                        line["text"] = ipa_
-                        line["duration"] = 0.001,
+                        line["text"] = post_process(ipa_)
+                        line["duration"] = (0.001,)
                         line["audio_filepath"] = "n/a"
                         f_out.write(json.dumps(line, ensure_ascii=False) + "\n")
+        return manifest
+        print(
+            f"During validation check in dataset preparation dropped: {len(drop)}, Data for {split.upper()} saved at {manifest}"
+        )
 
-        print(f"Dropped: {len(drop)}, Data for {split.upper()} saved at {manifest}")
 
 def prepare_wikihomograph_data(post_fix, output_dir, split, phoneme_dict=None):
     if phoneme_dict is None:
         phoneme_dict = "/home/ebakhturina/NeMo/scripts/tts_dataset_files/ipa_cmudict-0.7b_nv22.06.txt"
     normalize_wikihomograph_data(split, post_fix)
-    _prepare_wikihomograph_data(post_fix, split=split, output_dir=output_dir, phoneme_dict=phoneme_dict)
+    manifest = _prepare_wikihomograph_data(post_fix, split=split, output_dir=output_dir, phoneme_dict=phoneme_dict)
+    print('checking..')
+    check_data(manifest)
+
 
 if __name__ == "__main__":
     split = "eval"
