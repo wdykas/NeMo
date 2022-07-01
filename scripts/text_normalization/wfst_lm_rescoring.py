@@ -206,7 +206,7 @@ if __name__ == "__main__":
                 for x in tqdm(batch)
             ]
 
-            with open(f"{dir_name}/{batch_idx}.p", "wb") as handle:
+            with open(f"{dir_name}/{batch_idx}.pkl", "wb") as handle:
                 pickle.dump(normalized, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
             print(f"Batch -- {batch_idx} -- is complete")
