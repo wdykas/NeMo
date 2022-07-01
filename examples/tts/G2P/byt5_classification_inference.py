@@ -34,10 +34,12 @@ from nemo.utils.exp_manager import exp_manager
 
 """
 python byt5_classification_inference.py \
-    pretrained_model=/home/ebakhturina/NeMo/examples/tts/G2P/nemo_experiments/G2PClassification/2022-06-13_16-49-56/checkpoints/G2PClassification.nemo \
-    data_dir=/home/ebakhturina/g2p_scripts/WikipediaHomographData-master/data/eval
+pretrained_model=/mnt/sdb_4/g2p/chpts/homographs_classification/G2PClassification.nemo \
+data_dir=/home/ebakhturina/g2p_scripts/WikipediaHomographData-master/data/eval
 
 filepath=/home/ebakhturina/g2p_scripts/WikipediaHomographData-master/data/eval/read.tsv
+
+Accuracy: 98.89% (18 errors out of 1615)
 """
 
 
@@ -140,8 +142,3 @@ def main(cfg):
 
 if __name__ == '__main__':
     main()  # noqa pylint: disable=no-value-for-parameter
-
-
-"""
-Accuracy: 98.82% (19 errors out of 1615)
-"""

@@ -3,25 +3,14 @@ import os
 import string
 from typing import List, Optional
 from glob import glob
-from prepare_data import IPAG2PProcessor, remove_punctuation, setup_tokenizer
+from data_preparation_utils import is_valid, post_process, setup_tokenizer, remove_punctuation, IPAG2PProcessor
 from tqdm import tqdm
 
 from nemo.utils import logging
+from prepare_wiki_data import prepare_wikihomograph_data
 
 # download ipa dict splits using get_open_dict_splits.sh
 
-
-def process_text(text):
-    text = text.replace('“', '"').replace('”', '"')
-    return text
-
-
-def is_valid(text, unk_token="҂", verbose=False):
-    invalid_symbols = set(text).difference(set(unk_token + string.ascii_letters + " " + string.punctuation))
-
-    if verbose and len(invalid_symbols) > 0:
-        print(invalid_symbols)
-    return len(invalid_symbols) == 0
 
 
 def _prepare_ljspeech_split(
@@ -40,7 +29,7 @@ def _prepare_ljspeech_split(
         for line in tqdm(f_in):
             line = json.loads(line)
 
-            text = process_text(line["text"])
+            text = post_process(line["text"])
             if not is_valid(text):
                 logging.debug(set(text).difference(set(string.ascii_letters + " " + string.punctuation)))
                 num_dropped += 1
@@ -70,25 +59,31 @@ def prepare_ljspeech_data(output_dir, split, cmu_dict):
     _prepare_ljspeech_split(lj_data[split], phoneme_dict=cmu_dict, output_dir=output_dir)
 
 
-def prepare_cmu(file, output_dir):
+def prepare_cmu(file, output_dir, split="test"):
     os.makedirs(output_dir, exist_ok=True)
 
     output_file_json = f"{output_dir}/{os.path.splitext(os.path.basename(file))[0]}_cmu.json"
     output_file_tsv = f"{output_dir}/{os.path.splitext(os.path.basename(file))[0]}_cmu.tsv"
     with open(file, "r") as f_in, open(output_file_json, "w") as f_out_json, open(output_file_tsv, "w") as f_out_tsv:
         for line in f_in:
-            graphemes, phonemes = line.strip().split()
-            phonemes = phonemes.split(",")[0]
 
+            graphemes, phonemes = line.strip().split()
+            phonemes = phonemes.split(",")
+            if split != "test":
+                phonemes == phonemes[:1]
+
+            if graphemes.lower() == "dr.":
+                graphemes = "drive"
             if is_valid(graphemes) and not graphemes.startswith("'"):
-                entry = {
-                    "text": phonemes,
-                    "text_graphemes": graphemes.lower(),
-                    "duration": 0.001,
-                    "audio_filepath": "n/a",
-                }
-                f_out_json.write(json.dumps(entry, ensure_ascii=False) + "\n")
-                f_out_tsv.write(f"{graphemes.lower()}\t{phonemes}\n")
+                for ph in phonemes:
+                    entry = {
+                        "text": ph,
+                        "text_graphemes": graphemes.lower(),
+                        "duration": 0.001,
+                        "audio_filepath": "n/a",
+                    }
+                    f_out_json.write(json.dumps(entry, ensure_ascii=False) + "\n")
+                    f_out_tsv.write(f"{graphemes.lower()}\t{phonemes}\n")
 
 
 def prepare_hifi_tts(
@@ -105,6 +100,7 @@ def prepare_hifi_tts(
         for line in tqdm(f_in):
             line = json.loads(line)
             ipa_, graphemes_ = ipa_tok(line["text_normalized"], {})
+
             entry = {
                 "text": ipa_,
                 "text_graphemes": graphemes_,
@@ -117,7 +113,7 @@ def prepare_hifi_tts(
 
 def drop_examples(manifest, output_dir, graphemes_to_exclude: Optional[List[str]] = None):
     """
-    Drop examples with graphems in the exclude list, e.g. for training set we can't used graphems from
+    Drop examples with graphemes in the exclude list, e.g. for training set we can't used graphems from
     dev/test cmu dicts splits. Also we need ot drop sentences with OOV symbols,
     otherwise we're going have issues with comformer tokenization.
     """
@@ -128,7 +124,7 @@ def drop_examples(manifest, output_dir, graphemes_to_exclude: Optional[List[str]
             dev_test_words_present = False
             line = json.loads(line)
             text = line["text_graphemes"]
-            text = process_text(text)
+            text = post_process(text)
 
             if not is_valid(text):
                 num_dropped += 1
@@ -141,7 +137,7 @@ def drop_examples(manifest, output_dir, graphemes_to_exclude: Optional[List[str]
                 break
             if not dev_test_words_present:
                 line["text_grapheme"] = text
-                line["text"] = process_text(line["text"])
+                line["text"] = post_process(line["text"])
                 f_out.write(json.dumps(line, ensure_ascii=False) + "\n")
             else:
                 num_dropped += 1
@@ -205,11 +201,11 @@ if __name__ == "__main__":
     ) as dev_f, open(f"{CMU_DICT_SPLITS_DIR}/test.txt", "w") as test_f:
         for split in ["train", "test", "dev"]:
             for grapheme, phonemes in CharsiuG2P_cmu[split].items():
-                phonemes = ["".join(x) for x in phonemes]
+                phonemes = ["".join(x) for x in phonemes][0].split(",")
 
                 if len(phonemes) > 1 and grapheme.upper() in nemo_cmu:
                     # check if the word is present in nemo dict, if so, use NeMo's default form
-                    nemo_phonemes = ["".join(x) for x in nemo_cmu[grapheme.upper()]][0]
+                    phonemes = ["".join(x) for x in nemo_cmu[grapheme.upper()]][0]
                 else:
                     phonemes = phonemes[0]
 
@@ -222,13 +218,14 @@ if __name__ == "__main__":
 
                 f.write(f"{grapheme}  {phonemes}\n")
 
-    TRAINING_DATA_DIR = f"{BASE_DIR}/training_data_v3/raw_files"
+    TRAINING_DATA_DIR = f"{BASE_DIR}/training_data_v4/raw_files"
     EVAL_DATA_DIR = f"{BASE_DIR}/evaluation_sets"
+    os.makedirs(TRAINING_DATA_DIR, exist_ok=True)
 
     # PREPARE CMU DATA
-    prepare_cmu(f"{CMU_DICT_SPLITS_DIR}/dev.txt", EVAL_DATA_DIR)
-    prepare_cmu(f"{CMU_DICT_SPLITS_DIR}/test.txt", EVAL_DATA_DIR)
-    prepare_cmu(f"{CMU_DICT_SPLITS_DIR}/train.txt", TRAINING_DATA_DIR)
+    prepare_cmu(f"{CMU_DICT_SPLITS_DIR}/dev.txt", EVAL_DATA_DIR, "dev")
+    prepare_cmu(f"{CMU_DICT_SPLITS_DIR}/test.txt", EVAL_DATA_DIR, "test")
+    prepare_cmu(f"{CMU_DICT_SPLITS_DIR}/train.txt", TRAINING_DATA_DIR, "train")
 
     # PREPARE LJSPEECH DATA
     train_cmu_dict = "/mnt/sdb_4/g2p/data_ipa/nemo_cmu_splits/train.txt"
@@ -251,14 +248,18 @@ if __name__ == "__main__":
     drop_examples(
         librispeech_train_manifest, output_dir=TRAINING_DATA_DIR, graphemes_to_exclude=DEV_TEST_GRAPHEMES,
     )
-    wiki_train_manifest = "/mnt/sdb_4/g2p/data_ipa/with_unicode_token/lower_False/train_wikihomograph.json"
-    drop_examples(
-        wiki_train_manifest, output_dir=TRAINING_DATA_DIR, graphemes_to_exclude=DEV_TEST_GRAPHEMES,
-    )
-    wiki_eval_manifest = "/mnt/sdb_4/g2p/data_ipa/with_unicode_token/lower_False/eval_wikihomograph.json"
-    drop_examples(
-        wiki_eval_manifest, output_dir=EVAL_DATA_DIR, graphemes_to_exclude=None,
-    )
+
+    # PREPARE WIKIHOMOGRAPH DATA
+    prepare_wikihomograph_data("normalized_3", output_dir=TRAINING_DATA_DIR, split="train", phoneme_dict=train_cmu_dict)
+    prepare_wikihomograph_data("normalized_3", output_dir=EVAL_DATA_DIR, split="eval", phoneme_dict=complete_nemo_ipa_cmu)
+    # wiki_train_manifest = "/mnt/sdb_4/g2p/data_ipa/with_unicode_token/lower_False/train_wikihomograph.json"
+    # drop_examples(
+    #     wiki_train_manifest, output_dir=TRAINING_DATA_DIR, graphemes_to_exclude=DEV_TEST_GRAPHEMES,
+    # )
+    # wiki_eval_manifest = "/mnt/sdb_4/g2p/data_ipa/with_unicode_token/lower_False/eval_wikihomograph.json"
+    # drop_examples(
+    #     wiki_eval_manifest, output_dir=EVAL_DATA_DIR, graphemes_to_exclude=None,
+    # )
 
     # PREPARE HIFITTS DATA
     prepare_hifi_tts(f"{BASE_DIR}/all_hifi_tts.json", output_dir=TRAINING_DATA_DIR, phoneme_dict=train_cmu_dict)

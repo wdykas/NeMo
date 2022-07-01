@@ -34,7 +34,7 @@ from nemo.utils import logging
 
 # fmt: off
 sys.path.append("/home/ebakhturina/NeMo/examples/tts/G2P/data")
-from experimental_data import remove_punctuation
+from data_preparation_utils import remove_punctuation
 
 """
 python G2P/g2p_ctc_inference.py \
@@ -68,7 +68,9 @@ class TranscriptionConfig:
     pretrained_heteronyms_model: Optional[
         str
     ] = None  # Path to a .nemo file or a Name of a pretrained model to disambiguage heteronyms (Optional)
-    clean: bool = False
+    clean_word_level: bool = False
+    clean_sent_level: bool = False
+    only_wiki_heteronyms: bool = False
 
     # General configs
     output_file: Optional[str] = None
@@ -114,35 +116,38 @@ def main(cfg: TranscriptionConfig) -> TranscriptionConfig:
         raise ValueError(
             f'Provide path to the pre-trained .nemo checkpoint or choose from {CTCG2PModel.list_available_models()}'
         )
+    model._cfg.max_source_len = 512
     model.set_trainer(trainer)
     model = model.eval()
 
     if cfg.output_file is None:
         cfg.output_file = cfg.manifest_filepath.replace(".json", "_phonemes.json")
 
-    if cfg.clean:
+    if cfg.clean_sent_level or cfg.clean_word_level:
         tmp_clean_manifest = f"/tmp/{os.path.basename(cfg.manifest_filepath)}"
+        if cfg.only_wiki_heteronyms:
+            total = 0
+            correct = 0
+
         with open(cfg.manifest_filepath, "r") as f_in, open(tmp_clean_manifest, "w") as f_out:
             for line in tqdm(f_in):
                 line = json.loads(line)
 
                 clean_graphemes = clean(line["text_graphemes"])
                 clean_phonemes = clean(line["text"])
-                line["ipa_text"] = line["text"]
+                line["original_text"] = line["text"]
                 line["text"] = clean_phonemes
 
                 tmp_file = "/tmp/tmp.json"
                 with open(tmp_file, "w") as f_tmp:
-                    clean_graphemes = clean_graphemes.split()
-                    clean_phonemes = clean_phonemes.split()
-                    if len(clean_graphemes) != len(clean_phonemes):
-                        print(f"{clean_graphemes} != {clean_phonemes}")
-                        import pdb
-
-                        pdb.set_trace()
-                        print()
-                    for g, p, in zip(clean_graphemes, clean_phonemes):
-                        entry = {"text_graphemes": g}
+                    if cfg.clean_word_level:
+                        clean_graphemes = clean_graphemes.split()
+                        for g in clean_graphemes:
+                            entry = {"text_graphemes": g}
+                            f_tmp.write(json.dumps(entry, ensure_ascii=False) + "\n")
+                    else:
+                        # for sentence level:
+                        entry = {"text_graphemes": clean_graphemes}
                         f_tmp.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
                 with torch.no_grad():
@@ -153,10 +158,40 @@ def main(cfg: TranscriptionConfig) -> TranscriptionConfig:
                         num_workers=cfg.num_workers,
                         target_field=cfg.target_field,
                     )
+
+                # if cfg.only_wiki_heteronyms:
+                #     if cfg.clean_sent_level:
+                #         clean_graphemes = clean_graphemes.split()
+                #         clean_phonemes = clean_phonemes.split()
+                #         preds = preds[0].split()
+                #         if len(clean_graphemes) != len(preds) or len(preds) != len(clean_phonemes):
+                #             print(f"LEN mismatch: {len(clean_graphemes)} -- {len(preds)} -- {len(clean_phonemes)} for {clean_graphemes}")
+                #             print()
+                #
+                #     heteronyms_preds = []
+                #     heteronyms_gt = []
+                #     for idx, gr in enumerate(clean_graphemes):
+                #         if gr in wiki_heteronyms:
+                #             heteronyms_preds.append(preds[idx])
+                #             heteronyms_gt.append(clean_phonemes[idx])
+                #     preds = heteronyms_preds
+                #     for pr, gt in zip(preds, heteronyms_gt):
+                #         if pr == gt:
+                #             correct += 1
+                #         total += 1
+                #     if len(heteronyms_gt) == 0:
+                #         import pdb; pdb.set_trace()
+                #         print()
+                #
+                #     line["text"] = " ".join(heteronyms_gt)
+
                 preds = " ".join(preds)
                 line["pred_text"] = preds
+                line["clean_graphemes"] = clean_graphemes
                 f_out.write(json.dumps(line, ensure_ascii=False) + "\n")
         get_metrics(tmp_clean_manifest)
+        if cfg.only_wiki_heteronyms:
+            print(f"Accuracy: {correct/total*100:.2f}% ({total-correct} wrong out of {total})")
         exit()
 
     with torch.no_grad():
@@ -168,8 +203,7 @@ def main(cfg: TranscriptionConfig) -> TranscriptionConfig:
             target_field=cfg.target_field,
         )
         print(f"IPA predictions saved in {cfg.output_file}")
-
-    get_metrics(cfg.output_file)
+        get_metrics(cfg.output_file)
 
     # disambiguate heteronyms using IPA-classification model
     if cfg.pretrained_heteronyms_model is not None:
@@ -226,13 +260,7 @@ def main(cfg: TranscriptionConfig) -> TranscriptionConfig:
                 num_workers=cfg.num_workers,
             )
 
-        wordid_to_nemo_cmu = {}
-        with open("/home/ebakhturina/g2p_scripts/misc_data/wordid_to_nemo_cmu.tsv", "r", encoding="utf-8") as f:
-            for i, line in enumerate(f):
-                if i == 0:
-                    continue
-                line = line.strip().split("\t")
-                wordid_to_nemo_cmu[line[0]] = line[1]
+        wordid_to_nemo_cmu = get_wordid_to_nemo()
 
         # replace unknown token
         heteronyms_sent_id = 0
@@ -269,7 +297,32 @@ def main(cfg: TranscriptionConfig) -> TranscriptionConfig:
 
         print(f"Saved in {manifest_corrected_heteronyms}")
         get_metrics(manifest_corrected_heteronyms)
+        cfg.output_file = manifest_corrected_heteronyms
 
+    # if cfg.clean:
+    #     clean_file = cfg.output_file.replace(".json", "_clean.json")
+    #     with open(cfg.output_file, "r") as f_in, open(clean_file, "w") as f_out:
+    #         for line in tqdm(f_in):
+    #             line = json.loads(line)
+    #
+    #             clean_references = clean(line["text"])
+    #             clean_phonemes_preds = clean(line["pred_text"])
+    #             line["text_original"] = line["text"]
+    #             line["text"] = clean_references
+    #             line["pred_text"] = clean_phonemes_preds
+    #             f_out.write(json.dumps(line, ensure_ascii=False) + "\n")
+    #
+    #     get_metrics(clean_file)
+
+def get_wordid_to_nemo():
+    wordid_to_nemo_cmu = {}
+    with open("/home/ebakhturina/g2p_scripts/misc_data/wordid_to_nemo_cmu.tsv", "r", encoding="utf-8") as f:
+        for i, line in enumerate(f):
+            if i == 0:
+                continue
+            line = line.strip().split("\t")
+            wordid_to_nemo_cmu[line[0]] = line[1]
+    return wordid_to_nemo_cmu
 
 def _get_ipa_parts(words_per_segment, cur_ipa):
     try:
@@ -392,45 +445,69 @@ def add_unk_token_to_manifest(manifest, heteronyms, wiki_homograph_dict, graphem
     )
 
 
-def clean(text):
-    exclude_punct = "'ˈˌ"
-    text = text.lower()
-    text = (
-        text.replace("long-term", "longterm")
-        .replace(" x-ray ", " xray ")
-        .replace("t-shirts", "tshirts")
-        .replace("twenty-five", "twentyfive")
-        .replace("spider-man", "spiderman")
-        .replace("full-time", "fulltime")
-        .replace("three-year", "threeyear")
-        .replace("one-year", "oneyear")
-        .replace("five-year", "fiveyear")
-        .replace("two-dimensional", "twodimensional")
-        .replace("three-dimensional", "threedimensional")
-        .replace("computer-generated", "computergenerated")
-        .replace("long-range", "longrange")
-        .replace("non-zero", "nonzero")
-        .replace("air-conditioning", "airconditioning")
-        .replace("pre-season", "preseason")
-        .replace("build-up", "buildup")
-        .replace("one-off", "oneoff")
-        .replace("brother-in-law", "brotherinlaw")
-        .replace("on-screen", "onscreen")
-        .replace("non-verbal", "nonverbal")
-    )
-    text = remove_punctuation(text.lower(), exclude=exclude_punct)
-    text = text.replace("҂", "").replace("  ", " ").strip()
+def clean(text, do_lower=True):
+    exclude_punct = "'ˈˌ-'"
+    if do_lower:
+        text = text.lower()
+    # text = (
+    #     text.replace("long-term", "longterm")
+    #     .replace(" x-ray ", " xray ")
+    #     .replace("t-shirts", "tshirts")
+    #     .replace("twenty-five", "twentyfive")
+    #     .replace("spider-man", "spiderman")
+    #     .replace("full-time", "fulltime")
+    #     .replace("three-year", "threeyear")
+    #     .replace("one-year", "oneyear")
+    #     .replace("five-year", "fiveyear")
+    #     .replace("two-dimensional", "twodimensional")
+    #     .replace("three-dimensional", "threedimensional")
+    #     .replace("computer-generated", "computergenerated")
+    #     .replace("long-range", "longrange")
+    #     .replace("non-zero", "nonzero")
+    #     .replace("air-conditioning", "airconditioning")
+    #     .replace("pre-season", "preseason")
+    #     .replace("build-up", "buildup")
+    #     .replace("one-off", "oneoff")
+    #     .replace("brother-in-law", "brotherinlaw")
+    #     .replace("on-screen", "onscreen")
+    #     .replace("non-verbal", "nonverbal")
+    #     .replace("all-out", "allout")
+    # )
+    text = remove_punctuation(text, exclude=exclude_punct)
+    text = text.replace("҂", "").replace("  ", " ").replace("  ", " ").strip()
     return text
-
 
 def get_metrics(manifest: str):
     all_preds = []
     all_references = []
+    all_graphemes = {}
     with open(manifest, "r") as f:
-        for line in f:
+        for i, line in enumerate(f):
             line = json.loads(line)
             all_preds.append(line["pred_text"])
             all_references.append(line["text"])
+
+            if line["text_graphemes"] not in all_graphemes:
+                all_graphemes[line["text_graphemes"]] = []
+            all_graphemes[line["text_graphemes"]].append(i)
+
+    # collect all examples with multiple phoneme options and same grapheme form, choose the one with min PER
+    all_graphemes = {k: v for k, v in all_graphemes.items() if len(v) > 1}
+    lines_to_drop = []
+    for phon_amb_indices  in all_graphemes.values():
+        refs = all_references[phon_amb_indices[0]:phon_amb_indices[-1] + 1]
+        preds = all_preds[phon_amb_indices[0]:phon_amb_indices[-1] + 1]
+        pers = []
+        for ref_, pred_ in zip(refs, preds):
+            pers.append(word_error_rate(hypotheses=[pred_], references=[ref_], use_cer=True))
+
+        min_idx = pers.index(min(pers))
+        phon_amb_indices.pop(min_idx)
+        lines_to_drop.extend(phon_amb_indices)
+
+    # drop duplicated examples, only keep with min PER
+    all_preds = [x for i, x in enumerate(all_preds) if i not in lines_to_drop]
+    all_references = [x for i, x in enumerate(all_references) if i not in lines_to_drop]
 
     wer = word_error_rate(hypotheses=all_preds, references=all_references)
     per = word_error_rate(hypotheses=all_preds, references=all_references, use_cer=True)
@@ -439,7 +516,6 @@ def get_metrics(manifest: str):
     print(f"{manifest}: PER: {per * 100:.2f}%, WER: {wer * 100:.2f}%, lines: {len(all_references)}")
     print("=" * 40)
     return wer, per
-
 
 if __name__ == '__main__':
     main()
