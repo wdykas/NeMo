@@ -19,11 +19,9 @@ def eval_heteronyms(manifest):
 			num_lines += 1
 			line = json.loads(line)
 			graphemes = clean(line["text_graphemes"], do_lower=False)
-			graphemes = _process_wiki_eval(graphemes).split()
-			phonemes_preds = line["pred_text"].split()
-			phonemes_gt = line["text"].split()
-
-
+			graphemes = _process_wiki_eval(graphemes)
+			phonemes_preds = line["pred_text"]
+			phonemes_gt = line["text"]
 
 			homograph = line["homograph_span"]
 			homograph_ipa = wordid_to_nemo_cmu[line["word_id"]]
