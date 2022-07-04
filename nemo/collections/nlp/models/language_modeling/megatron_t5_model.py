@@ -58,6 +58,10 @@ class MegatronT5Model(MegatronLMEncoderDecoderModel):
                 )
 
         if self._cfg.data.get("dataset_type", "t5") == "ul2":
+            # This check is here for when we want to restore at T5/UL2 model and finetune, but finetuning data does not have these attrs.
+            if not hasattr(self._cfg.data, "seq_length_dec") or not hasattr(self._cfg.data, "seq_length"):
+                return
+
             if self._cfg.data.seq_length_dec != self._cfg.data.seq_length:
                 raise ValueError(
                     f"Encoder and decoder sequence lengths must be the same while using the UL2 dataset type. Found encoder length {self._cfg.data.seq_length} and decoder length {self._cfg.data.seq_length_dec}"

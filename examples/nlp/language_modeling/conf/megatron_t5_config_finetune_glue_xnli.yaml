@@ -49,6 +49,8 @@ model:
   eval_languages: ['fr', 'de', 'en', 'es'] # List of languages to evaluate zero-shot XNLI performance.
 
   data:
+    special_string_prefix_to_input: null
+
     train_ds:
       task_name: 'mnli'
       file_path: ??? # Path to the TSV file for MNLI train ex: '/raid/Data/GLUE/MNLI/train.tsv'

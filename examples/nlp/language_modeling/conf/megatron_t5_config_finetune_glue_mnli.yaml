@@ -48,6 +48,9 @@ model:
   attention_dropout: 0.1 # Override attention dropout prob from pretraining 
 
   data:
+    special_string_prefix_to_input: null
+    dataset_type: 'ul2'
+
     train_ds:
       task_name: 'mnli'
       file_path: ??? # Path to the TSV file for MNLI train ex: '/raid/Data/GLUE/MNLI/train.tsv'

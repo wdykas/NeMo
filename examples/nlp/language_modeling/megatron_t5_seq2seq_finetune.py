@@ -87,6 +87,8 @@ def main(cfg) -> None:
     OmegaConf.set_struct(t5_cfg, True)
     with open_dict(t5_cfg):
         t5_cfg.masked_softmax_fusion = False
+        t5_cfg.bias_gelu_fusion = False
+        t5_cfg.bias_activation_fusion = False
         t5_cfg.megatron_amp_O2 = cfg.model.get('megatron_amp_O2', False)
         t5_cfg.hidden_dropout = cfg.model.get('hidden_dropout', 0.1)
         t5_cfg.attention_dropout = cfg.model.get('attention_dropout', 0.1)

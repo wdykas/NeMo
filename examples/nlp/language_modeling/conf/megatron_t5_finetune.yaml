@@ -47,6 +47,8 @@ model:
   attention_dropout: 0.1 # Override attention dropout prob from pretraining 
 
   data:
+    special_string_prefix_to_input: null
+
     train_ds:
       src_file_name: ??? # Path to the txt file corresponding to the source data.
       tgt_file_name: ??? # Path to the txt file corresponding to the target data.

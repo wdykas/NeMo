@@ -166,6 +166,10 @@ class MegatronT5FinetuneModel(MegatronT5Model):
         # After the process_global_batch call, batch will be a single dictionary containing the global batch.
         # This is required since the parent class expects a single global batch dictioanry.
         batch = self._process_global_batch(batch)
+        assert batch['text_enc'].max() <= self.tokenizer.vocab_size, batch['text_enc'].max()
+        assert batch['text_dec'].max() <= self.tokenizer.vocab_size, batch['text_dec'].max()
+        assert batch['text_enc'].min() >= 0, batch['text_enc'].min()
+        assert batch['text_dec'].min() >= 0, batch['text_dec'].min()
         return super().training_step(batch, batch_idx)
 
     def cast_for_metric(self, pred, label, metric_name):
@@ -232,7 +236,10 @@ class MegatronT5FinetuneModel(MegatronT5Model):
         # After the process_global_batch call, processed_batch will be a single dictionary containing the global batch.
         # This is required since the parent class expects a single global batch dictioanry.
         processed_batch = self._process_global_batch(batch)
-
+        assert processed_batch['text_enc'].max() <= self.tokenizer.vocab_size, processed_batch['text_enc'].max()
+        assert processed_batch['text_dec'].max() <= self.tokenizer.vocab_size, processed_batch['text_dec'].max()
+        assert processed_batch['text_enc'].min() >= 0, processed_batch['text_enc'].min()
+        assert processed_batch['text_dec'].min() >= 0, processed_batch['text_dec'].min()
         # Call parent validation step to get the loss.
         # NOTE: There could be extra keys in the processed_batch dictionary such as "langs" for XNLI, this will be ignored in the parent class.
         loss = super().validation_step(processed_batch, batch_idx)

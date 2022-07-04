@@ -382,6 +382,7 @@ class TextToTextGLUEDataset(GLUEDataset):
         max_seq_length_decoder: int = 128,
         use_cache: bool = True,
         prefix_override: str = None,
+        special_string_prefix_to_input: str = None
     ):
         """
         Processes GLUE datasets
@@ -392,12 +393,16 @@ class TextToTextGLUEDataset(GLUEDataset):
             max_seq_length: max sequence length minus 2 for [CLS] and [SEP]
             use_cache: whether to use data cache
             prefix_override: if you want to override default prompt for this task specify this via a string.
+            special_string_prefix_to_encoder: a special string that can be prepended to the in
         """
         super().__init__(file_name, task_name, tokenizer, max_seq_length, use_cache, compute_features=False)
         self.max_seq_length = max_seq_length
         self.max_seq_length_decoder = max_seq_length_decoder
         self.processor = processors[self.task_name]()
         self.prefix_override = prefix_override
+        self.special_string_prefix_to_input = special_string_prefix_to_input
+        if special_string_prefix_to_input is not None:
+            self.max_seq_length -= 1
         self.features = self.convert_examples_to_features()
 
     def __len__(self):
@@ -405,6 +410,9 @@ class TextToTextGLUEDataset(GLUEDataset):
 
     def __getitem__(self, idx):
         enc_query, dec_input, labels = self.features[idx]
+        if self.special_string_prefix_to_input is not None:
+            special_token = self.tokenizer.text_to_ids('<' + self.special_string_prefix_to_input + '>')
+            enc_query = [special_token[0]] + enc_query
         return {'text_enc': enc_query, 'text_dec': dec_input, 'labels': labels}
 
     def collate_fn(self, batch):
@@ -488,10 +496,11 @@ class TextToTextXNLIDataset(TextToTextGLUEDataset):
         use_cache: bool = True,
         prefix_override: str = None,
         lang_list: List[str] = None,
+        special_string_prefix_to_input: str = None
     ):
         self.lang_list = set(lang_list)
         super().__init__(
-            file_name, task_name, tokenizer, max_seq_length, max_seq_length_decoder, use_cache, prefix_override
+            file_name, task_name, tokenizer, max_seq_length, max_seq_length_decoder, use_cache, prefix_override, special_string_prefix_to_input
         )
         if len(lang_list) <= 0 or lang_list is None:
             raise ValueError(f"Found an empty or None lang_list for {self.task_name}")
@@ -499,6 +508,10 @@ class TextToTextXNLIDataset(TextToTextGLUEDataset):
 
     def __getitem__(self, idx):
         enc_query, dec_input, labels, lang = self.features[idx]
+        if self.special_string_prefix_to_input is not None:
+            special_token = self.tokenizer.text_to_ids('<' + self.special_string_prefix_to_input + '>')
+            assert len(special_token) == 1
+            enc_query = [special_token[0]] + enc_query
         return {'text_enc': enc_query, 'text_dec': dec_input, 'labels': labels, 'lang': lang}
 
     def collate_fn(self, batch):

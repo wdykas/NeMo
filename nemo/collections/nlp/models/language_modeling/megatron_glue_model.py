@@ -37,7 +37,7 @@ class MegatronT5GLUEModel(MegatronT5FinetuneModel):
     def __init__(self, cfg: DictConfig, trainer: Trainer):
         super().__init__(cfg, trainer=trainer)
 
-    def _build_dataset(self, data_cfg, check_implict_grad_acc=False):
+    def _build_dataset(self, data_cfg, check_implict_grad_acc=False, special_string_prefix_to_input=None):
         if (
             check_implict_grad_acc
             and data_cfg.global_batch_size > data_cfg.micro_batch_size * parallel_state.get_data_parallel_world_size()
@@ -52,6 +52,7 @@ class MegatronT5GLUEModel(MegatronT5FinetuneModel):
                 tokenizer=self.tokenizer,
                 max_seq_length=data_cfg.max_seq_length,
                 lang_list=self.cfg.eval_languages,
+                special_string_prefix_to_input=special_string_prefix_to_input,
             )
         else:
             dataset = TextToTextGLUEDataset(
@@ -59,6 +60,7 @@ class MegatronT5GLUEModel(MegatronT5FinetuneModel):
                 task_name=data_cfg.task_name,
                 tokenizer=self.tokenizer,
                 max_seq_length=data_cfg.max_seq_length,
+                special_string_prefix_to_input=special_string_prefix_to_input
             )
         return dataset
 
@@ -66,17 +68,17 @@ class MegatronT5GLUEModel(MegatronT5FinetuneModel):
         logging.info('Building GLUE/XNLI datasets.')
         if stage != 'test':
             # Wrap this in a list since the general finetuning parent class supports multi-validation.
-            self._validation_ds = [self._build_dataset(self.cfg.data.validation_ds, check_implict_grad_acc=True)]
+            self._validation_ds = [self._build_dataset(self.cfg.data.validation_ds, check_implict_grad_acc=True, special_string_prefix_to_input=self.cfg.data.get('special_string_prefix_to_input', None))]
             logging.info(f'Length of val dataset: {len(self._validation_ds[0])}')
 
         if stage != 'validate':
             if hasattr(self.cfg.data, 'test_ds'):
                 # Wrap this in a list since the general finetuning parent class supports multi-validation.
-                self._test_ds = [self._build_dataset(self.cfg.data.test_ds, check_implict_grad_acc=True)]
+                self._test_ds = [self._build_dataset(self.cfg.data.test_ds, check_implict_grad_acc=True, special_string_prefix_to_input=self.cfg.data.get('special_string_prefix_to_input', None))]
                 logging.info(f'Length of test dataset: {len(self._test_ds[0])}')
 
         if stage == 'validate' or stage == 'test':
             return
-        self._train_ds = self._build_dataset(self.cfg.data.train_ds, check_implict_grad_acc=False)
+        self._train_ds = self._build_dataset(self.cfg.data.train_ds, check_implict_grad_acc=False, special_string_prefix_to_input=self.cfg.data.get('special_string_prefix_to_input', None))
         logging.info(f'Length of train dataset: {len(self._train_ds)}')
         logging.info(f'Finished building GLUE/XNLI datasets.')
