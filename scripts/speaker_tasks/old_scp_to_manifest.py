@@ -41,9 +41,11 @@ Args:
 
 # MIN_DURATIONS = [1.5, 2, 3]
 MIN_DURATIONS = [4, 5, 6]
+# change
+# MIN_DURATIONS = [8]
 
 
-def filter_manifest_line(manifest_line, signal, sr=16000, to_slice=False, slice_output_folder=None):
+def filter_manifest_line(manifest_line, signal, sr=16000, to_slice=False, slice_output_folder=None, keep_shorter=False):
     split_manifest = []
     speakers = []
     audio_filepath = manifest_line['audio_filepath']
@@ -73,9 +75,23 @@ def filter_manifest_line(manifest_line, signal, sr=16000, to_slice=False, slice_
                 split_manifest.append(meta)
                 speakers.append(SPKR)
 
+              
             start = start + temp_dur
             temp_dur = random.choice(MIN_DURATIONS)
             remaining_dur = remaining_dur - temp_dur
+            
+        if keep_shorter:
+            remaining_dur =  remaining_dur + temp_dur
+            if remaining_dur >= 0.5:
+                meta = {'audio_filepath': audio_filepath, 'offset': start, 'duration': remaining_dur, 'label': SPKR}
+                split_manifest.append(meta)
+            
+         
+    else:
+        if keep_shorter:
+            print("shorter", dur)
+            meta = {'audio_filepath': audio_filepath, 'offset': 0, 'duration': dur, 'label': SPKR}
+            split_manifest.append(meta)
             
     return split_manifest, speakers
 
@@ -90,7 +106,7 @@ def write_file(name, lines, idx):
 
 
 # def main(scp, id, out, split=False, create_chunks=False):
-def main(scp, out, split=False, create_chunks=False, to_slice=False, slice_output_folder=None):
+def main(scp, out, split=False, create_chunks=False, to_slice=False, slice_output_folder=None, keep_shorter=False):
     if os.path.exists(out):
         os.remove(out)
     scp_file = open(scp, 'r').readlines()
@@ -117,7 +133,7 @@ def main(scp, out, split=False, create_chunks=False, to_slice=False, slice_outpu
         speaker = [lang]
         
         if create_chunks:
-            meta, speaker = filter_manifest_line(meta[0], signal=y, sr=sr, to_slice=to_slice, slice_output_folder=slice_output_folder)
+            meta, speaker = filter_manifest_line(meta[0], signal=y, sr=sr, to_slice=to_slice, slice_output_folder=slice_output_folder, keep_shorter=keep_shorter)
         lines.extend(meta)
         speakers.extend(speaker)
 
@@ -165,8 +181,16 @@ if __name__ == "__main__":
         required=False,
         action='store_true',
     )
+    parser.add_argument(
+        "--keep_shorter",
+        help="bool if you would want to keep shorter than duration snippet",
+        required=False,
+        action='store_true',
+    )
+    
+    
     parser.add_argument("--slice_output_folder", help="manifest_file name", type=str)
     args = parser.parse_args()
 
 #     main(args.scp, args.id, args.out, args.split, args.create_chunks)
-    main(args.scp, args.out, args.split, args.create_chunks, args.to_slice, args.slice_output_folder)
+    main(args.scp, args.out, args.split, args.create_chunks, args.to_slice, args.slice_output_folder, args.keep_shorter)
