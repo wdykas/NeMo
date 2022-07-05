@@ -1060,7 +1060,7 @@ class CTCG2PBPEDataset(Dataset):
         sentences = []
         with open(manifest_filepath, 'r') as f_in:
             logging.debug(f"Loading dataset from: {manifest_filepath}")
-            for i, line in enumerate(tqdm(f_in)):
+            for i, line in enumerate(f_in):
                 item = json.loads(line)
                 """
                 if len(item["text"]) > max_source_len:

@@ -274,6 +274,8 @@ if __name__ == "__main__":
             gr, ph = line.strip().split("\t")
             ph = ph.split(",")
 
+            if gr == "dr.":
+                gr = "drive"
             for p in ph:
-                entry = {"text": p, "text_graphemes": gr}
+                entry = {"text": p, "text_graphemes": gr, "duration": 0.001, "audio_filepath": "n/a"}
                 f_out.write(json.dumps(entry, ensure_ascii=False) + "\n")

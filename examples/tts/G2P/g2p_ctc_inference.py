@@ -125,7 +125,7 @@ def main(cfg: TranscriptionConfig) -> TranscriptionConfig:
 
     if cfg.clean_sent_level or cfg.clean_word_level:
         with open(cfg.manifest_filepath, "r") as f_in, open(cfg.output_file, "w") as f_out:
-            for line in tqdm(f_in):
+            for line in f_in:
                 line = json.loads(line)
 
                 clean_graphemes = clean(line["text_graphemes"])
@@ -152,6 +152,7 @@ def main(cfg: TranscriptionConfig) -> TranscriptionConfig:
                         batch_size=cfg.batch_size,
                         num_workers=cfg.num_workers,
                         target_field=cfg.target_field,
+                        verbose = False
                     )
 
                 preds = " ".join(preds)

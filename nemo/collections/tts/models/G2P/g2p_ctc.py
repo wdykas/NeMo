@@ -393,7 +393,7 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
                 manifest_filepath, batch_size=batch_size, num_workers=num_workers
             )
 
-            for batch in tqdm(infer_datalayer):
+            for batch in infer_datalayer:
                 input_ids, attention_mask, input_len = batch
                 log_probs, greedy_predictions, encoded_len = self.forward(
                     input_ids=input_ids.to(device),
@@ -424,6 +424,7 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
         batch_size: int = 32,
         num_workers: int = 0,
         target_field: Optional[str] = None,
+        verbose: Optional[bool] = True
     ) -> List[str]:
         """
         Main function for Inference
@@ -436,7 +437,7 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
         all_targets = []
         with open(manifest_filepath, "r") as f_in:
             with open(output_manifest_filepath, 'w', encoding="utf-8") as f_out:
-                for i, line in tqdm(enumerate(f_in)):
+                for i, line in tqdm(enumerate(f_in), disable=not verbose):
                     line = json.loads(line)
 
                     if target_field is not None:
