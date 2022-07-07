@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from glob import glob
 
 from data_preparation_utils import check_data, get_wordid_to_nemo_cmu, is_valid, post_process, setup_tokenizer
@@ -10,7 +11,114 @@ from nemo.collections.tts.torch.g2p_utils.data_utils import correct_wikihomograp
 
 
 def post_process_normalization(text):
-    text = text.replace("slash ", "/ ").replace(" slash[", " slash [").replace("—", "-")
+    text = (
+        text.replace("slash ", "/ ")
+        .replace("–", "-")
+        .replace(" slash[", " slash [")
+        .replace("—", "-")
+        .replace("C₃", "C three")
+        .replace("I²C", "I two C")
+        .replace("α-methyl", "alpha methyl")
+        .replace(" /ʔ/", "")
+        .replace("B₁₀₅", "B one hundred and five")
+        .replace("B₄₈", "B forty eight")
+        .replace("B₂₈-B-B₂₈ (B₅₇)", "B twenty eight B B twenty eight (B fifty seven)")
+        .replace("NF-κB", "Nuclear factor kappa B")
+        .replace("PLCγ", "Phosphoinositide phospholipase gamma")
+        .replace("#½", "")
+        .replace("pᵢ", "p i")
+        .replace("RSO₂OH", "R S O two O H")
+        .replace(" 2ᵃˣⁱˢ", "")
+        .replace(": Гугутка", "")
+        .replace(" ܕ, d-, da-.", "")
+        .replace(" A⁰", "")
+        .replace("17β", "seventeen beta")
+        .replace(" (英米本位の平和主義を排す)", "")
+        .replace(" (Russian: рекрутская повинность)", "")
+        .replace("πλατυς ", "")
+        .replace("(じいちゃん Jiichan)", "")
+        .replace("WCl₆", "W C L six")
+        .replace(" Ca(C₁₀H₁₂O₄N₅PO₄)", " shown in the book")
+        .replace(" (bda)Fe(CO)₃", "")
+        .replace("Tris(pentafluorophenyl)borane", "Tris (pentafluorophenyl) borane")
+        .replace(" (C₆F₅)₃B", "")
+        .replace(" with the formula Na₂HPO₄", "")
+        .replace("ǀXam, ǂUngkue", "Xam, Ungkue")
+        .replace("Ytterbium(III) chloride (YbCl₃)", "Ytterbium chloride")
+        .replace(" with the formula Cl₂O₇", "")
+        .replace(" with formula (CH₃)₂C₆H₃NH₂", "")
+        .replace("C₆F₅XeF", "this one")
+        .replace("C₄H₄S", "this one")
+        .replace("PbCrO₄", "this one")
+        .replace("PbS₂", "this one")
+        .replace("Cd(CH₃)₂", "shown in the book")
+        .replace("β", "beta")
+        .replace("MΩ ", "")
+        .replace("K₂(C₂H₄O(COO)₂)", "mentioned above")
+        .replace(" (NI₃)", "")
+        .replace(" with formula KC₅H₈NO₄", "")
+        .replace(" Gin'iro Doresu (銀色ドレス Silver Dress)", " Silver Dress")
+        .replace("ρ-", "p ")
+        .replace(
+            'σ2B (the "Breeding expectations" variance) and σ2δ (the "Breeding deviations" variance)',
+            'the "Breeding expectations" variance and the "Breeding deviations" variance',
+        )
+        .replace(" CaCl₂", "")
+        .replace("copper(II) acetate to copper(I) oxide (Cu₂O)", "copper acetate to copper oxide")
+        .replace("CuSO₄", "C u S O four")
+        .replace("The function eᵃˣ", "This function")
+        .replace("R⁴", "R to the forth power")
+        .replace("₀", " zero ")
+        .replace("₁", " one ")
+        .replace("₂", " two ")
+        .replace("₃", " three ")
+        .replace("₄", " four")
+        .replace("₅", " five ")
+        .replace("₆", " six ")
+        .replace("₇", " seven ")
+        .replace("δ-", "delta")
+        .replace("πr²", "pi r squared")
+        .replace("km³", "cubic kilometers")
+        .replace("CU mi", "cubic miles")
+        .replace("³", " cubed")
+        .replace("ʻo", "")
+        .replace(" (Hangul: 화경숙빈최씨; Hanja: 和瓊淑嬪崔氏)", "")
+        .replace("(Bulgarian: Смилцена) ", "")
+        .replace("(Мисс CCCP) ", "")
+        .replace("σ", " sigma ")
+        .replace("α", " alpha ")
+        .replace("γ", " gamma ")
+        .replace("κ", " kappa ")
+        .replace("μeff", "effective magnetic moment")
+        .replace("Београдски Синдикат", "")
+        .replace("(モンキーマジック) ", "")
+        .replace("P⁵", "P to the fifth power")
+        .replace("ΛᵏV", "lambda V")
+        .replace("I-695", "I-six hundred ninety five")
+        .replace("501", "five hundred and one")  # TN bug
+        .replace("2009", "twenty oh nine")  # TN bug
+        .replace("ᵢ", " i ")
+        .replace("µg/mL", "microgram per milliliter")
+        .replace("ρε", "re")
+        .replace("ς", "s")
+        .replace("for g¹(q;τ)", "")
+        .replace("G(Γ)", "G")
+        .replace("π", "pi")
+        .replace(":جامعة المغتربين", "")
+        .replace("TᵏM", "T M")
+    )
+
+    return text.replace("  ", " ")
+
+
+def remove_cjk(text):
+    """
+    Remove CJK symbols, that are OOV for English G2P
+    The 4E00—9FFF range covers CJK Unified Ideographs (CJK=Chinese, Japanese and Korean).
+    """
+    cjk = [n for n in re.findall(r'[\u4e00-\u9fff]+', text)]
+    for cjk_ in cjk:
+        text = text.replace(cjk_, "")
     return text
 
 
@@ -89,23 +197,28 @@ def _prepare_wikihomograph_data(post_fix, output_dir, phoneme_dict, split):
                 for line in f_in:
                     line = json.loads(line)
                     graphemes = line["text_graphemes"]
-                    ipa_, graphemes_ = ipa_tok(graphemes, wordid_to_nemo_cmu)
-                    graphemes_ = graphemes_.replace(replace_token, line["homograph_span"])
-                    heteronym_ipa = wordid_to_nemo_cmu[line["word_id"]]
-                    ipa_ = ipa_.replace(replace_token, heteronym_ipa)
-                    graphemes_ = post_process(graphemes_)
-                    if not is_valid(graphemes_):
+                    # TODO remove this: duplicate of normalization, here for debugging with pickled normalization
+                    graphemes = post_process_normalization(graphemes)
+                    graphemes = remove_cjk(graphemes)
+                    if not is_valid(graphemes):
                         drop.append(graphemes_)
+
                     else:
+                        ipa_, graphemes_ = ipa_tok(graphemes, wordid_to_nemo_cmu)
+                        graphemes_ = graphemes_.replace(replace_token, line["homograph_span"])
+                        heteronym_ipa = wordid_to_nemo_cmu[line["word_id"]]
+                        ipa_ = ipa_.replace(replace_token, heteronym_ipa)
+                        graphemes_ = post_process(graphemes_)
+
                         line["text_graphemes"] = graphemes_
                         line["text"] = post_process(ipa_)
                         line["duration"] = (0.001,)
                         line["audio_filepath"] = "n/a"
                         f_out.write(json.dumps(line, ensure_ascii=False) + "\n")
-        return manifest
         print(
             f"During validation check in dataset preparation dropped: {len(drop)}, Data for {split.upper()} saved at {manifest}"
         )
+        return manifest
 
 
 def prepare_wikihomograph_data(post_fix, output_dir, split, phoneme_dict=None):

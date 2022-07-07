@@ -156,12 +156,13 @@ if __name__ == "__main__":
     Use only CMU train dict part for training datasets, all CMU entries for eval/dev sets
     """
     STRESS_SYMBOLS = ["ˈ", "ˌ"]
-    POST_FIX = "normalized_4"
-    VERSION = 4
+    VERSION = 5
+    POST_FIX = f"normalized_{VERSION}"
+
     # read nemo ipa cmu dict to get the order of words
     nemo_cmu = "/home/ebakhturina/NeMo/scripts/tts_dataset_files/ipa_cmudict-0.7b_nv22.06.txt"
     nemo_cmu, _ = IPAG2PProcessor._parse_as_cmu_dict(
-        phoneme_dict_path=nemo_cmu, use_stresses=True, stress_symbols=STRESS_SYMBOLS, upper=True
+        phoneme_dict_path=nemo_cmu, use_stresses=True, stress_symbols=STRESS_SYMBOLS, upper=True,
     )
 
     ipa_dicts = {
@@ -183,7 +184,7 @@ if __name__ == "__main__":
     CharsiuG2P_cmu = {}
     for split in ["train", "dev", "test"]:
         CharsiuG2P_cmu[split] = IPAG2PProcessor._parse_as_cmu_dict(
-            phoneme_dict_path=ipa_dicts[split], use_stresses=True, stress_symbols=STRESS_SYMBOLS, upper=True
+            phoneme_dict_path=ipa_dicts[split], use_stresses=True, stress_symbols=STRESS_SYMBOLS, upper=True,
         )[0]
 
     BASE_DIR = "/mnt/sdb_4/g2p/data_ipa"
@@ -243,29 +244,39 @@ if __name__ == "__main__":
         for grapheme in CharsiuG2P_cmu["dev"].keys():
             DEV_TEST_GRAPHEMES.append(grapheme.lower())
 
-    drop_examples(librispeech_train_manifest, output_dir=TRAINING_DATA_DIR, graphemes_to_exclude=DEV_TEST_GRAPHEMES)
-    drop_examples(librispeech_dev_manifest, output_dir=EVAL_DATA_DIR, graphemes_to_exclude=DEV_TEST_GRAPHEMES)
+    drop_examples(
+        librispeech_train_manifest, output_dir=TRAINING_DATA_DIR, graphemes_to_exclude=DEV_TEST_GRAPHEMES,
+    )
+    drop_examples(
+        librispeech_dev_manifest, output_dir=EVAL_DATA_DIR, graphemes_to_exclude=DEV_TEST_GRAPHEMES,
+    )
 
     # PREPARE WIKIHOMOGRAPH DATA
     WIKI_DATA_TMP_DIR = f"{BASE_DIR}/tmp"
-    prepare_wikihomograph_data(POST_FIX, output_dir=WIKI_DATA_TMP_DIR, split="train", phoneme_dict=train_cmu_dict)
-    prepare_wikihomograph_data(POST_FIX, output_dir=WIKI_DATA_TMP_DIR, split="eval", phoneme_dict=complete_nemo_ipa_cmu)
+    prepare_wikihomograph_data(
+        POST_FIX, output_dir=WIKI_DATA_TMP_DIR, split="train", phoneme_dict=train_cmu_dict,
+    )
+    prepare_wikihomograph_data(
+        POST_FIX, output_dir=WIKI_DATA_TMP_DIR, split="eval", phoneme_dict=complete_nemo_ipa_cmu,
+    )
     wiki_train_manifest = f"{WIKI_DATA_TMP_DIR}/train_wikihomograph.json"
-    drop_examples(wiki_train_manifest, output_dir=TRAINING_DATA_DIR, graphemes_to_exclude=DEV_TEST_GRAPHEMES)
+    drop_examples(
+        wiki_train_manifest, output_dir=TRAINING_DATA_DIR, graphemes_to_exclude=DEV_TEST_GRAPHEMES,
+    )
     wiki_eval_manifest = f"{WIKI_DATA_TMP_DIR}/eval_wikihomograph.json"
     drop_examples(wiki_eval_manifest, output_dir=EVAL_DATA_DIR, graphemes_to_exclude=None)
 
     # PREPARE HIFITTS DATA
-    prepare_hifi_tts(f"{BASE_DIR}/all_hifi_tts.json", output_dir=TRAINING_DATA_DIR, phoneme_dict=train_cmu_dict)
+    prepare_hifi_tts(
+        f"{BASE_DIR}/all_hifi_tts.json", output_dir=TRAINING_DATA_DIR, phoneme_dict=train_cmu_dict,
+    )
 
     for file in glob(f"{TRAINING_DATA_DIR}/*.json"):
         check_data(file)
 
-
-
     # SAVE MULRIPLE VALID IPA FORMS FROM CMU TEST SPLIT AS SEPARATE ENTRIES
     cmu_test = "/mnt/sdb_4/g2p/data_ipa/CharsiuG2P_data_splits/test_eng-us.tsv"
-    output_dir = "/mnt/sdb_4/g2p/data_ipa/evaluation_sets_v4/CMU_TEST_MULTI"
+    output_dir = f"/mnt/sdb_4/g2p/data_ipa/evaluation_sets_v{VERSION}/CMU_TEST_MULTI"
     os.makedirs(output_dir, exist_ok=True)
     output_file = f"{output_dir}/cmu_test.json"
 
@@ -277,5 +288,10 @@ if __name__ == "__main__":
             if gr == "dr.":
                 gr = "drive"
             for p in ph:
-                entry = {"text": p, "text_graphemes": gr, "duration": 0.001, "audio_filepath": "n/a"}
+                entry = {
+                    "text": p,
+                    "text_graphemes": gr,
+                    "duration": 0.001,
+                    "audio_filepath": "n/a",
+                }
                 f_out.write(json.dumps(entry, ensure_ascii=False) + "\n")

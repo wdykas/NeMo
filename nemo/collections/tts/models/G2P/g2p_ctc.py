@@ -424,7 +424,7 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
         batch_size: int = 32,
         num_workers: int = 0,
         target_field: Optional[str] = None,
-        verbose: Optional[bool] = True
+        verbose: Optional[bool] = True,
     ) -> List[str]:
         """
         Main function for Inference

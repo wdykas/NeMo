@@ -163,7 +163,8 @@ def remove_punctuation(text: str, exclude=None):
 
 
 def is_valid(text, unk_token="҂", verbose=False):
-    invalid_symbols = set(text).difference(set(unk_token + string.ascii_letters + " " + string.punctuation))
+    allowed_symbols = "é" + unk_token + string.ascii_letters + " " + string.punctuation
+    invalid_symbols = set(text).difference(set(allowed_symbols))
 
     if verbose and len(invalid_symbols) > 0:
         print(invalid_symbols)

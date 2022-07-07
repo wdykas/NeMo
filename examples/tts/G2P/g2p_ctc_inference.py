@@ -20,8 +20,6 @@ from typing import Optional
 
 import pytorch_lightning as pl
 import torch
-import sys
-sys.path.append("/home/ebakhturina/NeMo/examples/tts/G2P/data")
 from data_preparation_utils import remove_punctuation
 from omegaconf import OmegaConf
 from tqdm import tqdm
@@ -33,6 +31,9 @@ from nemo.collections.tts.torch.en_utils import english_word_tokenize
 from nemo.collections.tts.torch.g2p_classification_data import read_wordids
 from nemo.core.config import hydra_runner
 from nemo.utils import logging
+
+sys.path.append("/home/ebakhturina/NeMo/examples/tts/G2P/data")
+
 
 # fmt: off
 sys.path.append("/home/ebakhturina/NeMo/examples/tts/G2P/data")
