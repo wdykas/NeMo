@@ -234,12 +234,12 @@ class MegatronGPTModel(MegatronBaseModel, TextGeneration):
         self.log('lr', lr, rank_zero_only=True)
         self.log('global_step', self.trainer.global_step, prog_bar=True, rank_zero_only=True)
         # TODO: make sure compute_consumed_samples works for pipeline parallelism
-        self.log(
-            'consumed_samples',
-            self.compute_consumed_samples(self.trainer.global_step - self.init_global_step),
-            prog_bar=True,
-            rank_zero_only=True,
-        )
+        # self.log(
+        #     'consumed_samples',
+        #     self.compute_consumed_samples(self.trainer.global_step - self.init_global_step),
+        #     prog_bar=True,
+        #     rank_zero_only=True,
+        # )
 
     def training_step(self, batch, batch_idx):
         """
@@ -392,7 +392,7 @@ class MegatronGPTModel(MegatronBaseModel, TextGeneration):
         """
 
         batch_for_pipeline = self.process_global_batch(batch)
-        loss_mean = self.fwd_bwd_step(batch_for_pipeline, batch_idx, forward_only=True)
+        loss_mean = self.fwd_bwd_step(batch_for_pipeline, forward_only=True)
         if loss_mean.item == 0.0:
             loss_mean = []
 

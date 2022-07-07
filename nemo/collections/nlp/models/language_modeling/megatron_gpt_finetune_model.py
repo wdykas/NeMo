@@ -18,6 +18,7 @@ import torch
 from omegaconf.dictconfig import DictConfig
 from pytorch_lightning.trainer.trainer import Trainer
 
+from nemo.collections.nlp.parts.utils_funcs import get_last_rank
 from nemo.collections.nlp.data.language_modeling.megatron.gpt_finetuning_dataset import GPTFinetuningDataset
 from nemo.collections.nlp.models.language_modeling.megatron_gpt_model import MegatronGPTModel
 
@@ -34,6 +35,9 @@ class MegatronGPTFineTuneModel(MegatronGPTModel):
     """   
     def __init__(self, cfg: DictConfig, trainer: Trainer):
         super().__init__(cfg, trainer=trainer)
+        
+        self.load_task_templates(self.cfg.task_templates)
+        self.pad_token_id = self.tokenizer.pad_id if self.tokenizer.pad_id is not None else self.tokenizer.unk_id
         
  
     def load_task_templates(self, task_templates):
@@ -63,18 +67,32 @@ class MegatronGPTFineTuneModel(MegatronGPTModel):
         self._optimizer.zero_grad()
 
         # we prepare the micro batches for the apex fwd/bwd function
-        loss_mean = self.fwd_bwd_step(batch, foward_only=False)
+        loss_mean = self.fwd_bwd_step(batch, forward_only=False)
         self.reduce_gradients(loss_mean)
         self.log_training_step(loss_mean)
 
         return loss_mean
 
     def validation_step(self, batch, batch_idx):
-        loss_mean = self.fwd_bwd_step(batch, batch_idx, forward_only=True)
+        loss_mean = self.fwd_bwd_step(batch, forward_only=True)
         if loss_mean.item == 0.0:
             loss_mean = []
 
         return loss_mean
+    
+    def validation_epoch_end(self, outputs):
+        if not outputs:
+            return
+        if parallel_state.is_pipeline_last_stage():
+            # only the last pipeline parallel stages return loss
+            averaged_loss = torch.stack(outputs).mean()
+        else:
+            averaged_loss = torch.tensor(0.0).cuda()
+
+        # we can only log on one rank if it is rank zero so we broadcast from last rank
+        torch.distributed.broadcast(averaged_loss, get_last_rank())
+
+        self.log('val_loss', averaged_loss, prog_bar=True, rank_zero_only=True)
 
     def setup(self, stage=None):
         """ PTL hook that is executed after DDP spawns.
@@ -83,7 +101,7 @@ class MegatronGPTFineTuneModel(MegatronGPTModel):
         Args:
             stage (str, optional): Can be 'fit', 'validate', 'test' or 'predict'. Defaults to None.
         """
-        self.setup_consumed_samples()
+        #self.setup_consumed_samples()
 
         if stage == 'predict':
             return
