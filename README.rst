@@ -30,6 +30,11 @@
 **NVIDIA NeMo**
 ===============
 
+Emotional TTS
+------------
+
+C1E1: Train “multi-speaker” FastPitch from scratch on German Emotional TTS dataset (text + IPA) and pass in emotional ID and speaker ID
+
 Introduction
 ------------
 
