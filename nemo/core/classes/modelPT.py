@@ -497,7 +497,8 @@ class ModelPT(LightningModule, Model):
                     app = AppState()
                     optim_config['sched']['t_num_workers'] = app.data_parallel_size
             else:
-                optim_config['sched']['max_steps'] = self._trainer.max_steps
+                if 'max_steps' not in optim_config['sched']:
+                    optim_config['sched']['max_steps'] = self._trainer.max_steps
 
         # Force into DictConfig from nested structure
         optim_config = OmegaConf.create(optim_config)
