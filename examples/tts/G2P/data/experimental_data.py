@@ -143,7 +143,7 @@ def drop_examples(manifest, output_dir, graphemes_to_exclude: Optional[List[str]
                     dev_test_words_present = True
                 break
             if not dev_test_words_present:
-                line["text_grapheme"] = text
+                line["text_grapheme"] = post_process(text)
                 line["text"] = post_process(line["text"])
                 f_out.write(json.dumps(line, ensure_ascii=False) + "\n")
             else:
@@ -156,7 +156,7 @@ if __name__ == "__main__":
     Use only CMU train dict part for training datasets, all CMU entries for eval/dev sets
     """
     STRESS_SYMBOLS = ["ˈ", "ˌ"]
-    VERSION = 5
+    VERSION = 7
     POST_FIX = f"normalized_{VERSION}"
 
     # read nemo ipa cmu dict to get the order of words
@@ -164,6 +164,7 @@ if __name__ == "__main__":
     nemo_cmu, _ = IPAG2PProcessor._parse_as_cmu_dict(
         phoneme_dict_path=nemo_cmu, use_stresses=True, stress_symbols=STRESS_SYMBOLS, upper=True,
     )
+    heteronyms = IPAG2PProcessor._parse_file_by_lines("/home/ebakhturina/NeMo/scripts/tts_dataset_files/heteronyms-052722")
 
     ipa_dicts = {
         "train": "/mnt/sdb_4/g2p/data_ipa/CharsiuG2P_data_splits/train_eng-us.tsv",
@@ -197,6 +198,9 @@ if __name__ == "__main__":
     ) as dev_f, open(f"{CMU_DICT_SPLITS_DIR}/test.txt", "w") as test_f:
         for split in ["train", "test", "dev"]:
             for grapheme, phonemes in CharsiuG2P_cmu[split].items():
+                # drop heteronyms from training data
+                if split == "train" and grapheme.lower() in heteronyms:
+                    continue
                 phonemes = ["".join(x) for x in phonemes][0].split(",")
 
                 if len(phonemes) > 1 and grapheme.upper() in nemo_cmu:
@@ -227,9 +231,9 @@ if __name__ == "__main__":
     train_cmu_dict = "/mnt/sdb_4/g2p/data_ipa/nemo_cmu_splits/train.txt"
     complete_nemo_ipa_cmu = "/home/ebakhturina/NeMo/scripts/tts_dataset_files/ipa_cmudict-0.7b_nv22.06.txt"
 
-    prepare_ljspeech_data(TRAINING_DATA_DIR, split="train", cmu_dict=train_cmu_dict)
-    prepare_ljspeech_data(EVAL_DATA_DIR, split="dev", cmu_dict=complete_nemo_ipa_cmu)
-    prepare_ljspeech_data(EVAL_DATA_DIR, split="test", cmu_dict=complete_nemo_ipa_cmu)
+    # prepare_ljspeech_data(TRAINING_DATA_DIR, split="train", cmu_dict=train_cmu_dict)
+    # prepare_ljspeech_data(EVAL_DATA_DIR, split="dev", cmu_dict=complete_nemo_ipa_cmu)
+    # prepare_ljspeech_data(EVAL_DATA_DIR, split="test", cmu_dict=complete_nemo_ipa_cmu)
 
     # REMOVE GRAPHEMES FROM DEV AND TEST PHONEME DICTS FROM LIBRISPEECH AND WIKI DATA
     librispeech_train_manifest = (
@@ -244,12 +248,12 @@ if __name__ == "__main__":
         for grapheme in CharsiuG2P_cmu["dev"].keys():
             DEV_TEST_GRAPHEMES.append(grapheme.lower())
 
-    drop_examples(
-        librispeech_train_manifest, output_dir=TRAINING_DATA_DIR, graphemes_to_exclude=DEV_TEST_GRAPHEMES,
-    )
-    drop_examples(
-        librispeech_dev_manifest, output_dir=EVAL_DATA_DIR, graphemes_to_exclude=DEV_TEST_GRAPHEMES,
-    )
+    # drop_examples(
+    #     librispeech_train_manifest, output_dir=TRAINING_DATA_DIR, graphemes_to_exclude=DEV_TEST_GRAPHEMES,
+    # )
+    # drop_examples(
+    #     librispeech_dev_manifest, output_dir=EVAL_DATA_DIR, graphemes_to_exclude=DEV_TEST_GRAPHEMES,
+    # )
 
     # PREPARE WIKIHOMOGRAPH DATA
     WIKI_DATA_TMP_DIR = f"{BASE_DIR}/tmp"
@@ -266,15 +270,28 @@ if __name__ == "__main__":
     wiki_eval_manifest = f"{WIKI_DATA_TMP_DIR}/eval_wikihomograph.json"
     drop_examples(wiki_eval_manifest, output_dir=EVAL_DATA_DIR, graphemes_to_exclude=None)
 
-    # PREPARE HIFITTS DATA
-    prepare_hifi_tts(
-        f"{BASE_DIR}/all_hifi_tts.json", output_dir=TRAINING_DATA_DIR, phoneme_dict=train_cmu_dict,
+    # # PREPARE HIFITTS DATA
+    # prepare_hifi_tts(
+    #     f"{BASE_DIR}/all_hifi_tts.json", output_dir=TRAINING_DATA_DIR, phoneme_dict=train_cmu_dict,
+    # )
+
+    # PREPARE DISAMBIGUATED DATA
+    # USE g2p_scripts/paper_experiments/convert_lj_to_ipa.py to convert from ARP to IPA
+    lj_speech_disambiguated_train = "/mnt/sdb_4/g2p/data_ipa/disambiguated/lj_speech_disambiguated/wiki_heteronyms_only/filtered_disamb_ljspeech_train_ipa.json"
+    drop_examples(
+        lj_speech_disambiguated_train, output_dir=TRAINING_DATA_DIR, graphemes_to_exclude=DEV_TEST_GRAPHEMES,
+    )
+    hifi_9017_disambiguated = "/mnt/sdb_4/g2p/data_ipa/disambiguated/disamb_9017_clean_train_heteronyms_filtered_ipa.json"
+    drop_examples(
+        hifi_9017_disambiguated, output_dir=TRAINING_DATA_DIR, graphemes_to_exclude=DEV_TEST_GRAPHEMES,
     )
 
-    for file in glob(f"{TRAINING_DATA_DIR}/*.json"):
-        check_data(file)
+    # CHECK THAT FINAL TRAIN AND EVAL DATASET DO NOT HAVE OOV GRAPHEMES
+    for dir in [TRAINING_DATA_DIR, EVAL_DATA_DIR]:
+        for manifest in glob(f"{dir}/*.json"):
+            check_data(manifest)
 
-    # SAVE MULRIPLE VALID IPA FORMS FROM CMU TEST SPLIT AS SEPARATE ENTRIES
+    # SAVE MULTIPLE VALID IPA FORMS FROM CMU TEST SPLIT AS SEPARATE ENTRIES
     cmu_test = "/mnt/sdb_4/g2p/data_ipa/CharsiuG2P_data_splits/test_eng-us.tsv"
     output_dir = f"/mnt/sdb_4/g2p/data_ipa/evaluation_sets_v{VERSION}/CMU_TEST_MULTI"
     os.makedirs(output_dir, exist_ok=True)

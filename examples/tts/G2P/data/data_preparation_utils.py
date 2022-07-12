@@ -163,7 +163,7 @@ def remove_punctuation(text: str, exclude=None):
 
 
 def is_valid(text, unk_token="҂", verbose=False):
-    allowed_symbols = "é" + unk_token + string.ascii_letters + " " + string.punctuation
+    allowed_symbols = unk_token + string.ascii_letters + " " + string.punctuation
     invalid_symbols = set(text).difference(set(allowed_symbols))
 
     if verbose and len(invalid_symbols) > 0:
@@ -206,11 +206,6 @@ def check_data(manifest):
 
             text = line["text_graphemes"]
             if not is_valid(text, verbose=True):
-                import pdb
-
-                pdb.set_trace()
-
-                print(line)
                 num_dropped += 1
                 continue
     if num_dropped > 0:

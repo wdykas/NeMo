@@ -13,7 +13,6 @@
 # limitations under the License.
 
 
-import csv
 import os
 from dataclasses import dataclass, is_dataclass
 from glob import glob
@@ -23,23 +22,22 @@ import pytorch_lightning as pl
 import torch
 from omegaconf import OmegaConf
 
-from nemo.collections.common.callbacks import LogEpochTimeCallback
-from nemo.collections.tts.models import G2PClassificationModel
 from nemo.collections.tts.models.G2P.g2p_classification import G2PClassificationModel
 from nemo.collections.tts.torch.g2p_classification_data import read_wikihomograph_file
 from nemo.core.config import hydra_runner
 from nemo.utils import logging
-from nemo.utils.exp_manager import exp_manager
 
 
 """
 python byt5_classification_inference.py \
-pretrained_model=/mnt/sdb_4/g2p/chpts/homographs_classification/G2PClassification.nemo \
+pretrained_model=/mnt/sdb_4/g2p/chpts/homographs_classification/bert_base/G2PClassification.nemo \
 data_dir=/home/ebakhturina/g2p_scripts/WikipediaHomographData-master/data/eval
 
 filepath=/home/ebakhturina/g2p_scripts/WikipediaHomographData-master/data/eval/read.tsv
 
-Accuracy: 98.89% (18 errors out of 1615)
+Accuracy: 98.89% (18 errors out of 1615) - bert_base
+bert_large: Accuracy: 98.95% (17 errors out of 1615)
+
 """
 
 
@@ -131,7 +129,7 @@ def main(cfg):
         for i, pred in enumerate(preds):
             if target_ipa_id_to_label[pred] != word_ids[i]:
                 f_out.write(f"INPUT: {sentences[i]}\n")
-                f_out.write(f"PRED : {target_ipa_id_to_label[pred]} not {word_ids[i]}\n")
+                f_out.write(f"PRED : {target_ipa_id_to_label[pred]} -- GT: {word_ids[i]}\n")
                 f_out.write("===========================\n")
             else:
                 correct += 1

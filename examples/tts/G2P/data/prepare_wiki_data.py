@@ -9,6 +9,9 @@ from tqdm import tqdm
 
 from nemo.collections.tts.torch.g2p_utils.data_utils import correct_wikihomograph_data, read_wikihomograph_file
 
+def pre_process(text):
+    text = text.replace("é", "e")
+    return text
 
 def post_process_normalization(text):
     text = (
@@ -141,6 +144,7 @@ def normalize_wikihomograph_data(subset, post_fix):
             for i, sent in enumerate(sentences):
                 start, end = start_end_indices[i]
                 sent, start, end = correct_wikihomograph_data(sent, start, end)
+                sent = pre_process(sent)
                 homograph = file_name.replace(".tsv", "")
 
                 replace_token = "[]"
@@ -198,7 +202,7 @@ def _prepare_wikihomograph_data(post_fix, output_dir, phoneme_dict, split):
                     line = json.loads(line)
                     graphemes = line["text_graphemes"]
                     # TODO remove this: duplicate of normalization, here for debugging with pickled normalization
-                    graphemes = post_process_normalization(graphemes)
+                    # graphemes = post_process_normalization(graphemes)
                     graphemes = remove_cjk(graphemes)
                     if not is_valid(graphemes):
                         drop.append(graphemes_)

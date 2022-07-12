@@ -15,6 +15,9 @@
 import json
 import os
 import sys
+sys.path.append("/home/ebakhturina/NeMo/examples/tts/G2P/data")
+# fmt: off
+sys.path.append("/home/ebakhturina/NeMo/examples/tts/G2P/data")
 from dataclasses import dataclass, is_dataclass
 from typing import Optional
 
@@ -32,11 +35,6 @@ from nemo.collections.tts.torch.g2p_classification_data import read_wordids
 from nemo.core.config import hydra_runner
 from nemo.utils import logging
 
-sys.path.append("/home/ebakhturina/NeMo/examples/tts/G2P/data")
-
-
-# fmt: off
-sys.path.append("/home/ebakhturina/NeMo/examples/tts/G2P/data")
 
 """
 python G2P/g2p_ctc_inference.py \

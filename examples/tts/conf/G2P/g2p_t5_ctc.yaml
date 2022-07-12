@@ -18,6 +18,7 @@ model:
   tokenizer_grapheme:
     pretrained: ${model.encoder.transformer}
     unk_token: "҂" # in the data, T5 unk_token is still <unk>
+    additional_tokens: ["é"] # add a list of additional tokens to add to grapheme tokenizer vocab
     vocab_file: null # will be filled during training
     do_lower: false # whether to lower case graphemes
 

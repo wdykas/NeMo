@@ -978,14 +978,14 @@ class T5G2PDataset(Dataset):
             for line in f_in:
                 # TODO: better filtering of max source/target length? tokenize first??
                 item = json.loads(line)
-                """
-                if len(item["text"]) > max_source_len:
+
+                if len(item["text_graphemes"]) > max_source_len:
                     num_filtered += 1
                     continue
-                if len(item["pred_text"]) > max_target_len:
+                if len(item["text"]) > max_target_len:
                     num_filtered += 1
                     continue
-                """
+
                 # TODO: change pred_text to something more sensible in manifest
                 self.data.append({"graphemes": item["text_graphemes"], "phonemes": item["text"]})
 

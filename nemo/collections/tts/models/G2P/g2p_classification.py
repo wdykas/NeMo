@@ -13,12 +13,12 @@
 # limitations under the License.
 
 import os
-from typing import Dict, List, Optional
+from typing import Optional
 
 import torch
 from omegaconf import DictConfig
 from pytorch_lightning import Trainer
-from torch import nn
+
 from tqdm import tqdm
 from transformers import AutoModel, AutoTokenizer
 
