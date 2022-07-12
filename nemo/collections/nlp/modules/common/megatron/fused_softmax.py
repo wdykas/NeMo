@@ -34,10 +34,10 @@ class ScaledUpperTriangMaskedSoftmax(torch.autograd.Function):
 
     @staticmethod
     def forward(ctx, inputs, scale):
-        import scaled_upper_triang_masked_softmax_cuda
+        import nemo.collections.nlp.modules.common.megatron.fused_kernels.build.scaled_upper_triang_masked_softmax_cuda
 
         scale_t = torch.tensor([scale])
-        softmax_results = scaled_upper_triang_masked_softmax_cuda.forward(
+        softmax_results = nemo.collections.nlp.modules.common.megatron.fused_kernels.build.scaled_upper_triang_masked_softmax_cuda.forward(
             inputs, scale_t[0]
         )
 
@@ -46,10 +46,10 @@ class ScaledUpperTriangMaskedSoftmax(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, output_grads):
-        import scaled_upper_triang_masked_softmax_cuda
+        import nemo.collections.nlp.modules.common.megatron.fused_kernels.build.scaled_upper_triang_masked_softmax_cuda
 
         softmax_results, scale_t = ctx.saved_tensors
-        input_grads = scaled_upper_triang_masked_softmax_cuda.backward(
+        input_grads = nemo.collections.nlp.modules.common.megatron.fused_kernels.build.scaled_upper_triang_masked_softmax_cuda.backward(
             output_grads, softmax_results, scale_t[0]
         )
 
@@ -66,21 +66,21 @@ class ScaledMaskedSoftmax(torch.autograd.Function):
 
     @staticmethod
     def forward(ctx, inputs, mask, scale):
-        import scaled_masked_softmax_cuda
+        import nemo.collections.nlp.modules.common.megatron.fused_kernels.build.scaled_masked_softmax_cuda
 
         scale_t = torch.tensor([scale])
 
-        softmax_results = scaled_masked_softmax_cuda.forward(inputs, mask, scale_t[0])
+        softmax_results = nemo.collections.nlp.modules.common.megatron.fused_kernels.build.scaled_masked_softmax_cuda.forward(inputs, mask, scale_t[0])
         ctx.save_for_backward(softmax_results, scale_t)
         return softmax_results
 
     @staticmethod
     def backward(ctx, output_grads):
-        import scaled_masked_softmax_cuda
+        import nemo.collections.nlp.modules.common.megatron.fused_kernels.build.scaled_masked_softmax_cuda
 
         softmax_results, scale_t = ctx.saved_tensors
 
-        input_grads = scaled_masked_softmax_cuda.backward(
+        input_grads = nemo.collections.nlp.modules.common.megatron.fused_kernels.build.scaled_masked_softmax_cuda.backward(
             output_grads, softmax_results, scale_t[0]
         )
         return input_grads, None, None
@@ -95,11 +95,11 @@ class ScaledSoftmax(torch.autograd.Function):
 
     @staticmethod
     def forward(ctx, inputs, scale):
-        import scaled_softmax_cuda
+        import nemo.collections.nlp.modules.common.megatron.fused_kernels.build.scaled_softmax_cuda
 
         scale_t = torch.tensor([scale])
 
-        softmax_results = scaled_softmax_cuda.forward(
+        softmax_results = nemo.collections.nlp.modules.common.megatron.fused_kernels.build.scaled_softmax_cuda.forward(
             inputs, scale_t[0]
         )
         ctx.save_for_backward(softmax_results, scale_t)
@@ -107,11 +107,11 @@ class ScaledSoftmax(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, output_grads):
-        import scaled_softmax_cuda
+        import nemo.collections.nlp.modules.common.megatron.fused_kernels.build.scaled_softmax_cuda
 
         softmax_results, scale_t = ctx.saved_tensors
 
-        input_grads = scaled_softmax_cuda.backward(
+        input_grads = nemo.collections.nlp.modules.common.megatron.fused_kernels.build.scaled_softmax_cuda.backward(
             output_grads, softmax_results, scale_t[0]
         )
         return input_grads, None, None
@@ -225,6 +225,6 @@ class FusedScaleMaskSoftmax(nn.Module):
 
     @staticmethod
     def get_batch_per_block(sq, sk, b, np):
-        import scaled_masked_softmax_cuda
+        import nemo.collections.nlp.modules.common.megatron.fused_kernels.build.scaled_masked_softmax_cuda
 
-        return scaled_masked_softmax_cuda.get_batch_per_block(sq, sk, b, np)
+        return nemo.collections.nlp.modules.common.megatron.fused_kernels.build.scaled_masked_softmax_cuda.get_batch_per_block(sq, sk, b, np)
