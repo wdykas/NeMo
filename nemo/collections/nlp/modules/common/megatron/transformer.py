@@ -34,11 +34,12 @@ from nemo.collections.nlp.modules.common.megatron.module import MegatronModule
 from nemo.collections.nlp.modules.common.megatron.rotary_pos_embedding import apply_rotary_pos_emb
 from nemo.collections.nlp.modules.common.megatron.utils import ApexGuardDefaults, attention_mask_func, erf_gelu
 from nemo.utils import logging
+from nemo.collections.nlp.modules.common.megatron.fused_softmax import FusedScaleMaskSoftmax
 
 try:
     from apex.transformer import parallel_state, tensor_parallel
     from apex.transformer.enums import AttnMaskType, AttnType, ModelType
-    from apex.transformer.functional.fused_softmax import FusedScaleMaskSoftmax
+#    from apex.transformer.functional.fused_softmax import FusedScaleMaskSoftmax
     from apex.transformer.utils import divide as safe_divide
     from apex.transformer.parallel_state import get_tensor_model_parallel_world_size
     from apex.normalization import MixedFusedRMSNorm
