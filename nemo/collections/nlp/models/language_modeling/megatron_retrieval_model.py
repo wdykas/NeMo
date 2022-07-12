@@ -184,8 +184,22 @@ class MegatronRetrievalModel(MegatronBaseModel):
         return output_tensor
 
     def on_pretrain_routine_start(self) -> None:
+        from nemo.collections.nlp.modules.common.megatron import fused_kernels
+        from omegaconf import OmegaConf
         # keep a copy of init_global_step
         self.init_global_step = self.trainer.global_step
+            # Always build on rank zero first.
+        args = {'gradient_accumulation_fusion': False,
+                'rank': torch.distributed.get_rank(),
+                'masked_softmax_fusion': True}
+        args = OmegaConf.create(args)
+        if torch.distributed.get_rank() == 0:
+            print('> compiling and loading fused kernels ...', flush=True)
+            fused_kernels.load(args)
+            torch.distributed.barrier()
+        else:
+            torch.distributed.barrier()
+            fused_kernels.load(args)
         return super().on_pretrain_routine_start()
 
     def training_step(self, batch, batch_idx):
