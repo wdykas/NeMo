@@ -162,7 +162,7 @@ class MegatronRetrievalTokenLevelEncoderDecoderModule(MegatronModule):
                 layernorm_epsilon=layernorm_epsilon,
                 bias_activation_fusion=bias_gelu_fusion,
                 bias_dropout_add_fusion=bias_dropout_add_fusion,
-                masked_softmax_fusion=masked_softmax_fusion,
+                masked_softmax_fusion=False,
                 persist_layer_norm=persist_layer_norm,
                 openai_gelu=openai_gelu,
                 onnx_safe=onnx_safe,
