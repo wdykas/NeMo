@@ -979,17 +979,19 @@ class T5G2PDataset(Dataset):
                 # TODO: better filtering of max source/target length? tokenize first??
                 item = json.loads(line)
 
-                # if len(item["text_graphemes"]) > max_source_len:
-                #     num_filtered += 1
-                #     continue
-                # if len(item["text"]) > max_target_len:
-                #     num_filtered += 1
-                #     continue
+                if len(item["text_graphemes"]) > max_source_len:
+                    num_filtered += 1
+                    print(f"dropping {len(item['text_graphemes'])} longer max_source_len")
+                    continue
+                if len(item["text"]) > max_target_len:
+                    num_filtered += 1
+                    print(f"dropping {len(item['text'])} longer max_target_len")
+                    continue
 
                 # TODO: change pred_text to something more sensible in manifest
                 self.data.append({"graphemes": item["text_graphemes"], "phonemes": item["text"]})
 
-        # print(f"=======> Filtered {num_filtered} entries.")
+        print(f"=======> Filtered {num_filtered} entries.")
 
     def __len__(self):
         return len(self.data)
@@ -1055,21 +1057,20 @@ class CTCG2PBPEDataset(Dataset):
         self.pad_token = 0
         self.with_labels = with_labels
 
-        num_removed_or_truncated = 0
-        seq_lengths = []
-        sentences = []
+        removed_ctc_max = 0
+        removed_source_max = 0
         with open(manifest_filepath, 'r') as f_in:
             logging.debug(f"Loading dataset from: {manifest_filepath}")
             for i, line in enumerate(f_in):
                 item = json.loads(line)
-                """
-                if len(item["text"]) > max_source_len:
-                    num_filtered += 1
-                    continue
-                if len(item["pred_text"]) > max_target_len:
-                    num_filtered += 1
-                    continue
-                """
+
+                # if len(item["text"]) > max_source_len:
+                #     num_filtered += 1
+                #     continue
+                # if len(item["pred_text"]) > max_target_len:
+                #     num_filtered += 1
+                #     continue
+
                 if do_lower:
                     item["text_graphemes"] = item["text_graphemes"].lower()
 
@@ -1084,9 +1085,19 @@ class CTCG2PBPEDataset(Dataset):
                     target_tokens = self.tokenizer_phonemes.text_to_ids(item["text"])
                     target_len = len(target_tokens)
 
-                    if target_len > grapheme_tokens_len or grapheme_tokens_len > max_source_len:
-                        # print(item)
-                        num_removed_or_truncated += 1
+                    if target_len > grapheme_tokens_len:
+                        removed_ctc_max += 1
+                        # print(f"CTC: target: {target_len} -- input: {grapheme_tokens_len} -- {item['text_graphemes']} -- {item['text']}")
+                        # if target_len - grapheme_tokens_len > 4:
+                        #     import pdb; pdb.set_trace()
+                        #     print()
+
+                        # seq_lengths.append(len(item["text_graphemes"]))
+                        # sentences.append(item["text_graphemes"])
+                        continue
+
+                    if grapheme_tokens_len > max_source_len:
+                        removed_source_max += 1
                         # seq_lengths.append(len(item["text_graphemes"]))
                         # sentences.append(item["text_graphemes"])
                         continue
@@ -1102,14 +1113,15 @@ class CTCG2PBPEDataset(Dataset):
                 else:
                     if len(grapheme_tokens) > max_source_len:
                         item["text_graphemes"] = item["text_graphemes"][:max_source_len]
-                        num_removed_or_truncated += 1
+                        removed_source_max += 1
                     self.data.append(
                         {"graphemes": item["text_graphemes"],}
                     )
 
-        logging.debug(
-            f"Number of samples removed or truncated {num_removed_or_truncated} examples from {manifest_filepath}"
+        logging.info(
+            f"REMOVED based on CTC max: {removed_ctc_max} examples, based on MAX_SOURCE_LEN: {removed_source_max} examples from {manifest_filepath}"
         )
+
 
     def __len__(self):
         return len(self.data)
