@@ -113,7 +113,7 @@ class T5G2PModel(ModelPT):  # TODO: Check parent class
             skip_special_tokens=True,
         )
         generated_str, _, _ = self._generate_predictions(input_ids=input_ids, model_max_target_len=self.max_target_len)
-        per = word_error_rate(hypotheses=generated_str, references=labels_str)
+        per = word_error_rate(hypotheses=generated_str, references=labels_str, use_cer=True)
         return {f"{split}_loss": val_loss, 'per': per}
 
     def test_step(self, batch, batch_idx, dataloader_idx=0):
