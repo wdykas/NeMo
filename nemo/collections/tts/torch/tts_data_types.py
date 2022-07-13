@@ -51,6 +51,10 @@ class Energy(TTSDataType, WithLens):
     name = "energy"
 
 
+class SpeakerEmb(TTSDataType):
+    name = "speaker_embedding"
+
+
 class SpeakerID(TTSDataType):
     name = "speaker_id"
 
@@ -60,5 +64,5 @@ class LMTokens(TTSDataType):
 
 
 MAIN_DATA_TYPES = [Audio, Text]
-VALID_SUPPLEMENTARY_DATA_TYPES = [LogMel, Durations, AlignPriorMatrix, Pitch, Energy, SpeakerID, LMTokens]
+VALID_SUPPLEMENTARY_DATA_TYPES = [LogMel, Durations, AlignPriorMatrix, Pitch, Energy, SpeakerEmb, SpeakerID, LMTokens]
 DATA_STR2DATA_CLASS = {d.name: d for d in MAIN_DATA_TYPES + VALID_SUPPLEMENTARY_DATA_TYPES}
