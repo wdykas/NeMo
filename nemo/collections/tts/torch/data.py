@@ -43,6 +43,7 @@ from nemo.collections.tts.torch.tts_data_types import (
     LogMel,
     P_voiced,
     Pitch,
+    SpeakerEmb,
     SpeakerID,
     TTSDataType,
     Voiced_mask,
@@ -197,6 +198,7 @@ class TTSDataset(Dataset):
         if isinstance(manifest_filepath, str):
             manifest_filepath = [manifest_filepath]
         self.manifest_filepath = manifest_filepath
+        self.speaker_embeddings = None
 
         data = []
         total_duration = 0
@@ -213,6 +215,7 @@ class TTSDataset(Dataset):
                         "duration": item["duration"] if "duration" in item else None,
                         "speaker_id": item["speaker"] if "speaker" in item else None,
                         "is_phoneme": item["is_phoneme"] if "is_phoneme" in item else None,
+                        "embedding_id": item["embedding_id"] if "embedding_id" in item else None,
                     }
 
                     if ("text_normalized" not in item) or ("normalized_text" not in item):
@@ -446,6 +449,12 @@ class TTSDataset(Dataset):
     def add_speaker_id(self, **kwargs):
         pass
 
+    def add_speaker_embedding(self, **kwargs):
+        embedding_path = kwargs.pop("embedding_path", None)
+        if embedding_path is None:
+            raise ValueError("Speaker embedding path is required but got None.")
+        self.speaker_embeddings = torch.from_numpy(np.load(embedding_path))
+
     def get_spec(self, audio):
         with torch.cuda.amp.autocast(enabled=False):
             spec = self.stft(audio)
@@ -488,6 +497,11 @@ class TTSDataset(Dataset):
             tokenized = self.text_tokenizer(sample["normalized_text"])
             text = torch.tensor(tokenized).long()
             text_length = torch.tensor(len(tokenized)).long()
+
+        speaker_emb = None
+        if SpeakerEmb in self.sup_data_types_set:
+            if self.speaker_embeddings is not None:
+                speaker_emb = self.speaker_embeddings[sample['embedding_id']]
 
         # Load mel if needed
         log_mel, log_mel_length = None, None
@@ -603,6 +617,7 @@ class TTSDataset(Dataset):
             speaker_id,
             voiced_mask,
             p_voiced,
+            speaker_emb,
         )
 
     def __len__(self):
@@ -635,6 +650,7 @@ class TTSDataset(Dataset):
             _,
             voiced_masks,
             p_voiceds,
+            _
         ) = zip(*batch)
 
         max_audio_len = max(audio_lengths).item()
@@ -656,17 +672,7 @@ class TTSDataset(Dataset):
             if AlignPriorMatrix in self.sup_data_types_set
             else []
         )
-        audios, tokens, log_mels, durations_list, pitches, energies, speaker_ids, voiced_masks, p_voiceds = (
-            [],
-            [],
-            [],
-            [],
-            [],
-            [],
-            [],
-            [],
-            [],
-        )
+        audios, tokens, log_mels, durations_list, pitches, energies, speaker_ids, voiced_masks, p_voiceds, speaker_embs = [], [], [], [], [], [], [], [], [], []
 
         for i, sample_tuple in enumerate(batch):
             (
@@ -685,6 +691,7 @@ class TTSDataset(Dataset):
                 speaker_id,
                 voiced_mask,
                 p_voiced,
+                speaker_emb,
             ) = sample_tuple
 
             audio = general_padding(audio, audio_len.item(), max_audio_len)
@@ -718,6 +725,8 @@ class TTSDataset(Dataset):
 
             if SpeakerID in self.sup_data_types_set:
                 speaker_ids.append(speaker_id)
+            if SpeakerEmb in self.sup_data_types_set:
+                speaker_embs.append(speaker_emb)
 
         data_dict = {
             "audio": torch.stack(audios),
@@ -735,6 +744,7 @@ class TTSDataset(Dataset):
             "speaker_id": torch.stack(speaker_ids) if SpeakerID in self.sup_data_types_set else None,
             "voiced_mask": torch.stack(voiced_masks) if Voiced_mask in self.sup_data_types_set else None,
             "p_voiced": torch.stack(p_voiceds) if P_voiced in self.sup_data_types_set else None,
+            "speaker_embedding": torch.stack(speaker_embs) if SpeakerEmb in self.sup_data_types_set else None,
         }
 
         return data_dict

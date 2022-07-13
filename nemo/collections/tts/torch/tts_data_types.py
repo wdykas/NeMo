@@ -51,6 +51,10 @@ class Energy(TTSDataType, WithLens):
     name = "energy"
 
 
+class SpeakerEmb(TTSDataType):
+    name = "speaker_embedding"
+
+
 class SpeakerID(TTSDataType):
     name = "speaker_id"
 
@@ -74,6 +78,7 @@ VALID_SUPPLEMENTARY_DATA_TYPES = [
     AlignPriorMatrix,
     Pitch,
     Energy,
+    SpeakerEmb,
     SpeakerID,
     LMTokens,
     Voiced_mask,
