@@ -1,6 +1,6 @@
 import json
 import os
-from g2p_ctc_inference import clean, get_wordid_to_nemo
+from examples.tts.G2P.heteronyms_correction_with_classification import get_wordid_to_nemo, clean
 from tqdm import tqdm
 import argparse
 

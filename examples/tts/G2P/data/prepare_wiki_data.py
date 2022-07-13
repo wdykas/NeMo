@@ -125,15 +125,15 @@ def remove_cjk(text):
     return text
 
 
-def normalize_wikihomograph_data(subset, post_fix):
+def normalize_wikihomograph_data(subset, post_fix, data_folder="data"):
     BASE_DIR = "/home/ebakhturina/g2p_scripts/"
-    output_dir = f"{BASE_DIR}/WikipediaHomographData-master/data/{subset}_{post_fix}"
+    output_dir = f"{BASE_DIR}/WikipediaHomographData-master/{data_folder}/{subset}_{post_fix}"
     os.makedirs(output_dir, exist_ok=True)
 
     normalizer = Normalizer(lang="en", input_case="cased", cache_dir="cache_dir", overwrite_cache=False)
     num_removed = 0
 
-    for file in tqdm(glob(f"{BASE_DIR}/WikipediaHomographData-master/data/{subset}/*.tsv")):
+    for file in tqdm(glob(f"{BASE_DIR}/WikipediaHomographData-master/{data_folder}/{subset}/*.tsv")):
         file_name = os.path.basename(file)
         output_f = f"{output_dir}/{file_name.replace('.tsv', '.json')}"
         if os.path.exists(output_f):
@@ -184,13 +184,13 @@ def normalize_wikihomograph_data(subset, post_fix):
     print(f"Normalized data is saved at {output_dir}, number of removed lines: {num_removed}")
 
 
-def _prepare_wikihomograph_data(post_fix, output_dir, phoneme_dict, split):
+def _prepare_wikihomograph_data(post_fix, output_dir, phoneme_dict, split, data_folder="data"):
     drop = []
     replace_token = "[]"
     # to replace heteronyms with correct IPA form
     wordid_to_nemo_cmu = get_wordid_to_nemo_cmu("/home/ebakhturina/NeMo/examples/tts/G2P/data/wordid_to_nemo_cmu.tsv")
     ipa_tok = setup_tokenizer(phoneme_dict=phoneme_dict)
-    normalized_data = f"/home/ebakhturina/g2p_scripts/WikipediaHomographData-master/data/{split}_{post_fix}/"
+    normalized_data = f"/home/ebakhturina/g2p_scripts/WikipediaHomographData-master/{data_folder}/{split}_{post_fix}/"
     files = glob(f"{normalized_data}/*.json")
 
     os.makedirs(output_dir, exist_ok=True)
@@ -225,11 +225,11 @@ def _prepare_wikihomograph_data(post_fix, output_dir, phoneme_dict, split):
         return manifest
 
 
-def prepare_wikihomograph_data(post_fix, output_dir, split, phoneme_dict=None):
+def prepare_wikihomograph_data(post_fix, output_dir, split, phoneme_dict=None, data_folder="data"):
     if phoneme_dict is None:
         phoneme_dict = "/home/ebakhturina/NeMo/scripts/tts_dataset_files/ipa_cmudict-0.7b_nv22.06.txt"
-    normalize_wikihomograph_data(split, post_fix)
-    manifest = _prepare_wikihomograph_data(post_fix, split=split, output_dir=output_dir, phoneme_dict=phoneme_dict)
+    normalize_wikihomograph_data(split, post_fix, data_folder=data_folder)
+    manifest = _prepare_wikihomograph_data(post_fix, split=split, output_dir=output_dir, phoneme_dict=phoneme_dict, data_folder=data_folder)
     print('checking..')
     check_data(manifest)
 

@@ -29,13 +29,14 @@ from nemo.collections.common.callbacks import LogEpochTimeCallback
 from nemo.collections.tts.models import CTCG2PModel
 from nemo.core.config import hydra_runner
 from nemo.utils.exp_manager import exp_manager
-
+from nemo.utils import logging
+from omegaconf import OmegaConf
 
 @hydra_runner(config_path="conf/G2P", config_name="g2p_conformer_ctc")
 def main(cfg):
     trainer = pl.Trainer(**cfg.trainer)
     exp_manager(trainer, cfg.get("exp_manager", None))
-
+    logging.info(f'Config Params: {OmegaConf.to_yaml(cfg)}')
     if cfg.do_testing:
         if cfg.pretrained_model and not os.path.exists(cfg.pretrained_model):
             raise ValueError("Pretrained model wasn't found.")

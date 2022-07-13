@@ -156,7 +156,8 @@ if __name__ == "__main__":
     Use only CMU train dict part for training datasets, all CMU entries for eval/dev sets
     """
     STRESS_SYMBOLS = ["ˈ", "ˌ"]
-    VERSION = 7
+    WIKI_FOLDER="data_75"
+    VERSION = f"7_wiki_split_{WIKI_FOLDER}"
     POST_FIX = f"normalized_{VERSION}"
 
     # read nemo ipa cmu dict to get the order of words
@@ -258,7 +259,7 @@ if __name__ == "__main__":
     # PREPARE WIKIHOMOGRAPH DATA
     WIKI_DATA_TMP_DIR = f"{BASE_DIR}/tmp"
     prepare_wikihomograph_data(
-        POST_FIX, output_dir=WIKI_DATA_TMP_DIR, split="train", phoneme_dict=train_cmu_dict,
+        POST_FIX, output_dir=WIKI_DATA_TMP_DIR, split="train", phoneme_dict=train_cmu_dict, data_folder=WIKI_FOLDER
     )
     prepare_wikihomograph_data(
         POST_FIX, output_dir=WIKI_DATA_TMP_DIR, split="eval", phoneme_dict=complete_nemo_ipa_cmu,
