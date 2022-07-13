@@ -95,6 +95,9 @@ COPY scripts /workspace/nemo/scripts
 COPY examples /workspace/nemo/examples
 COPY tests /workspace/nemo/tests
 COPY tutorials /workspace/nemo/tutorials
+COPY nemo /workspace/nemo/nemo
+COPY nemo_text_processing /workspace/nemo/nemo_text_processing
+COPY tools /workspace/nemo/tools
 # COPY README.rst LICENSE /workspace/nemo/
 
 RUN printf "#!/bin/bash\njupyter lab --no-browser --allow-root --ip=0.0.0.0" >> start-jupyter.sh && \
