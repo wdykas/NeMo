@@ -11,16 +11,17 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Optional
+from typing import Optional, List
+from omegaconf import DictConfig
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from nemo.core.classes import NeuralModule, typecheck
+from nemo.collections.asr.parts.utils import adapter_utils
+from nemo.core.classes import NeuralModule, typecheck, adapter_mixins
 from nemo.core.neural_types.elements import EncodedRepresentation, LengthsType, MaskType, TokenIndex
 from nemo.core.neural_types.neural_type import NeuralType
-
 
 def mask_from_lens(lens, max_len: Optional[int] = None):
     if max_len is None:
@@ -48,8 +49,41 @@ class PositionalEmbedding(nn.Module):
             return pos_emb[None, :, :]
 
 
+class ConditionalLayerNorm(nn.Module):
+    def __init__(self, normalized_shape, spk_emb_dim, eps=1e-5, bias=True):
+        super(ConditionalLayerNorm, self).__init__()
+        self.normalized_shape = normalized_shape
+        self.eps = eps
+        self.spk_emb_dim = spk_emb_dim
+        
+        self.weight = nn.Linear(spk_emb_dim, normalized_shape, bias=bias)
+        self.bias = nn.Linear(spk_emb_dim, normalized_shape, bias=bias)
+        
+        nn.init.constant_(self.weight.weight, 0.0)
+        nn.init.constant_(self.bias.weight, 0.0)
+        if bias:
+            nn.init.constant_(self.weight.bias, 1.0)
+            nn.init.constant_(self.bias.bias, 0.0)
+
+    def forward(self, inp, conditioning):
+        # Normalize Input Features
+        mean = inp.mean(dim=-1, keepdim=True)
+        var = ((inp - mean) ** 2).mean(dim=-1, keepdim=True)
+        std = (var + self.eps).sqrt()
+        inp = (inp - mean) / std
+        
+        # Get Scale and Bias
+        scale = self.weight(conditioning)
+        bias = self.bias(conditioning)
+        
+        # Perform Scailing and Shifting
+        inp *= scale
+        inp += bias
+        
+        return inp
+        
 class PositionwiseConvFF(nn.Module):
-    def __init__(self, d_model, d_inner, kernel_size, dropout, pre_lnorm=False):
+    def __init__(self, d_model, d_inner, kernel_size, dropout, pre_lnorm=False, use_cln_speaker=False):
         super(PositionwiseConvFF, self).__init__()
 
         self.d_model = d_model
@@ -66,17 +100,29 @@ class PositionwiseConvFF(nn.Module):
             nn.Conv1d(d_inner, d_model, kernel_size[1], 1, (kernel_size[1] // 2)),
             nn.Dropout(dropout),
         )
-        self.layer_norm = nn.LayerNorm(d_model)
+        
+        if use_cln_speaker:
+            self.layer_norm = ConditionalLayerNorm(d_model, d_model)
+        else:
+            self.layer_norm = nn.LayerNorm(d_model)
+        
         self.pre_lnorm = pre_lnorm
+        self.use_cln_speaker = use_cln_speaker
 
-    def forward(self, inp):
-        return self._forward(inp)
+    def forward(self, inp, conditioning=None):
+        return self._forward(inp, conditioning)
 
-    def _forward(self, inp):
+    def _forward(self, inp, conditioning=None):
         if self.pre_lnorm:
             # layer normalization + positionwise feed-forward
             core_out = inp.transpose(1, 2)
-            core_out = self.CoreNet(self.layer_norm(core_out).to(inp.dtype))
+            
+            if self.use_cln_speaker and conditioning is not None: 
+                core_out = self.layer_norm(core_out, conditioning).to(inp.dtype)
+            else: 
+                core_out = self.layer_norm(core_out).to(inp.dtype)
+                
+            core_out = self.CoreNet(core_out)
             core_out = core_out.transpose(1, 2)
 
             # residual connection
@@ -88,13 +134,16 @@ class PositionwiseConvFF(nn.Module):
             core_out = core_out.transpose(1, 2)
 
             # residual connection + layer normalization
-            output = self.layer_norm(inp + core_out).to(inp.dtype)
+            if self.use_cln_speaker and conditioning is not None: 
+                output = self.layer_norm(inp + core_out, conditioning).to(inp.dtype)
+            else:
+                output = self.layer_norm(inp + core_out).to(inp.dtype)
 
         return output
 
 
 class MultiHeadAttn(nn.Module):
-    def __init__(self, n_head, d_model, d_head, dropout, dropatt=0.1, pre_lnorm=False):
+    def __init__(self, n_head, d_model, d_head, dropout, dropatt=0.1, pre_lnorm=False, use_pmt_speaker=False):
         super(MultiHeadAttn, self).__init__()
 
         self.n_head = n_head
@@ -160,24 +209,35 @@ class MultiHeadAttn(nn.Module):
         return output
 
 
-class TransformerLayer(nn.Module):
+class TransformerLayer(nn.Module, adapter_mixins.AdapterModuleMixin):
     def __init__(self, n_head, d_model, d_head, d_inner, kernel_size, dropout, **kwargs):
         super(TransformerLayer, self).__init__()
 
-        self.dec_attn = MultiHeadAttn(n_head, d_model, d_head, dropout, **kwargs)
-        self.pos_ff = PositionwiseConvFF(d_model, d_inner, kernel_size, dropout, pre_lnorm=kwargs.get('pre_lnorm'))
+        self.dec_attn = MultiHeadAttn(n_head, d_model, d_head, dropout, 
+                                      dropatt=kwargs.get('dropatt'),
+                                      pre_lnorm=kwargs.get('pre_lnorm'),
+                                      use_pmt_speaker=kwargs.get('use_pmt_speaker'))
+        
+        self.pos_ff = PositionwiseConvFF(d_model, d_inner, kernel_size, dropout, 
+                                         pre_lnorm=kwargs.get('pre_lnorm'), 
+                                         use_cln_speaker=kwargs.get('use_cln_speaker'))
 
-    def forward(self, dec_inp, mask=None):
+    def forward(self, dec_inp, mask=None, conditioning=None):
         output = self.dec_attn(dec_inp, attn_mask=~mask.squeeze(2))
         output *= mask
-        output = self.pos_ff(output)
+        output = self.pos_ff(output, conditioning)
         output *= mask
+        
+        if self.is_adapter_available():
+            output = self.forward_enabled_adapters(output)
+            
         return output
 
 
 class FFTransformerDecoder(NeuralModule):
     def __init__(
-        self, n_layer, n_head, d_model, d_head, d_inner, kernel_size, dropout, dropatt, dropemb=0.0, pre_lnorm=False
+        self, n_layer, n_head, d_model, d_head, d_inner, kernel_size, dropout, dropatt, dropemb=0.0, pre_lnorm=False, 
+        use_add_speaker=False, use_cat_speaker=False, use_cln_speaker=False, use_pmt_speaker=False,
     ):
         super(FFTransformerDecoder, self).__init__()
         self.d_model = d_model
@@ -188,13 +248,19 @@ class FFTransformerDecoder(NeuralModule):
         self.drop = nn.Dropout(dropemb)
         self.layers = nn.ModuleList()
 
-        for _ in range(n_layer):
+        for i in range(n_layer):
             self.layers.append(
                 TransformerLayer(
-                    n_head, d_model, d_head, d_inner, kernel_size, dropout, dropatt=dropatt, pre_lnorm=pre_lnorm
+                    n_head, 
+                    d_model * 2 if i == 0 and use_cat_speaker else d_model, 
+                    d_head, d_inner, kernel_size, dropout, dropatt=dropatt, pre_lnorm=pre_lnorm, 
+                    use_cln_speaker=use_cln_speaker, use_pmt_speaker=use_pmt_speaker,
                 )
             )
-
+            
+        self.use_add_speaker = use_add_speaker
+        self.use_cat_speaker = use_cat_speaker
+        
     @property
     def input_types(self):
         return {
@@ -217,10 +283,19 @@ class FFTransformerDecoder(NeuralModule):
     def _forward(self, inp, mask, conditioning):
         pos_seq = torch.arange(inp.size(1), device=inp.device).to(inp.dtype)
         pos_emb = self.pos_emb(pos_seq) * mask
-        out = self.drop(inp + pos_emb + conditioning)
+        inp += pos_emb
+        
+        # [TODO]
+        if self.use_add_speaker:
+            inp += conditioning
+            
+        if self.use_cat_speaker:
+            inp = torch.cat([inp, conditioning.repeat(1, inp.shape[1], 1)], axis=-1)
+            
+        out = self.drop(inp)
 
         for layer in self.layers:
-            out = layer(out, mask=mask)
+            out = layer(out, mask=mask, conditioning=conditioning)
 
         # out = self.drop(out)
         return out, mask
@@ -242,14 +317,19 @@ class FFTransformerEncoder(FFTransformerDecoder):
         n_embed=None,
         d_embed=None,
         padding_idx=0,
+        use_add_speaker=False,
+        use_cat_speaker=False,
+        use_cln_speaker=False,
+        use_pmt_speaker=False,
     ):
         super(FFTransformerEncoder, self).__init__(
-            n_layer, n_head, d_model, d_head, d_inner, kernel_size, dropout, dropatt, dropemb, pre_lnorm
+            n_layer, n_head, d_model, d_head, d_inner, kernel_size, dropout, dropatt, dropemb, pre_lnorm, 
+            use_add_speaker, use_cat_speaker, use_cln_speaker, use_pmt_speaker,
         )
 
         self.padding_idx = padding_idx
         self.word_emb = nn.Embedding(n_embed, d_embed or d_model, padding_idx=self.padding_idx)
-
+        
     @property
     def input_types(self):
         return {
@@ -258,5 +338,46 @@ class FFTransformerEncoder(FFTransformerDecoder):
         }
 
     def forward(self, input, conditioning=0):
-
+        
         return self._forward(self.word_emb(input), (input != self.padding_idx).unsqueeze(2), conditioning)  # (B, L, 1)
+
+    
+class FFTransformerDecoderAdapter(FFTransformerDecoder, adapter_mixins.AdapterModuleMixin):
+
+    # Higher level forwarding
+    def add_adapter(self, name: str, cfg: dict):
+        cfg = self._update_adapter_cfg_input_dim(cfg)
+        for FFT_layer in self.layers:  # type: adapter_mixins.AdapterModuleMixin
+            FFT_layer.add_adapter(name, cfg)
+
+    def is_adapter_available(self) -> bool:
+        return any([FFT_layer.is_adapter_available() for FFT_layer in self.layers])
+
+    def set_enabled_adapters(self, name: Optional[str] = None, enabled: bool = True):
+        for FFT_layer in self.layers:  # type: adapter_mixins.AdapterModuleMixin
+            FFT_layer.set_enabled_adapters(name=name, enabled=enabled)
+
+    def get_enabled_adapters(self) -> List[str]:
+        names = set([])
+        for FFT_layer in self.layers:  # type: adapter_mixins.AdapterModuleMixin
+            names.update(FFT_layer.get_enabled_adapters())
+
+        names = sorted(list(names))
+        return names
+
+    def _update_adapter_cfg_input_dim(self, cfg: DictConfig):
+        cfg = adapter_utils.update_adapter_cfg_input_dim(self, cfg, module_dim=self.d_model)
+        return cfg
+
+
+class FFTransformerEncoderAdapter(FFTransformerDecoderAdapter, FFTransformerEncoder, adapter_mixins.AdapterModuleMixin):
+    pass
+    
+"""
+Register any additional information
+"""
+if adapter_mixins.get_registered_adapter(FFTransformerEncoder) is None:
+    adapter_mixins.register_adapter(base_class=FFTransformerEncoder, adapter_class=FFTransformerEncoderAdapter)
+
+if adapter_mixins.get_registered_adapter(FFTransformerDecoder) is None:
+    adapter_mixins.register_adapter(base_class=FFTransformerDecoder, adapter_class=FFTransformerDecoderAdapter)

@@ -95,24 +95,27 @@ class ConvReLUNorm(torch.nn.Module):
 class TemporalPredictor(NeuralModule):
     """Predicts a single float per each temporal location"""
 
-    def __init__(self, input_size, filter_size, kernel_size, dropout, n_layers=2):
+    def __init__(self, input_size, filter_size, kernel_size, dropout, use_add_speaker=False, use_cat_speaker=False, n_layers=2):
         super(TemporalPredictor, self).__init__()
-
+        
         self.layers = torch.nn.Sequential(
             *[
                 ConvReLUNorm(
-                    input_size if i == 0 else filter_size, filter_size, kernel_size=kernel_size, dropout=dropout
+                    input_size * (2 if use_cat_speaker else 1) if i == 0 else filter_size, filter_size, kernel_size=kernel_size, dropout=dropout
                 )
                 for i in range(n_layers)
             ]
         )
         self.fc = torch.nn.Linear(filter_size, 1, bias=True)
+        self.use_add_speaker = use_add_speaker
+        self.use_cat_speaker = use_cat_speaker
 
     @property
     def input_types(self):
         return {
             "enc": NeuralType(('B', 'T', 'D'), EncodedRepresentation()),
             "enc_mask": NeuralType(('B', 'T', 1), TokenDurationType()),
+            "conditioning": NeuralType(('B', 'T', 'D'), EncodedRepresentation(), optional=True),
         }
 
     @property
@@ -121,7 +124,13 @@ class TemporalPredictor(NeuralModule):
             "out": NeuralType(('B', 'T'), EncodedRepresentation()),
         }
 
-    def forward(self, enc, enc_mask):
+    def forward(self, enc, enc_mask, conditioning=0):
+        if self.use_add_speaker:
+            enc = enc + conditioning
+        
+        if self.use_cat_speaker:
+            enc = torch.cat([enc, conditioning.repeat(1, enc.shape[1], 1)], dim=-1) 
+            
         out = enc * enc_mask
         out = self.layers(out.transpose(1, 2)).transpose(1, 2)
         out = self.fc(out) * enc_mask
@@ -221,17 +230,20 @@ class FastPitchModule(NeuralModule):
         if not self.learn_alignment and self.training:
             assert durs is not None
             assert pitch is not None
-
+        
         # Calculate speaker embedding
         if self.speaker_emb is None or speaker is None:
             spk_emb = 0
         else:
+            # [TODO]
+            speaker[(speaker < 0)] += self.speaker_emb.num_embeddings
             spk_emb = self.speaker_emb(speaker).unsqueeze(1)
 
         # Input FFT
         enc_out, enc_mask = self.encoder(input=text, conditioning=spk_emb)
-
-        log_durs_predicted = self.duration_predictor(enc_out, enc_mask)
+        
+        # Predict duration
+        log_durs_predicted = self.duration_predictor(enc_out, enc_mask, conditioning=spk_emb)
         durs_predicted = torch.clamp(torch.exp(log_durs_predicted) - 1, 0, self.max_token_duration)
 
         attn_soft, attn_hard, attn_hard_dur, attn_logprob = None, None, None, None
@@ -242,7 +254,7 @@ class FastPitchModule(NeuralModule):
             attn_hard_dur = attn_hard.sum(2)[:, 0, :]
 
         # Predict pitch
-        pitch_predicted = self.pitch_predictor(enc_out, enc_mask)
+        pitch_predicted = self.pitch_predictor(enc_out, enc_mask, conditioning=spk_emb)
         if pitch is not None:
             if self.learn_alignment and pitch.shape[-1] != pitch_predicted.shape[-1]:
                 # Pitch during training is per spectrogram frame, but during inference, it should be per character
@@ -262,7 +274,7 @@ class FastPitchModule(NeuralModule):
             len_regulated, dec_lens = regulate_len(durs_predicted, enc_out, pace)
 
         # Output FFT
-        dec_out, _ = self.decoder(input=len_regulated, seq_lens=dec_lens)
+        dec_out, _ = self.decoder(input=len_regulated, seq_lens=dec_lens, conditioning=spk_emb)
         spect = self.proj(dec_out).transpose(1, 2)
         return (
             spect,
@@ -288,11 +300,11 @@ class FastPitchModule(NeuralModule):
         enc_out, enc_mask = self.encoder(input=text, conditioning=spk_emb)
 
         # Predict duration and pitch
-        log_durs_predicted = self.duration_predictor(enc_out, enc_mask)
+        log_durs_predicted = self.duration_predictor(enc_out, enc_mask, conditioning=spk_emb)
         durs_predicted = torch.clamp(
             torch.exp(log_durs_predicted) - 1.0, self.min_token_duration, self.max_token_duration
         )
-        pitch_predicted = self.pitch_predictor(enc_out, enc_mask) + pitch
+        pitch_predicted = self.pitch_predictor(enc_out, enc_mask, conditioning=spk_emb) + pitch
         pitch_emb = self.pitch_emb(pitch_predicted.unsqueeze(1))
         enc_out = enc_out + pitch_emb.transpose(1, 2)
 
@@ -304,7 +316,7 @@ class FastPitchModule(NeuralModule):
             volume_extended = volume_extended.squeeze(-1).float()
 
         # Output FFT
-        dec_out, _ = self.decoder(input=len_regulated, seq_lens=dec_lens)
+        dec_out, _ = self.decoder(input=len_regulated, seq_lens=dec_lens, conditioning=spk_emb)
         spect = self.proj(dec_out).transpose(1, 2)
         return (
             spect.to(torch.float),
@@ -314,3 +326,5 @@ class FastPitchModule(NeuralModule):
             pitch_predicted,
             volume_extended,
         )
+
+    
