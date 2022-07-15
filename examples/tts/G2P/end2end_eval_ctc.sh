@@ -18,7 +18,6 @@ do
   LOG_CLEAN=${JOB_ID}_log_clean.txt
   LOG_NO_CLEAN=${JOB_ID}_log_no_clean.txt
 
-
   # eval with --CLEAN
   output_heteronyms="CTC_${JOB_ID}.json"
   python g2p_ctc_inference.py pretrained_model=$file manifest_filepath=/mnt/sdb_4/g2p/data_ipa/evaluation_sets_v${VERSION}/CMU_TEST_MULTI/cmu_test.json batch_size=$BATCH_SIZE > "/tmp/cmu_clean.txt"

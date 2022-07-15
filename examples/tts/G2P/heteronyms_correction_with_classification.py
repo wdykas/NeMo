@@ -134,7 +134,7 @@ def add_unk_token_to_manifest(manifest, heteronyms, wiki_homograph_dict, graphem
     start_end_indices_graphemes = []
     homographs = []
     heteronyms_ipa = []
-    len_mismatdh_skip = 0
+    len_mismatch_skip = 0
     with open(manifest, "r", encoding="utf-8") as f_in:
         for sent_id, line in enumerate(f_in):
             line = json.loads(line)
@@ -145,7 +145,7 @@ def add_unk_token_to_manifest(manifest, heteronyms, wiki_homograph_dict, graphem
 
             if len(graphemes.split()) != len(ipa):
                 logging.debug(f"len(graphemes+ != len(ipa), {line}, skipping...")
-                len_mismatdh_skip += 1
+                len_mismatch_skip += 1
                 continue
 
             graphemes_with_unk = ""
@@ -206,7 +206,7 @@ def add_unk_token_to_manifest(manifest, heteronyms, wiki_homograph_dict, graphem
             if heteronym_present:
                 line["text_graphemes"] = graphemes_with_unk.strip()
 
-    logging.info(f"Skipped {len_mismatdh_skip} due to length mismatch")
+    logging.info(f"Skipped {len_mismatch_skip} due to length mismatch")
     return (
         sentences,
         sentence_id_to_meta_info,
@@ -333,3 +333,8 @@ def _correct_heteronym_predictions(manifest, sentence_id_to_meta_info, target_ip
 
     print(f"Saved in {manifest_corrected_heteronyms}")
     return manifest_corrected_heteronyms
+
+
+if __name__ == '__main__':
+    correct_heteronyms("/mnt/sdb_4/g2p/chpts/homographs_classification/bert_large/G2PClassification.nemo",
+                       "/home/ebakhturina/CharsiuG2P/path_to_output/eval_wikihomograph.json_byt5-small.json", 64,1)

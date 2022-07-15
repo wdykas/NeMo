@@ -66,6 +66,10 @@ def main(cfg: DictConfig) -> None:
         raise ValueError(
             f'Provide path to the pre-trained .nemo checkpoint or choose from {CTCG2PModel.list_available_models()}'
         )
+
+    checkpoint = torch.load("/mnt/sdb_4/g2p/chpts/byt5/v7/3127051/g2p/G2PCTC/2022-07-13_19-46-54/checkpoints/G2PCTC--val_loss=7.0984-epoch=49-last.ckpt")
+    model.load_state_dict(checkpoint['state_dict'])
+
     model.set_trainer(trainer)
     model.setup_multiple_test_data(cfg.model.test_ds)
     trainer.test(model)

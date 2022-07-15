@@ -90,6 +90,7 @@ def eval_heteronyms(manifest, target_homograph=None):
     errors_file = os.path.basename(manifest).replace(".json", "_errors.json")
     with open(errors_file, "w") as f:
         for entry in errors:
+            entry["duration"] = 0.01
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
     print(f"Errors saved in {errors_file}")
 

@@ -232,6 +232,11 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
             # swap seq_len and hid_dim dimensions to get [B, hid_dim, seq_len]
             encoded_input = encoded_input.transpose(1, 2)
         else:
+            # import pdb;
+            # pdb.set_trace()
+            # bert = AutoModel.from_pretrained("bert-base-cased")
+            # bert_tokenizer = AutoTokenizer.from_pretrained("bert-base-cased")
+
             input_embedding = self.embedding(input_ids)
             input_embedding = input_embedding.transpose(1, 2)
             encoded_input, encoded_len = self.encoder(audio_signal=input_embedding, length=input_len)

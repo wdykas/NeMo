@@ -21,7 +21,7 @@ from argparse import ArgumentParser
 
 import torch
 sys.path.append("/home/ebakhturina/NeMo/examples/tts/G2P")
-from g2p_ctc_inference import clean, get_metrics
+from examples.tts.G2P.heteronyms_correction_with_classification import clean, get_metrics, correct_heteronyms
 from omegaconf import OmegaConf
 
 from nemo.collections.asr.metrics.wer import word_error_rate
@@ -46,8 +46,9 @@ parser = ArgumentParser()
 parser.add_argument(
     "--model_ckpt", type=str, required=True, help="T5 G2P model checkpoint for prediction",
 )
-parser.add_argument("--dataset", type=str, required=True, help="Path to evaluation data")
+parser.add_argument("--manifest_filepath", type=str, required=True, help="Path to evaluation data")
 parser.add_argument("--batch_size", type=int, default=4)
+parser.add_argument("--num_workers", type=int, default=0)
 parser.add_argument(
     "--output", type=str, default="T5_generative_predictions.json", help="Path to store model's predictions"
 )
@@ -57,6 +58,7 @@ parser.add_argument(
     help="Set to True to lower case input graphemes and remove punctuation marks for evaluation",
 )
 parser.add_argument("--per_word", action="store_true", help="Set to True to run inference per word")
+parser.add_argument("--heteronyms_model", default=None, type=str, help="Path to a pre-trained classification model for heteronyms disambiguation")
 
 
 def main():
@@ -67,7 +69,7 @@ def main():
     g2p_model = T5G2PModel.restore_from(restore_path=args.model_ckpt)
 
     # Prepare test data
-    def _create_test(manifest, batch_size):
+    def _create_test(manifest, batch_size, num_workers):
         test_config = OmegaConf.create(
             {
                 'dataset': None,
@@ -76,7 +78,7 @@ def main():
                     'drop_last': False,
                     'shuffle': False,
                     'batch_size': batch_size,
-                    'num_workers': 0,
+                    'num_workers': num_workers,
                 },
             }
         )
@@ -87,7 +89,7 @@ def main():
     g2p_model.eval()
 
     if args.per_word:
-        with open(args.output, "w", encoding="utf-8") as f_out, open(args.dataset, "r") as f_in:
+        with open(args.output, "w", encoding="utf-8") as f_out, open(args.manifest_filepath, "r") as f_in:
             for line in f_in:
                 line = json.loads(line)
 
@@ -104,7 +106,7 @@ def main():
                         entry = {"text_graphemes": g, "text": "n/a"}
                         f_tmp.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
-                tmp_test_config = _create_test(tmp_file, args.batch_size)
+                tmp_test_config = _create_test(tmp_file, args.batch_size, args.num_workers)
                 g2p_model.setup_test_data(tmp_test_config)
                 hypotheses = []
                 for test_batch in g2p_model.test_dataloader():
@@ -123,7 +125,7 @@ def main():
                 f_out.write(json.dumps(line, ensure_ascii=False) + "\n")
         get_metrics(args.output)
     else:
-        test_config = _create_test(args.dataset, args.batch_size)
+        test_config = _create_test(args.manifest_filepath, args.batch_size, args.num_workers)
         g2p_model.setup_test_data(test_config)
 
         # Get predictions
@@ -153,7 +155,7 @@ def main():
                 graphemes = g2p_model._tokenizer.batch_decode(input_ids, skip_special_tokens=True)
                 orig_sentences += graphemes
 
-        with open(args.output, "w", encoding="utf-8") as f_out, open(args.dataset, "r") as f_in:
+        with open(args.output, "w", encoding="utf-8") as f_out, open(args.manifest_filepath, "r") as f_in:
             for i, line in enumerate(f_in):
                 line = json.loads(line)
                 line["pred_text"] = hypotheses[i]
@@ -175,6 +177,15 @@ def main():
         #         print(s)
         #         print(h)
         #         print(r)
+
+        del g2p_model
+    # if False:
+    #     pass
+    # else:
+
+        args.output = "/home/ebakhturina/CharsiuG2P/path_to_output/eval_wikihomograph.json_byt5-small.json"
+        if args.heteronyms_model is not None:
+            correct_heteronyms(args.heteronyms_model, args.output, args.batch_size)
 
 
 if __name__ == '__main__':

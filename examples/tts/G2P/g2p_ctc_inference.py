@@ -115,6 +115,10 @@ def main(cfg: TranscriptionConfig) -> TranscriptionConfig:
     model.set_trainer(trainer)
     model = model.eval()
 
+    # checkpoint = torch.load(
+    #     "/mnt/sdb_4/g2p/chpts/conformer/v7/3124175/g2p/G2PCTC/2022-07-13_03-21-54/checkpoints/G2PCTC--val_per=0.0056-epoch=261.ckpt")
+    # model.load_state_dict(checkpoint['state_dict'])
+
     if cfg.output_file is None:
         cfg.output_file = cfg.manifest_filepath.replace(".json", "_phonemes.json")
 
