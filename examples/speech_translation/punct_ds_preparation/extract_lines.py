@@ -21,9 +21,9 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=5000,
     )
+    args = parser.parse_args()
     for name in ["input_file", "extracted_file", "remaining_name"]:
         setattr(parser, name, getattr(parser, name).expanduser())
-    args = parser.parse_args()
     return args
 
 
