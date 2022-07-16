@@ -2,6 +2,8 @@ import argparse
 import re
 from pathlib import Path
 
+from tqdm import tqdm
+
 
 MARKUP = re.compile('^<doc/>.*\n|^<doc docid=.*\n', flags=re.MULTILINE)
 
@@ -19,7 +21,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     with args.output.open('w') as out_f:
-        for input_file in args.inputs:
+        for input_file in tqdm(args.inputs, desc="Uniting documents", unit="file"):
             with input_file.open() as in_f:
                 out_f.write(MARKUP.sub('', in_f.read()))
 
