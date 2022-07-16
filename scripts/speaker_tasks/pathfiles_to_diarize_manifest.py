@@ -22,7 +22,7 @@ from collections import OrderedDict as od
 
 import librosa
 
-from nemo.collections.asr.parts.utils.speaker_utils import rttm_to_labels
+from nemo.collections.asr.parts.utils.speaker_utils import rttm_to_labels, read_rttm_lines, convert_rttm_line
 
 random.seed(42)
 
@@ -110,6 +110,9 @@ def main(
             rttm = rttm.strip()
             labels = rttm_to_labels(rttm)
             num_speakers = Counter([l.split()[-1] for l in labels]).keys().__len__()
+            start, end, speaker = convert_rttm_line(read_rttm_lines(rttm)[-1], round_digits=3)
+            duration = end
+            
         else:
             num_speakers = None
 
@@ -124,10 +127,12 @@ def main(
         if ctm is not None:
             ctm = ctm.strip()
 
-        duration = None
+#         duration = None
         if add_duration:
             y, sr = librosa.load(audio_line, sr=None)
-            duration = librosa.get_duration(y=y, sr=sr)
+            all_duration = librosa.get_duration(y=y, sr=sr)
+            if all_duration != duration:
+                print(all_duration, duration)
         meta = [
             {
                 "audio_filepath": audio_line,

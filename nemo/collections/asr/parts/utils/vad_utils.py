@@ -727,7 +727,7 @@ def generate_vad_segment_table_per_tensor(sequence: torch.Tensor, per_args: Dict
 
     speech_segments, _ = torch.sort(speech_segments, 0)
 
-    dur = speech_segments[:, 1:2] - speech_segments[:, 0:1] + frame_length_in_sec
+    dur = speech_segments[:, 1:2] - speech_segments[:, 0:1] + 0.01
     speech_segments = torch.column_stack((speech_segments, dur))
 
     return speech_segments
@@ -868,7 +868,7 @@ def vad_tune_threshold_on_dev(
     result_file: str = "res",
     vad_pred_method: str = "frame",
     focus_metric: str = "DetER",
-    shift_length_in_sec: float = 0.01,
+    frame_length_in_sec: float = 0.01,
     num_workers: int = 20,
 ) -> Tuple[dict, dict]:
     """
@@ -895,12 +895,12 @@ def vad_tune_threshold_on_dev(
     for param in params_grid:
         for i in param:
             if type(param[i]) == np.float64 or type(param[i]) == np.int64:
-                param[i] = float(param[i])
+                param[i] = round(float(param[i]), 3)
         try:
             # Generate speech segments by performing binarization on the VAD prediction according to param.
             # Filter speech segments according to param and write the result to rttm-like table.
             vad_table_dir = generate_vad_segment_table(
-                vad_pred, param, shift_length_in_sec=shift_length_in_sec, num_workers=num_workers
+                vad_pred, param, frame_length_in_sec=frame_length_in_sec, num_workers=num_workers
             )
             # add reference and hypothesis to metrics
             for filename in paired_filenames:
@@ -922,7 +922,7 @@ def vad_tune_threshold_on_dev(
             assert (
                 focus_metric == "DetER" or focus_metric == "FA" or focus_metric == "MISS"
             ), "Metric we care most should be only in 'DetER', 'FA' or 'MISS'!"
-            all_perf[str(param)] = {'DetER (%)': DetER, 'FA (%)': FA, 'MISS (%)': MISS}
+            all_perf[str(param)] = {'DetER (%)': round(DetER,2) , 'FA (%)': round(FA,2), 'MISS (%)': round(MISS,2)}
             logging.info(f"parameter {param}, {all_perf[str(param)] }")
 
             score = all_perf[str(param)][focus_metric + ' (%)']
@@ -1035,9 +1035,13 @@ def plot(
 
     time = np.arange(offset, offset + dur, FRAME_LEN)
     frame, _ = load_tensor_from_file(path2_vad_pred)
-    frame_snippet = frame[int(offset / FRAME_LEN) : int((offset + dur) / FRAME_LEN)]
-
+    print("frame", len(frame))
+    frame_10ms = frame.repeat_interleave(int(per_args['frame_length_in_sec'] * 100))
+    
+    print("frame_10ms", len(frame_10ms))
+    frame_snippet = frame_10ms[int(offset / FRAME_LEN) : int((offset + dur) / FRAME_LEN)]
     len_pred = len(frame_snippet)
+
     ax1 = plt.subplot()
     ax1.plot(np.arange(audio.size) / sample_rate, audio, 'gray')
     ax1.set_xlim([0, int(dur) + 1])
@@ -1058,13 +1062,18 @@ def plot(
             frame, per_args
         )  # take whole frame here for calculating onset and offset
         speech_segments = generate_vad_segment_table_per_tensor(frame, per_args_float)
-        pred = gen_pred_from_speech_segments(speech_segments, frame)
+        pred = gen_pred_from_speech_segments(speech_segments, frame_10ms)
+        print("pred", len(pred))
         pred_snippet = pred[int(offset / FRAME_LEN) : int((offset + dur) / FRAME_LEN)]
+
+        print("pred_snippet", len(pred_snippet))
+
+
 
     if path2ground_truth_label:
         label = extract_labels(path2ground_truth_label, time)
         ax2.plot(np.arange(len_pred) * FRAME_LEN, label, 'r', label='label')
-
+        print("label", len(label))
     ax2.plot(np.arange(len_pred) * FRAME_LEN, pred_snippet, 'b', label='pred')
     ax2.plot(np.arange(len_pred) * FRAME_LEN, frame_snippet, 'g--', label='speech prob')
     ax2.tick_params(axis='y', labelcolor='r')
@@ -1075,7 +1084,7 @@ def plot(
 
 
 def gen_pred_from_speech_segments(
-    speech_segments: torch.Tensor, prob: float, shift_length_in_sec: float = 0.01
+    speech_segments: torch.Tensor, prob: list, shift_length_in_sec: float = 0.01
 ) -> np.array:
     """
     Generate prediction arrays like 000111000... from speech segments {[0,1][2,4]} 
@@ -1119,6 +1128,7 @@ def generate_vad_frame_pred(
     time_unit = int(window_length_in_sec / shift_length_in_sec)
     trunc = int(time_unit / 2)
     trunc_l = time_unit - trunc
+    print(trunc_l)
     all_len = 0
 
     data = []
@@ -1134,6 +1144,7 @@ def generate_vad_frame_pred(
             log_probs = vad_model(input_signal=test_batch[0], input_signal_length=test_batch[1])
             probs = torch.softmax(log_probs, dim=-1)
             pred = probs[:, 1]
+            print(len(pred))
 
             if status[i] == 'start':
                 to_save = pred[:-trunc]
@@ -1152,7 +1163,7 @@ def generate_vad_frame_pred(
 
         del test_batch
         if status[i] == 'end' or status[i] == 'single':
-            logging.debug(f"Overall length of prediction of {data[i]} is {all_len}!")
+            logging.info(f"Overall length of prediction of {data[i]} is {all_len}!")
             all_len = 0
     return out_dir
 
