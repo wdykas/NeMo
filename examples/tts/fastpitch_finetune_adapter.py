@@ -58,8 +58,11 @@ def main(cfg):
     # Add new speaker embedding
     if cfg.finetune.add_speaker_embedding and model.fastpitch.speaker_emb is not None:
         old_emb = model.fastpitch.speaker_emb
+        # new_speaker_emb = torch.rand(1, old_emb.embedding_dim)
+        new_speaker_emb = old_emb.weight[3, :].unsqueeze(0)
+        
         new_emb = torch.nn.Embedding(old_emb.num_embeddings+1, old_emb.embedding_dim).from_pretrained(
-            torch.cat([old_emb.weight, torch.rand(1, old_emb.embedding_dim)], axis=0), freeze=False)
+            torch.cat([old_emb.weight, new_speaker_emb], axis=0), freeze=False)
         model.fastpitch.speaker_emb = new_emb
         model.cfg.n_speakers += 1
         
