@@ -1173,7 +1173,14 @@ def write_dataset_fast(
                     progress_queue.put(line_progress)
                     line_progress = 0
             word, punctuation = m.group(1), m.group(2)
-            punctuation = m.group(2)
+            if (
+                punctuation.startswith('.')
+                and len(punctuation) > 1
+                and not punctuation.startswith('...')
+                and punctuation[1] in '.,?!:;'
+            ):
+                word += '.'
+                punctuation = punctuation[1:]
             if '!' not in allowed_punctuation:
                 punctuation = punctuation.replace('!', '.')
             if create_model_input:
