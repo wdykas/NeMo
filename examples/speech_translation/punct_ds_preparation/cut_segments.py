@@ -1,4 +1,5 @@
 import argparse
+import logging
 import os
 import random
 from pathlib import Path
@@ -8,6 +9,9 @@ from typing import Union
 from tqdm import tqdm
 
 import prepare_small_data_for_punctuation_capitalization_task as small
+
+
+logging.basicConfig(level="INFO", format='%(levelname)s -%(asctime)s - %(name)s - %(message)s')
 
 
 BUFF_SIZE = 2 ** 20
@@ -41,12 +45,16 @@ def main() -> None:
     perm = list(range(args.start_length, args.end_length))
     random.shuffle(perm)
     p_i = 0  # index of segment length in permutation `perm`
-    b_i = 0  #
+    b_i = 0  # An index of first not processed character in buffer
+    logging.info(f"Calculating number of characters in file {args.input_file} using command `wc -m {args.input_file}`")
+    num_characters = get_num_characters(args.input_file)
+    progress_bar = tqdm(total=num_characters * args.num_passes_through_dataset, desc="Cutting segments", unit="char")
     with args.output_file.open('w', buffering=BUFF_SIZE) as out_f:
         for _ in range(args.num_passes_through_dataset):
             with args.input_file.open(buffering=BUFF_SIZE) as in_f:
                 buff = in_f.read(BUFF_SIZE).replace('\n', ' ')
                 while True:
+                    read_chunks_len = 0
                     if p_i == len(perm):
                         p_i = 0
                         random.shuffle(perm)
@@ -59,6 +67,7 @@ def main() -> None:
                         if not chunk:
                             break
                         buff += chunk.replace('\n', ' ')
+                        read_chunks_len += len(chunk)
                     found_required_length = False
                     last_match = None
                     for m_i, m in enumerate(small.WORD_WITH_PRECEDING_AND_FOLLOWING_PUNCTUATION.finditer(buff[b_i:])):
@@ -74,6 +83,8 @@ def main() -> None:
                         b_i += last_match.span()[1]
                         break
                     p_i += 1
+                    progress_bar.update(read_chunks_len)
+    progress_bar.close()
 
 
 if __name__ == "__main__":
