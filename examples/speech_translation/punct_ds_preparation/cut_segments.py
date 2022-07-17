@@ -71,8 +71,8 @@ def main() -> None:
                     for m_i, m in enumerate(small.WORD_WITH_PRECEDING_AND_FOLLOWING_PUNCTUATION.finditer(buff[b_i:])):
                         last_match = m
                         if m_i - start_m_i >= perm[p_i] - 1:
-                            out_f.write(buff[b_i : b_i + m.span()[1]] + '\n')
-                            b_i += m.span()[1]
+                            out_f.write(buff[b_i : m.span()[1]] + '\n')
+                            b_i = m.span()[1]
                             start_m_i = m_i
                             p_i = (p_i + 1) % len(perm)
                             if p_i == 0:
