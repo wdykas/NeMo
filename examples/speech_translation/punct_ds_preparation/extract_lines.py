@@ -43,7 +43,7 @@ def main() -> None:
     num_lines = get_num_lines(args.input_file)
     if args.num_lines_to_extract / num_lines < MIN_FRACTION_OF_NUMBER_OF_EXTRACTED_LINES_FOR_SAMPLING:
         extracted_line_indices = {random.randrange(0, num_lines) for _ in range(args.num_lines_to_extract)}
-        while len(extracted_line_indices) < len(args.num_lines_to_extract):
+        while len(extracted_line_indices) < args.num_lines_to_extract:
             extracted_line_indices.add(random.randrange(0, num_lines))
     else:
         all_indices = list(range(num_lines))
