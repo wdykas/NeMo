@@ -52,7 +52,7 @@ def main() -> None:
     with args.output_file.open('w', buffering=BUFF_SIZE) as out_f:
         for _ in range(args.num_passes_through_dataset):
             with args.input_file.open(buffering=BUFF_SIZE) as in_f:
-                buff = in_f.read(BUFF_SIZE).replace('\n', ' ')
+                buff = ""
                 last_match = None
                 while True:
                     read_chunks_len = 0
