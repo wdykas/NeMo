@@ -66,6 +66,7 @@ def main() -> None:
                         if last_match is not None:
                             out_f.write(buff[b_i : b_i + last_match.span()[1]] + '\n')
                             b_i += last_match.span()[1]
+                        break
                     buff += chunk.replace('\n', ' ')
                     read_chunks_len += len(chunk)
                     found_required_length = False
