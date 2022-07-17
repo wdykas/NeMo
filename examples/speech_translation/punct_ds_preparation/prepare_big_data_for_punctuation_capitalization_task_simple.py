@@ -57,8 +57,28 @@ WIKI_EXTRACTED_HEADER = re.compile(r'^<doc id="([^"]+)" url="([^"]+)" title="([^
 WIKI_EXTRACTED_DOC_PROGRESS_PERIOD = 100
 
 SEVERAL_NEW_LINES_PATTERN = re.compile('(?:\n[ \t]*){2,}')
+NEW_LINES_PATTERN = re.compile('(?:\n[ \t]*)+')
 LOWER_DOT_UPPER_PATTERN = re.compile(r'([a-z])\.([A-Z0-9])')
-LOWER_DOT_FIGURE_PATTERN = re.compile(r'((\w)\.|^) ?Figure [a-zA-Z]?[0-9]+[a-zA-Z]?[.:]? *')
+LOWER_DOT_FIGURE_PATTERN = re.compile(
+    r'(\.|^) *(Figure|FIGURE|Fig\.|FIG\.) [a-zA-Z]?[0-9]+[a-zA-Z]?[.:]? *', flags=re.MULTILINE
+)
+ADDITIONAL_FILE_PATTERN = re.compile(
+    r'(^|\.) *([Aa]dditional [Ff]ile|ADDITIONAL FILE) [a-zA-Z]?[0-9]+[a-zA-Z]?[.:]? *(?=[A-Z])', flags=re.MULTILINE
+)
+TABLE_PATTERN = re.compile(r'(^|\.) *(Table|TABLE) [a-zA-Z]?[0-9]+[a-zA-Z]?[.:]? *(?=[A-Z])', flags=re.MULTILINE)
+ACKNOWLEDGEMENTS_PATTERN = re.compile(r'^ *Acknowledgements[:.]? *', flags=re.IGNORECASE | re.MULTILINE)
+INTRODUCTION_PATTERN = re.compile(r'(Introduction|INTRODUCTION)[:.]? (?=[A-Z0-9])')
+SUMMARY_PATTERN = re.compile(r'^[0-9]* (?:Author |AUTHOR )?(Summary|SUMMARY)[:.]? *(?=[A-Z])', flags=re.MULTILINE)
+CONCLUSION_PATTERN = re.compile(r'(^|\.)[0-9]* *(Conclusions?|CONCLUSIONS?)[.:]? *(?=[A-Z])', flags=re.MULTILINE)
+METHODS_PATTERN = re.compile(
+    r'^[0-9]* *(Method|METHOD)(s|S|ology|OLOGY|ology/Principal Findings|OLOGY/PRINCIPAL FINDINGS)[.:]? (?=[A-Z0-9])',
+    flags=re.MULTILINE
+)
+OVERVIEW_PATTERN = re.compile(r'^[0-9]* *(Overview|OVERVIEW)[.:]? (?=[A-Z0-9])', flags=re.MULTILINE)
+DOI_PATTERN = re.compile('doi:', flags=re.IGNORECASE)
+BROKEN_YEAR_PATTERN = re.compile('^ *[0-9]+([A-Z])', flags=re.MULTILINE)
+REFERENCES_SECTION_PATTERN = re.compile('^ *={2,} *refs|^ *references *$', flags=re.IGNORECASE | re.MULTILINE)
+NUMBERS_WITHOUT_PUNCTUATION_PATTERN = re.compile(r'[0-9.]+ [0-9.]+')
 LIST_PATTERN = re.compile(f'^ *(?:{small.ROMAN_NUMERAL.pattern}|[0-9]+|[a-z]) *[.)]', flags=re.I | re.MULTILINE)
 NEW_LINE_WITH_SPACES_PATTERN = re.compile(' *\n *')
 DOUBLE_HYPHEN_PATTERN = re.compile(' *-- *')
@@ -66,7 +86,7 @@ SQUARE_BRACKETS_PATTERN = re.compile(r' ?\[[^]]+] *')
 UNDERSCORE_PATTERN = re.compile(fr'(?<![{WC}/])_([^_]+)_(?![{WC}/])')
 WORD_CHAR_ENDING_PATTERN = re.compile(f'[{WC}]$')
 UPPERCASE_INTRO = re.compile('[A-Z ]{2,}: ([A-Z])')
-SHORT_LINE = re.compile('^.{1,50}\n')
+SHORT_LINE = re.compile('^.{1,50}\n', flags=re.MULTILINE)
 LETTER = re.compile('[a-zA-Z]')
 
 NUM_LINES_PER_NEWS_CRAWL_TMP_FILE = 10 ** 6
@@ -79,9 +99,13 @@ INTACT_SENTENCES_PROGRESS_PERIOD = 10000
 
 PG_19_MIN_PARAGRAPH_LEN = 100
 
-MAX_FRACTION_OF_WORDS_WITHOUT_LETTERS = 0.7
+MAX_FRACTION_OF_WORDS_WITHOUT_LETTERS = 0.5
 MAX_QUOTIENT_OF_NUMBER_OF_DOTS_IN_SENTENCE = 0.2
 MIN_NUM_WORDS_FOR_FRACTION_CRITERIA = 15
+MAX_DIGITS_FRACTION = 0.3
+MAX_WORD_LENGTH_FOR_LETTER_WORDS = 25
+MAX_WORD_LENGTH_FOR_WORDS_WITH_NOT_ALPHABETIC_CHARACTERS = 12
+MAX_NUM_WORDS = 100
 
 GOOGLE_NORMALIZATION_DATASET_MIN_NUM_WORDS_IN_SENTENCE = 6
 
@@ -1051,6 +1075,20 @@ def is_sent_plausible(sent: str) -> bool:
         return False
     if sent.count('.') / nw > MAX_QUOTIENT_OF_NUMBER_OF_DOTS_IN_SENTENCE and nw > MIN_NUM_WORDS_FOR_FRACTION_CRITERIA:
         return False
+    num_digits = sum(map(str.isdigit, sent))
+    if num_digits / len(sent) > MAX_DIGITS_FRACTION:
+        return False
+    for word in words:
+        if len(word) > MAX_WORD_LENGTH_FOR_LETTER_WORDS:
+            return False
+        if (
+            len(word) > MAX_WORD_LENGTH_FOR_WORDS_WITH_NOT_ALPHABETIC_CHARACTERS
+            and not word.isalpha()
+            and '-' not in word
+        ):
+            return False
+    if len(words) > MAX_NUM_WORDS:
+        return False
     return True
 
 
@@ -1081,17 +1119,29 @@ class PubMedWorker:
                         )
                         return
         original_text = small.SPACING_CHARACTERS_TO_REPLACE.sub(' ', original_text)
+        ref_header = REFERENCES_SECTION_PATTERN.search(original_text)
+        original_text = original_text[:ref_header.span()[0]]
         text = UPPERCASE_INTRO.sub(r'\1', big.ALL_PARENTHESES.sub(' ', SQUARE_BRACKETS_PATTERN.sub(' ', original_text)))
         text = LOWER_DOT_FIGURE_PATTERN.sub(r'\1 ', text)
+        text = ADDITIONAL_FILE_PATTERN.sub('', text)
+        text = TABLE_PATTERN.sub('', text)
         text = LOWER_DOT_UPPER_PATTERN.sub(r'\1. \2', text)
-        paragraphs = SEVERAL_NEW_LINES_PATTERN.split(text)
-        paragraphs = [SHORT_LINE.sub('\n', p) if p.count('\n') > 1 else p for p in paragraphs]
-        paragraphs = [
-            NEW_LINE_WITH_SPACES_PATTERN.sub(' ', p).strip() for p in paragraphs
-            if len(p) > PG_19_MIN_PARAGRAPH_LEN and LIST_PATTERN.search(p) is None
-        ]
+        text = ACKNOWLEDGEMENTS_PATTERN.sub(' ', text)
+        text = INTRODUCTION_PATTERN.sub(' ', text)
+        text = SUMMARY_PATTERN.sub('', text)
+        text = CONCLUSION_PATTERN.sub('', text)
+        text = METHODS_PATTERN.sub('', text)
+        text = OVERVIEW_PATTERN.sub('', text)
+        text = SHORT_LINE.sub('\n', text)
+        paragraphs = [p for p in NEW_LINES_PATTERN.split(text) if LIST_PATTERN.search(p) is None]
+        # paragraphs = [
+        #     NEW_LINE_WITH_SPACES_PATTERN.sub(' ', p).strip() for p in paragraphs
+        #     if LIST_PATTERN.search(p) is None
+        # ]
         paragraphs = [UNDERSCORE_PATTERN.sub(r'\1', DOUBLE_HYPHEN_PATTERN.sub(' - ', p)) for p in paragraphs]
-        paragraphs = [p for p in paragraphs if WORD_CHAR_ENDING_PATTERN.search(p) is None]
+        paragraphs = [
+            p for p in paragraphs if WORD_CHAR_ENDING_PATTERN.search(p) is None and DOI_PATTERN.search(p) is None
+        ]
         new_paragraphs = []
         global tok_chars
         global untok_chars
@@ -1107,9 +1157,14 @@ class PubMedWorker:
                 ps, self.tokenizer, tok_chars, untok_chars, remove_entire_lines=True
             )
             ps = ps.split('\n')
-            ps = [sent for sent in ps if is_sent_plausible(sent) and '@' not in sent]
+            ps = [
+                sent for sent in ps if is_sent_plausible(
+                    sent
+                ) and '@' not in sent and NUMBERS_WITHOUT_PUNCTUATION_PATTERN.search(sent) is None
+            ]
             new_paragraphs.append(' '.join(ps))
         text = '\n'.join(new_paragraphs) + '\n'
+        text = BROKEN_YEAR_PATTERN.sub('', text)
         text = big.normalize_punctuation(text, 'en')
         text = big.NEW_LINE_DUP.sub('\n', text)
         if not text.strip():
