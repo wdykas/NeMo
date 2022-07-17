@@ -130,7 +130,7 @@ def normalize_wikihomograph_data(subset, post_fix, data_folder="data"):
     output_dir = f"{BASE_DIR}/WikipediaHomographData-master/{data_folder}/{subset}_{post_fix}"
     os.makedirs(output_dir, exist_ok=True)
 
-    normalizer = Normalizer(lang="en", input_case="cased", cache_dir="cache_dir", overwrite_cache=False)
+    normalizer = Normalizer(lang="en", input_case="cased")
     num_removed = 0
 
     for file in tqdm(glob(f"{BASE_DIR}/WikipediaHomographData-master/{data_folder}/{subset}/*.tsv")):
@@ -216,7 +216,7 @@ def _prepare_wikihomograph_data(post_fix, output_dir, phoneme_dict, split, data_
 
                         line["text_graphemes"] = graphemes_
                         line["text"] = post_process(ipa_)
-                        line["duration"] = (0.001,)
+                        line["duration"] = 0.001
                         line["audio_filepath"] = "n/a"
                         f_out.write(json.dumps(line, ensure_ascii=False) + "\n")
         print(

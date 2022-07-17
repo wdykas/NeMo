@@ -7,6 +7,7 @@ import pytorch_lightning as pl
 import os
 from nemo.collections.tts.models.G2P.g2p_classification import G2PClassificationModel
 from nemo.collections.tts.torch.g2p_classification_data import read_wordids
+from nemo.collections.tts.torch.g2p_utils.data_utils import get_wordid_to_nemo
 from nemo.utils import logging
 import sys # fmt: off
 sys.path.append("/home/ebakhturina/NeMo/examples/tts/G2P/data") # fmt: off
@@ -80,16 +81,6 @@ def correct_heteronyms(pretrained_heteronyms_model, manifest_with_preds, batch_s
 
     manifest_corrected_heteronyms = _correct_heteronym_predictions(manifest_with_preds, sentence_id_to_meta_info, target_ipa_id_to_label, heteronyms_preds)
     get_metrics(manifest_corrected_heteronyms)
-
-def get_wordid_to_nemo():
-    wordid_to_nemo_cmu = {}
-    with open("/home/ebakhturina/g2p_scripts/misc_data/wordid_to_nemo_cmu.tsv", "r", encoding="utf-8") as f:
-        for i, line in enumerate(f):
-            if i == 0:
-                continue
-            line = line.strip().split("\t")
-            wordid_to_nemo_cmu[line[0]] = line[1]
-    return wordid_to_nemo_cmu
 
 
 def _get_ipa_parts(words_per_segment, cur_ipa):

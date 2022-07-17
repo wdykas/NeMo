@@ -28,6 +28,9 @@ from nemo.collections.tts.torch.g2p_utils.data_utils import (
     read_wikihomograph_file,
     read_wordids,
 )
+import sys
+sys.path.append("/home/ebakhturina/NeMo/nemo/collections/tts/torch/g2p_utils")
+from convert_aligner_data_to_g2p_classification import convert_to_wiki_format
 from nemo.core.classes import Dataset
 from nemo.utils import logging
 
@@ -86,28 +89,46 @@ class G2PClassificationDataset(Dataset):
         self.pad_token = 0
         self.with_labels = with_labels
 
-        wiki_homograph_dict, target_ipa, self.target_ipa_label_to_id = read_wordids(wordid_map)
+        self.wiki_homograph_dict, self.target_ipa, self.target_ipa_label_to_id = read_wordids(wordid_map)
 
         for file in tqdm(glob(f"{dir_name}/*.tsv")):
             file_data = read_wikihomograph_file(file)
 
             for sentence, start_end_index, homograph, word_id in zip(*file_data):
                 start, end = start_end_index
-                homograph_span = sentence[start:end]
-                l_context_len = len(tokenizer.tokenize(sentence[:start], add_special_tokens=False))
-                r_context_len = len(tokenizer.tokenize(sentence[end:], add_special_tokens=False))
-
-                grapheme_ipa_forms = wiki_homograph_dict[homograph]
-                target_len = len(tokenizer.tokenize(homograph_span, add_special_tokens=False))
-                target = target_ipa.index(grapheme_ipa_forms[word_id])
-
-                # add extra -100 tokens at the begging and end for [CLS] and [SEP] bert tokens, TODO: remove hardcoding
-                target = (
-                    [-100] * (l_context_len + 1) + [target] + [-100] * (target_len - 1) + [-100] * (r_context_len + 1)
-                )
-
-                target_and_negatives = [target_ipa.index(ipa_) for wordid_, ipa_ in grapheme_ipa_forms.items()]
+                target, target_and_negatives = self._prepare_sample(sentence, start, end, homograph, word_id)
                 self.data.append({"input": sentence, "target": target, "target_and_negatives": target_and_negatives})
+        print("--->", len(self.data), dir_name)
+
+        # TODO: refactor
+        if "train" in dir_name:
+            #  add Aligner data data
+            lj_manifest = "/mnt/sdb_4/g2p/data_ipa/training_data_v8/raw_files/filtered_disamb_ljspeech_train_ipa.json"
+            hifi_9017_manifest = "/mnt/sdb_4/g2p/data_ipa/training_data_v8/raw_files/disamb_9017_clean_train_heteronyms_filtered_ipa.json"
+            data = convert_to_wiki_format([lj_manifest, hifi_9017_manifest])
+            for sentence, start_end_index, homograph, word_id in zip(*data):
+                start, end = start_end_index
+                target, target_and_negatives = self._prepare_sample(sentence, start, end, homograph, word_id)
+                self.data.append({"input": sentence, "target": target, "target_and_negatives": target_and_negatives})
+            print("--->", len(self.data), "aligner")
+
+
+    def _prepare_sample(self, sentence, start, end, homograph, word_id):
+        homograph_span = sentence[start:end]
+        l_context_len = len(self.tokenizer.tokenize(sentence[:start], add_special_tokens=False))
+        r_context_len = len(self.tokenizer.tokenize(sentence[end:], add_special_tokens=False))
+
+        grapheme_ipa_forms = self.wiki_homograph_dict[homograph]
+        target_len = len(self.tokenizer.tokenize(homograph_span, add_special_tokens=False))
+        target = self.target_ipa.index(grapheme_ipa_forms[word_id])
+
+        # add extra -100 tokens at the begging and end for [CLS] and [SEP] bert tokens, TODO: remove hardcoding
+        target = (
+                [-100] * (l_context_len + 1) + [target] + [-100] * (target_len - 1) + [-100] * (r_context_len + 1)
+        )
+
+        target_and_negatives = [self.target_ipa.index(ipa_) for wordid_, ipa_ in grapheme_ipa_forms.items()]
+        return target, target_and_negatives
 
     def __len__(self):
         return len(self.data)

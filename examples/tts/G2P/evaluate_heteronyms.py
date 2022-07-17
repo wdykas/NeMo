@@ -1,6 +1,7 @@
 import json
 import os
-from examples.tts.G2P.heteronyms_correction_with_classification import get_wordid_to_nemo, clean
+from examples.tts.G2P.heteronyms_correction_with_classification import clean
+from nemo.collections.tts.torch.g2p_utils.data_utils import get_wordid_to_nemo
 from tqdm import tqdm
 import argparse
 

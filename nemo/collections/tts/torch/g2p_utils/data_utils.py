@@ -116,11 +116,6 @@ def read_wikihomograph_file(file: str) -> (List[str], List[List[int]], List[str]
                 else:
                     print(f"homograph {homograph} != homograph_span {homograph_span} in {sentence}")
                     excluded_sentences += 1
-                    # # excluded_sentences.append(sentence)
-                    # continue
-                    import pdb
-
-                    pdb.set_trace()
                     raise ValueError(f"homograph {homograph} != homograph_span {homograph_span} in {sentence}")
 
             homographs.append(homograph)
@@ -156,3 +151,14 @@ def read_wordids(wordid_map):
                 wiki_homograph_dict[grapheme] = {}
             wiki_homograph_dict[grapheme][word_id] = ipa_form
     return wiki_homograph_dict, target_ipa, target_ipa_label_to_id
+
+
+def get_wordid_to_nemo():
+    wordid_to_nemo_cmu = {}
+    with open("/home/ebakhturina/g2p_scripts/misc_data/wordid_to_nemo_cmu.tsv", "r", encoding="utf-8") as f:
+        for i, line in enumerate(f):
+            if i == 0:
+                continue
+            line = line.strip().split("\t")
+            wordid_to_nemo_cmu[line[0]] = line[1]
+    return wordid_to_nemo_cmu

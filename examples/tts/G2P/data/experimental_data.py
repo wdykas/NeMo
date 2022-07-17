@@ -143,7 +143,7 @@ def drop_examples(manifest, output_dir, graphemes_to_exclude: Optional[List[str]
                     dev_test_words_present = True
                 break
             if not dev_test_words_present:
-                line["text_grapheme"] = post_process(text)
+                line["text_graphemes"] = post_process(text)
                 line["text"] = post_process(line["text"])
                 f_out.write(json.dumps(line, ensure_ascii=False) + "\n")
             else:
@@ -156,8 +156,8 @@ if __name__ == "__main__":
     Use only CMU train dict part for training datasets, all CMU entries for eval/dev sets
     """
     STRESS_SYMBOLS = ["ˈ", "ˌ"]
-    WIKI_FOLDER="data_75"
-    VERSION = f"7_wiki_split_{WIKI_FOLDER}"
+    WIKI_FOLDER="data"
+    VERSION = 8 # f"7_wiki_split_{WIKI_FOLDER}"
     POST_FIX = f"normalized_{VERSION}"
 
     # read nemo ipa cmu dict to get the order of words
@@ -271,10 +271,10 @@ if __name__ == "__main__":
     wiki_eval_manifest = f"{WIKI_DATA_TMP_DIR}/eval_wikihomograph.json"
     drop_examples(wiki_eval_manifest, output_dir=EVAL_DATA_DIR, graphemes_to_exclude=None)
 
-    # # PREPARE HIFITTS DATA
-    # prepare_hifi_tts(
-    #     f"{BASE_DIR}/all_hifi_tts.json", output_dir=TRAINING_DATA_DIR, phoneme_dict=train_cmu_dict,
-    # )
+    # PREPARE HIFITTS DATA
+    prepare_hifi_tts(
+        f"{BASE_DIR}/all_hifi_tts.json", output_dir=TRAINING_DATA_DIR, phoneme_dict=train_cmu_dict,
+    )
 
     # PREPARE DISAMBIGUATED DATA
     # USE g2p_scripts/paper_experiments/convert_lj_to_ipa.py to convert from ARP to IPA
