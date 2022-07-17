@@ -56,9 +56,6 @@ def main() -> None:
                 last_match = None
                 while True:
                     read_chunks_len = 0
-                    if p_i == len(perm):
-                        p_i = 0
-                        random.shuffle(perm)
                     buff = buff[b_i:]
                     b_i = 0
                     chunk = in_f.read(BUFF_SIZE)
@@ -69,17 +66,17 @@ def main() -> None:
                         break
                     buff += chunk.replace('\n', ' ')
                     read_chunks_len += len(chunk)
-                    found_required_length = False
                     last_match = None
+                    start_m_i = 0
                     for m_i, m in enumerate(small.WORD_WITH_PRECEDING_AND_FOLLOWING_PUNCTUATION.finditer(buff[b_i:])):
                         last_match = m
-                        if m_i >= perm[p_i] - 1:
+                        if m_i - start_m_i >= perm[p_i] - 1:
                             out_f.write(buff[b_i : b_i + m.span()[1]] + '\n')
                             b_i += m.span()[1]
-                            found_required_length = True
-                            break
-                    if found_required_length:
-                        p_i += 1
+                            start_m_i = m_i
+                            p_i = (p_i + 1) % len(perm)
+                            if p_i == 0:
+                                random.shuffle(perm)
                     progress_bar.update(read_chunks_len)
     progress_bar.close()
 
