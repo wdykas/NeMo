@@ -1120,7 +1120,8 @@ class PubMedWorker:
                         return
         original_text = small.SPACING_CHARACTERS_TO_REPLACE.sub(' ', original_text)
         ref_header = REFERENCES_SECTION_PATTERN.search(original_text)
-        original_text = original_text[:ref_header.span()[0]]
+        if ref_header is not None:
+            original_text = original_text[:ref_header.span()[0]]
         text = UPPERCASE_INTRO.sub(r'\1', big.ALL_PARENTHESES.sub(' ', SQUARE_BRACKETS_PATTERN.sub(' ', original_text)))
         text = LOWER_DOT_FIGURE_PATTERN.sub(r'\1 ', text)
         text = ADDITIONAL_FILE_PATTERN.sub('', text)
