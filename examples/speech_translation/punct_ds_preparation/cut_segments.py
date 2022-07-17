@@ -43,26 +43,36 @@ def main() -> None:
     p_i = 0  # index of segment length in permutation `perm`
     b_i = 0  #
     with args.output_file.open('w', buffering=BUFF_SIZE) as out_f:
-        for _ in range(args.num_passes_throuh_dataset):
+        for _ in range(args.num_passes_through_dataset):
             with args.input_file.open(buffering=BUFF_SIZE) as in_f:
                 buff = in_f.read(BUFF_SIZE).replace('\n', ' ')
                 while True:
                     if p_i == len(perm):
                         p_i = 0
                         random.shuffle(perm)
-                    if args.end_length >= len(small.WORD_WITH_PRECEDING_AND_FOLLOWING_PUNCTUATION.findall(buff[b_i:])):
-                        buff = buff[b_i:]
-                        b_i = 0
-                        buff += in_f.read(BUFF_SIZE).replace('\n', ' ')
+                    buff = buff[b_i:]
+                    b_i = 0
+                    while args.end_length >= len(
+                        small.WORD_WITH_PRECEDING_AND_FOLLOWING_PUNCTUATION.findall(buff[b_i:])
+                    ):
+                        chunk = in_f.read(BUFF_SIZE)
+                        if not chunk:
+                            break
+                        buff += chunk.replace('\n', ' ')
                     found_required_length = False
+                    last_match = None
                     for m_i, m in enumerate(small.WORD_WITH_PRECEDING_AND_FOLLOWING_PUNCTUATION.finditer(buff[b_i:])):
+                        last_match = m
                         if m_i >= perm[p_i] - 1:
                             out_f.write(buff[b_i : b_i + m.span()[1]] + '\n')
-                            b_i = b_i + m.span()[1]
+                            b_i += m.span()[1]
                             found_required_length = True
                             break
                     if not found_required_length:
-                        out_f.write(buff[b_i :])
+                        if last_match is not None:
+                            out_f.write(buff[b_i : b_i + last_match.span()[1]] + '\n')
+                        b_i += last_match.span()[1]
+                        break
                     p_i += 1
 
 
