@@ -53,6 +53,7 @@ def main() -> None:
         for _ in range(args.num_passes_through_dataset):
             with args.input_file.open(buffering=BUFF_SIZE) as in_f:
                 buff = in_f.read(BUFF_SIZE).replace('\n', ' ')
+                last_match = None
                 while True:
                     read_chunks_len = 0
                     if p_i == len(perm):
@@ -60,14 +61,13 @@ def main() -> None:
                         random.shuffle(perm)
                     buff = buff[b_i:]
                     b_i = 0
-                    while args.end_length >= len(
-                        small.WORD_WITH_PRECEDING_AND_FOLLOWING_PUNCTUATION.findall(buff[b_i:])
-                    ):
-                        chunk = in_f.read(BUFF_SIZE)
-                        if not chunk:
-                            break
-                        buff += chunk.replace('\n', ' ')
-                        read_chunks_len += len(chunk)
+                    chunk = in_f.read(BUFF_SIZE)
+                    if not chunk:
+                        if last_match is not None:
+                            out_f.write(buff[b_i : b_i + last_match.span()[1]] + '\n')
+                            b_i += last_match.span()[1]
+                    buff += chunk.replace('\n', ' ')
+                    read_chunks_len += len(chunk)
                     found_required_length = False
                     last_match = None
                     for m_i, m in enumerate(small.WORD_WITH_PRECEDING_AND_FOLLOWING_PUNCTUATION.finditer(buff[b_i:])):
@@ -77,12 +77,8 @@ def main() -> None:
                             b_i += m.span()[1]
                             found_required_length = True
                             break
-                    if not found_required_length:
-                        if last_match is not None:
-                            out_f.write(buff[b_i : b_i + last_match.span()[1]] + '\n')
-                        b_i += last_match.span()[1]
-                        break
-                    p_i += 1
+                    if found_required_length:
+                        p_i += 1
                     progress_bar.update(read_chunks_len)
     progress_bar.close()
 
