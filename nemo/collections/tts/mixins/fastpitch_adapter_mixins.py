@@ -53,6 +53,13 @@ class FastPitchAdapterModelMixin(AdapterModelPTMixin):
         if hasattr(self.fastpitch, 'decoder') and isinstance(self.fastpitch.decoder, AdapterModuleMixin):
             supports_adapters |= True
 
+        if hasattr(self.fastpitch, 'duration_predictor') and isinstance(self.fastpitch.duration_predictor, AdapterModuleMixin):
+            supports_adapters |= True
+
+        if hasattr(self.fastpitch, 'pitch_predictor') and isinstance(self.fastpitch.pitch_predictor, AdapterModuleMixin):
+            supports_adapters |= True
+
+            
         # If adapters are supported, setup the adapter config + any modules (pre-existing adapter modules)
         if supports_adapters:
             super().setup_adapters()
@@ -81,6 +88,7 @@ class FastPitchAdapterModelMixin(AdapterModelPTMixin):
         
         with open_dict(self.cfg):
             for module_name in module_names:
+                
                 # Check if encoder adapters should be added
                 if module_name  == 'encoder':
                     # Dispatch the call to the encoder.
@@ -90,6 +98,16 @@ class FastPitchAdapterModelMixin(AdapterModelPTMixin):
                 if module_name in ('', 'decoder'):
                     # Dispatch call to the decoder. (default use decoder)
                     self.fastpitch.decoder.add_adapter(name=name, cfg=cfg)
+                    
+                if module_name  == 'duration_predictor':
+                    # Dispatch the call to the duration_predictor.
+                    self.fastpitch.duration_predictor.add_adapter(name=name, cfg=cfg)
+                
+                if module_name  == 'pitch_predictor':
+                    # Dispatch the call to the pitch_predictor.
+                    self.fastpitch.pitch_predictor.add_adapter(name=name, cfg=cfg)
+                    
+                
 
     def is_adapter_available(self) -> bool:
         """
@@ -106,6 +124,12 @@ class FastPitchAdapterModelMixin(AdapterModelPTMixin):
 
         if hasattr(self.fastpitch, 'decoder') and isinstance(self.fastpitch.decoder, AdapterModuleMixin):
             config_contains_adapter |= self.fastpitch.decoder.is_adapter_available()
+            
+        if hasattr(self.fastpitch, 'duration_predictor') and isinstance(self.fastpitch.duration_predictor, AdapterModuleMixin):
+            config_contains_adapter |= self.fastpitch.duration_predictor.is_adapter_available()
+            
+        if hasattr(self.fastpitch, 'pitch_predictor') and isinstance(self.fastpitch.pitch_predictor, AdapterModuleMixin):
+            config_contains_adapter |= self.fastpitch.pitch_predictor.is_adapter_available()
 
         return config_contains_adapter
 
@@ -140,7 +164,7 @@ class FastPitchAdapterModelMixin(AdapterModelPTMixin):
         for module_name in module_names:
             # Check if encoder adapters should be used
             # Dispatch the call to the encoder.
-            if name is None or module_name  == 'encoder':
+            if name is None or module_name == 'encoder':
                 if self.fastpitch.encoder.is_adapter_available():
                     self.fastpitch.encoder.set_enabled_adapters(name=name, enabled=enabled)
 
@@ -148,6 +172,16 @@ class FastPitchAdapterModelMixin(AdapterModelPTMixin):
             if name is None or module_name in ('', 'decoder'):
                 if self.fastpitch.decoder.is_adapter_available():
                     self.fastpitch.decoder.set_enabled_adapters(name=name, enabled=enabled)
+                    
+            # Dispatch the call to the duration_predictor.
+            if module_name == 'duration_predictor':
+                if self.fastpitch.duration_predictor.is_adapter_available():
+                    self.fastpitch.duration_predictor.set_enabled_adapters(name=name, enabled=enabled)
+                    
+            # Dispatch the call to the pitch_predictor.
+            if module_name == 'pitch_predictor':
+                if self.fastpitch.pitch_predictor.is_adapter_available():
+                    self.fastpitch.pitch_predictor.set_enabled_adapters(name=name, enabled=enabled)
 
 
     def get_enabled_adapters(self) -> List[str]:
@@ -164,6 +198,12 @@ class FastPitchAdapterModelMixin(AdapterModelPTMixin):
 
         if hasattr(self.fastpitch, 'decoder') and isinstance(self.fastpitch.decoder, AdapterModuleMixin):
             enabled_adapters.extend(self.fastpitch.decoder.get_enabled_adapters())
+            
+        if hasattr(self.fastpitch, 'duration_predictor') and isinstance(self.fastpitch.duration_predictor, AdapterModuleMixin):
+            enabled_adapters.extend(self.fastpitch.duration_predictor.get_enabled_adapters())
+            
+        if hasattr(self.fastpitch, 'pitch_predictor') and isinstance(self.fastpitch.pitch_predictor, AdapterModuleMixin):
+            enabled_adapters.extend(self.fastpitch.pitch_predictor.get_enabled_adapters())
 
         enabled_adapters = list(sorted(list(set(enabled_adapters))))
 
@@ -203,6 +243,36 @@ class FastPitchAdapterModelMixin(AdapterModelPTMixin):
             if hasattr(self.fastpitch, 'decoder') and not isinstance(self.fastpitch.decoder, AdapterModuleMixin):
                 logging.warning(
                     f'{self.fastpitch.decoder.__class__.__name__} does not implement `AdapterModuleMixin`',
+                    mode=logging_mode.ONCE,
+                )
+                
+        # Test whether the decoder supports adapters
+        use_duration_predictor_adapter = global_cfg.get('check_duration_predictor_adapter', True)
+        if use_duration_predictor_adapter:
+            if not hasattr(self.fastpitch, 'duration_predictor'):
+                logging.warning(
+                    "Cannot add adapter to this object as it does not have an `fastpitch.duration_predictor` sub-module!",
+                    mode=logging_mode.ONCE,
+                )
+
+            if hasattr(self.fastpitch, 'duration_predictor') and not isinstance(self.fastpitch.duration_predictor, AdapterModuleMixin):
+                logging.warning(
+                    f'{self.fastpitch.duration_predictor.__class__.__name__} does not implement `AdapterModuleMixin`',
+                    mode=logging_mode.ONCE,
+                )
+                
+        # Test whether the decoder supports adapters
+        use_pitch_predictor_adapter = global_cfg.get('check_pitch_predictor_adapter', True)
+        if use_pitch_predictor_adapter:
+            if not hasattr(self.fastpitch, 'pitch_predictor'):
+                logging.warning(
+                    "Cannot add adapter to this object as it does not have an `fastpitch.pitch_predictor` sub-module!",
+                    mode=logging_mode.ONCE,
+                )
+
+            if hasattr(self.fastpitch, 'pitch_predictor') and not isinstance(self.fastpitch.pitch_predictor, AdapterModuleMixin):
+                logging.warning(
+                    f'{self.fastpitch.pitch_predictor.__class__.__name__} does not implement `AdapterModuleMixin`',
                     mode=logging_mode.ONCE,
                 )
 
@@ -248,5 +318,6 @@ class FastPitchAdapterModelMixin(AdapterModelPTMixin):
     @property
     def adapter_module_names(self) -> List[str]:
         module_names = super().adapter_module_names  # "Default" adapter module: ''
-        module_names.extend(['encoder', 'decoder'])  # Add support for `encoder` and `decoder` modules
+        # Add support for `encoder`, `decoder`, `duration_predictor`, `pitch_predictor` modules
+        module_names.extend(['encoder', 'decoder', 'duration_predictor', 'pitch_predictor']) 
         return module_names

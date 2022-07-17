@@ -34,6 +34,14 @@ def update_model_config_to_support_adapter(config) -> DictConfig:
         if dec_adapter_metadata is not None:
             config.output_fft._target_ = dec_adapter_metadata.adapter_class_path
             
+        pitch_predictor_adapter_metadata = adapter_mixins.get_registered_adapter(config.pitch_predictor._target_)
+        if pitch_predictor_adapter_metadata is not None:
+            config.pitch_predictor._target_ = pitch_predictor_adapter_metadata.adapter_class_path
+            
+        duration_predictor_adapter_metadata = adapter_mixins.get_registered_adapter(config.duration_predictor._target_)
+        if duration_predictor_adapter_metadata is not None:
+            config.duration_predictor._target_ = duration_predictor_adapter_metadata.adapter_class_path
+            
     return config
 
 @hydra_runner(config_path="conf", config_name="fastpitch_align_44100")
@@ -59,10 +67,10 @@ def main(cfg):
     if cfg.finetune.add_speaker_embedding and model.fastpitch.speaker_emb is not None:
         old_emb = model.fastpitch.speaker_emb
         # new_speaker_emb = torch.rand(1, old_emb.embedding_dim)
-        new_speaker_emb = old_emb.weight[3, :].unsqueeze(0)
+        new_speaker_emb = old_emb.weight[3, :].unsqueeze(0).detach().clone()
         
         new_emb = torch.nn.Embedding(old_emb.num_embeddings+1, old_emb.embedding_dim).from_pretrained(
-            torch.cat([old_emb.weight, new_speaker_emb], axis=0), freeze=False)
+            torch.cat([old_emb.weight.detach().clone(), new_speaker_emb], axis=0), freeze=False)
         model.fastpitch.speaker_emb = new_emb
         model.cfg.n_speakers += 1
         
@@ -70,11 +78,12 @@ def main(cfg):
     if cfg.finetune.add_adapter:
         adapter_cfg = adapter_modules.LinearAdapterConfig(
             in_features=model.cfg.output_fft.d_model,  # conformer specific model dim. Every layer emits this dim at its output.
-            dim=128,  # the bottleneck dimension of the adapter
+            dim=256,  # the bottleneck dimension of the adapter
             activation='swish',  # activation used in bottleneck block
             norm_position='post',  # whether to use LayerNorm at the beginning or the end of the adapter
         )
-        model.add_adapter(name='encoder+decoder:adapter', cfg=adapter_cfg)
+        model.add_adapter(name='encoder+decoder+duration_predictor+pitch_predictor:adapter', cfg=adapter_cfg)
+        # model.add_adapter(name='encoder+decoder:adapter', cfg=adapter_cfg)
         model.set_enabled_adapters(enabled=False)
         model.set_enabled_adapters('adapter', enabled=True)
         model.unfreeze_enabled_adapters()

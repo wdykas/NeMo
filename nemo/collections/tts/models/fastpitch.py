@@ -295,13 +295,14 @@ class FastPitchModel(SpectrogramGenerator, Exportable, FastPitchAdapterModelMixi
 
     @typecheck(output_types={"spect": NeuralType(('B', 'D', 'T_spec'), MelSpectrogramType())})
     def generate_spectrogram(
-        self, tokens: 'torch.tensor', speaker: Optional[int] = None, pace: float = 1.0
+        self, tokens: 'torch.tensor', speaker: Optional[int] = None, pace: float = 1.0, spec: Optional[torch.tensor] = None, 
+        mel_lens: Optional[torch.tensor] = None, input_lens: Optional[torch.tensor] = None,
     ) -> torch.tensor:
         if self.training:
             logging.warning("generate_spectrogram() is meant to be called in eval mode.")
         if isinstance(speaker, int):
             speaker = torch.tensor([speaker]).to(self.device)
-        spect, *_ = self(text=tokens, durs=None, pitch=None, speaker=speaker, pace=pace)
+        spect, *_ = self(text=tokens, durs=None, pitch=None, speaker=speaker, pace=pace, spec=spec, mel_lens=mel_lens, input_lens=input_lens)
         return spect
 
     def training_step(self, batch, batch_idx):
@@ -376,7 +377,7 @@ class FastPitchModel(SpectrogramGenerator, Exportable, FastPitchAdapterModelMixi
                 self.tb_logger.add_image(
                     "train_soft_attn", plot_alignment_to_numpy(soft_attn.T), self.global_step, dataformats="HWC",
                 )
-
+        
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -424,6 +425,7 @@ class FastPitchModel(SpectrogramGenerator, Exportable, FastPitchAdapterModelMixi
         }
 
     def validation_epoch_end(self, outputs):
+        
         collect = lambda key: torch.stack([x[key] for x in outputs]).mean()
         val_loss = collect("val_loss")
         mel_loss = collect("mel_loss")

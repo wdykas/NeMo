@@ -228,6 +228,7 @@ class TransformerLayer(nn.Module, adapter_mixins.AdapterModuleMixin):
         output = self.pos_ff(output, conditioning)
         output *= mask
         
+        # [TODO]
         if self.is_adapter_available():
             output = self.forward_enabled_adapters(output)
             
