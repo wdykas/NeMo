@@ -5,7 +5,7 @@ from pathlib import Path
 from tqdm import tqdm
 
 
-MARKUP = re.compile('^<doc/>.*\n|^<doc docid=.*\n', flags=re.MULTILINE)
+MARKUP = re.compile('^</doc>.*\n|^<doc docid=.*\n', flags=re.MULTILINE)
 
 
 def parse_args() -> argparse.Namespace:
