@@ -57,6 +57,8 @@ WIKI_EXTRACTED_HEADER = re.compile(r'^<doc id="([^"]+)" url="([^"]+)" title="([^
 WIKI_EXTRACTED_DOC_PROGRESS_PERIOD = 100
 
 SEVERAL_NEW_LINES_PATTERN = re.compile('(?:\n[ \t]*){2,}')
+LOWER_DOT_UPPER_PATTERN = re.compile(r'([a-z])\.([A-Z0-9])')
+LOWER_DOT_FIGURE_PATTERN = re.compile(r'((\w)\.|^) ?Figure [a-zA-Z]?[0-9]+[a-zA-Z]?[.:]? *')
 LIST_PATTERN = re.compile(f'^ *(?:{small.ROMAN_NUMERAL.pattern}|[0-9]+|[a-z]) *[.)]', flags=re.I | re.MULTILINE)
 NEW_LINE_WITH_SPACES_PATTERN = re.compile(' *\n *')
 DOUBLE_HYPHEN_PATTERN = re.compile(' *-- *')
@@ -78,7 +80,7 @@ INTACT_SENTENCES_PROGRESS_PERIOD = 10000
 PG_19_MIN_PARAGRAPH_LEN = 100
 
 MAX_FRACTION_OF_WORDS_WITHOUT_LETTERS = 0.7
-MAX_QUOTIENT_OF_NUMBER_OF_DOTS_IN_SENTENCE = 0.5
+MAX_QUOTIENT_OF_NUMBER_OF_DOTS_IN_SENTENCE = 0.2
 MIN_NUM_WORDS_FOR_FRACTION_CRITERIA = 15
 
 GOOGLE_NORMALIZATION_DATASET_MIN_NUM_WORDS_IN_SENTENCE = 6
@@ -1080,6 +1082,8 @@ class PubMedWorker:
                         return
         original_text = small.SPACING_CHARACTERS_TO_REPLACE.sub(' ', original_text)
         text = UPPERCASE_INTRO.sub(r'\1', big.ALL_PARENTHESES.sub(' ', SQUARE_BRACKETS_PATTERN.sub(' ', original_text)))
+        text = LOWER_DOT_FIGURE_PATTERN.sub(r'\1 ', text)
+        text = LOWER_DOT_UPPER_PATTERN.sub(r'\1. \2', text)
         paragraphs = SEVERAL_NEW_LINES_PATTERN.split(text)
         paragraphs = [SHORT_LINE.sub('\n', p) if p.count('\n') > 1 else p for p in paragraphs]
         paragraphs = [
@@ -1103,7 +1107,7 @@ class PubMedWorker:
                 ps, self.tokenizer, tok_chars, untok_chars, remove_entire_lines=True
             )
             ps = ps.split('\n')
-            ps = [sent for sent in ps if is_sent_plausible(sent)]
+            ps = [sent for sent in ps if is_sent_plausible(sent) and '@' not in sent]
             new_paragraphs.append(' '.join(ps))
         text = '\n'.join(new_paragraphs) + '\n'
         text = big.normalize_punctuation(text, 'en')
