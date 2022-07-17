@@ -2061,6 +2061,8 @@ def main():
             doc_id_to_file_i.update(corpus_doc_id_to_file_i)
             start_doc_id = max(corpus_doc_id_to_file_i.keys()) + 1
             start_file_id = max(corpus_doc_id_to_file_i.values()) + 1
+    if args.stop_after_documents_preparation:
+        return
     if args.dev_size > 0 or args.test_size > 0:
         after_extraction_document_dir = args.output_dir / Path("after_extraction_documents")
     else:
@@ -2270,6 +2272,11 @@ def get_args(
         "--resume_from",
         choices=["cutting", "shuffling", "writing"],
         help="From which stage big dataset preparation is started."
+    )
+    parser.add_argument(
+        "--stop_after_documents_preparation",
+        action='store_true',
+        help="If this option is set, then after document preparation program exits.",
     )
     parser.add_argument("--num_jobs", default=1, type=int)
     args = parser.parse_args()
