@@ -9,6 +9,7 @@ from tqdm import tqdm
 
 
 BUFFER_SIZE = 2 ** 25
+MIN_FRACTION_OF_NUMBER_OF_EXTRACTED_LINES_FOR_SAMPLING = 0.2
 
 
 def parse_args() -> argparse.Namespace:
@@ -40,7 +41,13 @@ def get_num_lines(input_file: Union[str, os.PathLike]) -> int:
 def main() -> None:
     args = parse_args()
     num_lines = get_num_lines(args.input_file)
-    extracted_line_indices = set([random.randrange(0, num_lines) for _ in range(args.num_lines_to_extract)])
+    if args.num_lines_to_extract / num_lines < MIN_FRACTION_OF_NUMBER_OF_EXTRACTED_LINES_FOR_SAMPLING:
+        extracted_line_indices = {random.randrange(0, num_lines) for _ in range(args.num_lines_to_extract)}
+        while len(extracted_line_indices) < len(args.num_lines_to_extract):
+            extracted_line_indices.add(random.randrange(0, num_lines))
+    else:
+        all_indices = list(range(num_lines))
+        extracted_line_indices = set(random.sample(all_indices, args.num_lines_to_extract))
     with args.input_file.open(buffering=BUFFER_SIZE) as in_f, \
             args.extracted_file.open('w', buffering=BUFFER_SIZE) as e_f, \
             args.remaining_file.open('w', buffering=BUFFER_SIZE) as r_f:
