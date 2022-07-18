@@ -59,7 +59,7 @@ WIKI_EXTRACTED_DOC_PROGRESS_PERIOD = 100
 SEVERAL_NEW_LINES_PATTERN = re.compile('(?:\n[ \t]*){2,}')
 NEW_LINES_PATTERN = re.compile('(?:\n[ \t]*)+')
 LOWER_DOT_UPPER_PATTERN = re.compile(r'([a-z])\.([A-Z0-9])')
-LOWER_DOT_FIGURE_PATTERN = re.compile(
+FIGURE_PATTERN = re.compile(
     r'(\.|^) *(Figure|FIGURE|Fig\.|FIG\.) [a-zA-Z]?[0-9]+[a-zA-Z]?[.:]? *', flags=re.MULTILINE
 )
 ADDITIONAL_FILE_PATTERN = re.compile(
@@ -78,7 +78,7 @@ OVERVIEW_PATTERN = re.compile(r'^[0-9]* *(Overview|OVERVIEW)[.:]? (?=[A-Z0-9])',
 DOI_PATTERN = re.compile('doi:', flags=re.IGNORECASE)
 BROKEN_YEAR_PATTERN = re.compile('^ *[0-9]+([A-Z])', flags=re.MULTILINE)
 REFERENCES_SECTION_PATTERN = re.compile('^ *={2,} *refs|^ *references *$', flags=re.IGNORECASE | re.MULTILINE)
-NUMBERS_WITHOUT_PUNCTUATION_PATTERN = re.compile(r'[0-9.]+ [0-9.]+')
+NUMBERS_WITHOUT_PUNCTUATION_PATTERN = re.compile(r'[0-9.]+ *(\([0-9. ]+\))? *[0-9.]+')
 LIST_PATTERN = re.compile(f'^ *(?:{small.ROMAN_NUMERAL.pattern}|[0-9]+|[a-z]) *[.)]', flags=re.I | re.MULTILINE)
 NEW_LINE_WITH_SPACES_PATTERN = re.compile(' *\n *')
 DOUBLE_HYPHEN_PATTERN = re.compile(' *-- *')
@@ -86,8 +86,15 @@ SQUARE_BRACKETS_PATTERN = re.compile(r' ?\[[^]]+] *')
 UNDERSCORE_PATTERN = re.compile(fr'(?<![{WC}/])_([^_]+)_(?![{WC}/])')
 WORD_CHAR_ENDING_PATTERN = re.compile(f'[{WC}]$')
 UPPERCASE_INTRO = re.compile('[A-Z ]{2,}: ([A-Z])')
-SHORT_LINE = re.compile('^.{1,50}\n', flags=re.MULTILINE)
+SHORT_LINE = re.compile('^.{1,40}\n', flags=re.MULTILINE)
 LETTER = re.compile('[a-zA-Z]')
+TWO_CHARACTERS_ROMAN_NUMERAL = re.compile(
+    r'(M{1,3}(CM|CD|D?C{0,3})?(XC|XL|L?X{0,3})?(IX|IV|V?I{0,3})?'
+    r'|(CM|CD|DC{0,3}|C{1,3})(XC|XL|L?X{0,3})?(IX|IV|V?I{0,3})?'
+    r'|(XC|XL|LX{0,3}|X{1,3})(IX|IV|V?I{0,3})?'
+    r'|(IX|IV|VI{0,3}|I{1,3}))',
+    flags=re.I,
+)
 
 NUM_LINES_PER_NEWS_CRAWL_TMP_FILE = 10 ** 6
 
@@ -102,9 +109,10 @@ PG_19_MIN_PARAGRAPH_LEN = 100
 MAX_FRACTION_OF_WORDS_WITHOUT_LETTERS = 0.5
 MAX_QUOTIENT_OF_NUMBER_OF_DOTS_IN_SENTENCE = 0.2
 MIN_NUM_WORDS_FOR_FRACTION_CRITERIA = 15
-MAX_DIGITS_FRACTION = 0.3
-MAX_WORD_LENGTH_FOR_LETTER_WORDS = 25
-MAX_WORD_LENGTH_FOR_WORDS_WITH_NOT_ALPHABETIC_CHARACTERS = 12
+MAX_DIGITS_FRACTION = 0.2
+MAX_UPPER_FRACTION = 0.2
+MAX_LENGTH_OF_FRAGMENT_WITHOUT_SPACES = 25
+MAX_LENGTH_OF_FRAGMENT_WITHOUT_SPACES_AND_HYPHENS = 20
 MAX_NUM_WORDS = 100
 
 GOOGLE_NORMALIZATION_DATASET_MIN_NUM_WORDS_IN_SENTENCE = 6
@@ -1078,13 +1086,15 @@ def is_sent_plausible(sent: str) -> bool:
     num_digits = sum(map(str.isdigit, sent))
     if num_digits / len(sent) > MAX_DIGITS_FRACTION:
         return False
-    for word in words:
-        if len(word) > MAX_WORD_LENGTH_FOR_LETTER_WORDS:
+    num_upper = sum(map(str.isupper, sent))
+    if num_upper / len(sent) > MAX_UPPER_FRACTION:
+        return False
+    for no_space_fragment in sent.split():
+        if len(no_space_fragment) > MAX_LENGTH_OF_FRAGMENT_WITHOUT_SPACES:
             return False
         if (
-            len(word) > MAX_WORD_LENGTH_FOR_WORDS_WITH_NOT_ALPHABETIC_CHARACTERS
-            and not word.isalpha()
-            and '-' not in word
+            len(no_space_fragment) > MAX_LENGTH_OF_FRAGMENT_WITHOUT_SPACES_AND_HYPHENS
+            and '-' not in no_space_fragment
         ):
             return False
     if len(words) > MAX_NUM_WORDS:
@@ -1123,8 +1133,9 @@ class PubMedWorker:
         if ref_header is not None:
             original_text = original_text[:ref_header.span()[0]]
         text = UPPERCASE_INTRO.sub(r'\1', big.ALL_PARENTHESES.sub(' ', SQUARE_BRACKETS_PATTERN.sub(' ', original_text)))
-        text = LOWER_DOT_FIGURE_PATTERN.sub(r'\1 ', text)
         text = ADDITIONAL_FILE_PATTERN.sub('', text)
+        text = FIGURE_PATTERN.sub(r'\1 ', text)
+        text = FIGURE_PATTERN.sub(r'\1 ', text)
         text = TABLE_PATTERN.sub('', text)
         text = LOWER_DOT_UPPER_PATTERN.sub(r'\1. \2', text)
         text = ACKNOWLEDGEMENTS_PATTERN.sub(' ', text)
@@ -1151,7 +1162,7 @@ class PubMedWorker:
             ps, _ = big.remove_suspicious_lines_and_rearrange_quotes_and_spaces(
                 '\n'.join(ps),
                 normalize_and_check_quotes_and_parentheses=True,
-                check_suspicious_endings=False,
+                check_suspicious_endings=True,
                 check_suspicious_parentheses=True,
             )
             ps, tok_chars, untok_chars, _ = small.remove_untokenizable_characters_from_text(
@@ -1165,6 +1176,13 @@ class PubMedWorker:
             ]
             new_paragraphs.append(' '.join(ps))
         text = '\n'.join(new_paragraphs) + '\n'
+        text, _ = big.remove_suspicious_lines_and_rearrange_quotes_and_spaces(
+            text,
+            normalize_and_check_quotes_and_parentheses=True,
+            check_suspicious_endings=True,
+            check_suspicious_parentheses=True,
+        )
+        text = SHORT_LINE.sub('\n', text)
         text = BROKEN_YEAR_PATTERN.sub('', text)
         text = big.normalize_punctuation(text, 'en')
         text = big.NEW_LINE_DUP.sub('\n', text)
