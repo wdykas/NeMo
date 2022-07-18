@@ -44,6 +44,22 @@ def update_model_config_to_support_adapter(config) -> DictConfig:
             
     return config
 
+
+class SpeakerEmbedding(torch.nn.Module):
+    def __init__(self, pretrained_embedding):
+        super(SpeakerEmbedding, self).__init__()
+        self.pretrained_embedding = torch.nn.Parameter(pretrained_embedding.weight.detach().clone())
+        self.pretrained_embedding.requires_grad = False
+        self.num_embeddings = pretrained_embedding.num_embeddings
+        self.embedding_weight = torch.nn.Parameter(torch.ones(1, self.num_embeddings))
+     
+    def forward(self, speaker):
+        weight = self.embedding_weight.repeat(len(speaker), 1)
+        weight = torch.nn.functional.softmax(weight, dim=-1)
+        speaker_emb = weight @ self.pretrained_embedding
+        return speaker_emb
+    
+
 @hydra_runner(config_path="conf", config_name="fastpitch_align_44100")
 def main(cfg):
     if hasattr(cfg.model.optim, 'sched'):
@@ -52,10 +68,14 @@ def main(cfg):
         logging.warning("The recommended learning rate for finetuning is 2e-4")
         
     trainer = pl.Trainer(**cfg.trainer)
-    exp_manager(trainer, cfg.get("exp_manager", None))    
-    cfg.model.n_speakers += 1
+    exp_manager(trainer, cfg.get("exp_manager", None))   
+    n_speakers = cfg.model.n_speakers
+    
+    if cfg.finetune.add_speaker_embedding:
+        cfg.model.n_speakers += 1
+        
     model = FastPitchModel(cfg=update_model_config_to_support_adapter(cfg.model), trainer=trainer)
-    model.fastpitch.speaker_emb = torch.nn.Embedding(model.fastpitch.speaker_emb.num_embeddings-1, model.fastpitch.speaker_emb.embedding_dim)
+    model.fastpitch.speaker_emb = torch.nn.Embedding(n_speakers, model.fastpitch.speaker_emb.embedding_dim)
     model.maybe_init_from_pretrained_checkpoint(cfg=cfg)
     
      # Freeze 
@@ -66,14 +86,23 @@ def main(cfg):
     # Add new speaker embedding
     if cfg.finetune.add_speaker_embedding and model.fastpitch.speaker_emb is not None:
         old_emb = model.fastpitch.speaker_emb
+        
+        # Choose random
         # new_speaker_emb = torch.rand(1, old_emb.embedding_dim)
+        # Choose existing
         new_speaker_emb = old_emb.weight[3, :].unsqueeze(0).detach().clone()
         
         new_emb = torch.nn.Embedding(old_emb.num_embeddings+1, old_emb.embedding_dim).from_pretrained(
             torch.cat([old_emb.weight.detach().clone(), new_speaker_emb], axis=0), freeze=False)
         model.fastpitch.speaker_emb = new_emb
         model.cfg.n_speakers += 1
-        
+    
+    # Learn speaker weights
+    elif cfg.finetune.add_speaker_weights and model.fastpitch.speaker_emb is not None:
+        old_emb = model.fastpitch.speaker_emb
+        new_emb = SpeakerEmbedding(pretrained_embedding=old_emb)
+        model.fastpitch.speaker_emb = new_emb
+
     # Add adapter
     if cfg.finetune.add_adapter:
         adapter_cfg = adapter_modules.LinearAdapterConfig(
