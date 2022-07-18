@@ -81,7 +81,8 @@ DOI_PATTERN = re.compile('doi:', flags=re.IGNORECASE)
 BROKEN_YEAR_PATTERN = re.compile('^ *[0-9]+([A-Z])', flags=re.MULTILINE)
 REFERENCES_SECTION_PATTERN = re.compile('^ *={2,} *refs|^ *references *$', flags=re.IGNORECASE | re.MULTILINE)
 NUMBERS_WITHOUT_PUNCTUATION_PATTERN = re.compile(r'[0-9.]+ *(\([0-9. ]+\))? *[0-9.]+')
-LIST_PATTERN = re.compile(f'^ *(?:{small.ROMAN_NUMERAL.pattern}|[0-9]+|[a-z]) *[.)]?', flags=re.I | re.MULTILINE)
+LIST_PATTERN = re.compile(f'^ *(?:{small.ROMAN_NUMERAL.pattern}|[0-9]+|[a-z]) *[.)]', flags=re.I | re.MULTILINE)
+LIST_PATTERN_NOT_TERMINATED = re.compile(f'^ *(?:{small.ROMAN_NUMERAL.pattern}|[0-9]+|[a-z]) ', flags=re.I | re.MULTILINE)
 NEW_LINE_WITH_SPACES_PATTERN = re.compile(' *\n *')
 DOUBLE_HYPHEN_PATTERN = re.compile(' *-- *')
 SQUARE_BRACKETS_PATTERN = re.compile(r' ?\[[^]]+] *')
@@ -1153,7 +1154,10 @@ class PubMedWorker:
         text = METHODS_PATTERN.sub('', text)
         text = OVERVIEW_PATTERN.sub('', text)
         text = SHORT_LINE.sub('\n', text)
-        paragraphs = [p for p in NEW_LINES_PATTERN.split(text) if LIST_PATTERN.search(p) is None]
+        paragraphs = [
+            p for p in NEW_LINES_PATTERN.split(text)
+            if LIST_PATTERN.search(p) is None and LIST_PATTERN_NOT_TERMINATED.search(p) is None
+        ]
         # paragraphs = [
         #     NEW_LINE_WITH_SPACES_PATTERN.sub(' ', p).strip() for p in paragraphs
         #     if LIST_PATTERN.search(p) is None
