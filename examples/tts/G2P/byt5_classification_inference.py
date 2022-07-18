@@ -38,6 +38,7 @@ filepath=/home/ebakhturina/g2p_scripts/WikipediaHomographData-master/data/eval/r
 Wiki only data:
 bert_base
 -Accuracy: 98.89% (18 errors out of 1615)
+
 bert_large: 
 -Accuracy: 98.95% (17 errors out of 1615)
 98.82% (19 errors out of 1615)
