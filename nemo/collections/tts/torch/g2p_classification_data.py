@@ -28,9 +28,7 @@ from nemo.collections.tts.torch.g2p_utils.data_utils import (
     read_wikihomograph_file,
     read_wordids,
 )
-import sys
-sys.path.append("/home/ebakhturina/NeMo/nemo/collections/tts/torch/g2p_utils")
-from convert_aligner_data_to_g2p_classification import convert_to_wiki_format
+from nemo.collections.tts.torch.g2p_utils.convert_aligner_data_to_g2p_classification import convert_to_wiki_format
 from nemo.core.classes import Dataset
 from nemo.utils import logging
 
