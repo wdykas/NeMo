@@ -100,18 +100,18 @@ class G2PClassificationDataset(Dataset):
                 self.data.append({"input": sentence, "target": target, "target_and_negatives": target_and_negatives})
         print("--->", len(self.data), dir_name)
 
-        # # TODO: refactor
-        # if "train" in dir_name:
-        #     #  add Aligner data data
-        #     print("\nprocessing: aligner data")
-        #     lj_manifest = "/mnt/sdb_4/g2p/data_ipa/training_data_v8/raw_files/filtered_disamb_ljspeech_train_ipa.json"
-        #     hifi_9017_manifest = "/mnt/sdb_4/g2p/data_ipa/training_data_v8/raw_files/disamb_9017_clean_train_heteronyms_filtered_ipa.json"
-        #     data = convert_to_wiki_format([lj_manifest, hifi_9017_manifest])
-        #     for sentence, start_end_index, homograph, word_id in zip(*data):
-        #         start, end = start_end_index
-        #         target, target_and_negatives = self._prepare_sample(sentence, start, end, homograph, word_id)
-        #         self.data.append({"input": sentence, "target": target, "target_and_negatives": target_and_negatives})
-        #     print("--->", len(self.data), "aligner")
+        # TODO: refactor
+        if "train" in dir_name:
+            #  add Aligner data data
+            print("\nprocessing: aligner data")
+            lj_manifest = "/mnt/sdb_4/g2p/data_ipa/training_data_v8/raw_files/filtered_disamb_ljspeech_train_ipa.json"
+            hifi_9017_manifest = "/mnt/sdb_4/g2p/data_ipa/training_data_v8/raw_files/disamb_9017_clean_train_heteronyms_filtered_ipa.json"
+            data = convert_to_wiki_format([lj_manifest, hifi_9017_manifest])
+            for sentence, start_end_index, homograph, word_id in zip(*data):
+                start, end = start_end_index
+                target, target_and_negatives = self._prepare_sample(sentence, start, end, homograph, word_id)
+                self.data.append({"input": sentence, "target": target, "target_and_negatives": target_and_negatives})
+            print("--->", len(self.data), "aligner")
 
 
     def _prepare_sample(self, sentence, start, end, homograph, word_id):
