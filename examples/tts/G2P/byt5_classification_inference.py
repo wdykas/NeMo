@@ -35,9 +35,22 @@ data_dir=/home/ebakhturina/g2p_scripts/WikipediaHomographData-master/data/eval
 
 filepath=/home/ebakhturina/g2p_scripts/WikipediaHomographData-master/data/eval/read.tsv
 
-Accuracy: 98.89% (18 errors out of 1615) - bert_base
-bert_large: Accuracy: 98.95% (17 errors out of 1615)
+Wiki only data:
+bert_base
+-Accuracy: 98.89% (18 errors out of 1615)
+bert_large: 
+-Accuracy: 98.95% (17 errors out of 1615)
+98.82% (19 errors out of 1615)
+Accuracy: 99.13% (14 errors out of 1615)
 
+bert_large with aligner data
+Accuracy: 99.26% (12 errors out of 1615)
+98.95% (17 errors out of 1615)
+
+bert-base with aligner data:
+Accuracy: 98.82% (19 errors out of 1615) 
+Accuracy: 98.95% (17 errors out of 1615)
+98.7% (21 errors out of 1615)
 """
 
 
@@ -96,6 +109,7 @@ def main(cfg):
     model.set_trainer(trainer)
     model = model.eval()
 
+    logging.info(f'Config Params: {model._cfg}')
     sentences = []
     start_end_indices = []
     homographs = []

@@ -960,6 +960,7 @@ class T5G2PDataset(Dataset):
         tokenizer: PreTrainedTokenizerBase,
         max_source_len: int = 512,
         max_target_len: int = 512,
+        do_lower: bool = False
     ):
         # TODO: docstring
         super().__init__()
@@ -967,6 +968,7 @@ class T5G2PDataset(Dataset):
         self.tokenizer = tokenizer
         self.max_source_len = max_source_len
         self.max_target_len = max_target_len
+        self.do_lower = do_lower
 
         self.data = []
 
@@ -989,7 +991,10 @@ class T5G2PDataset(Dataset):
                     continue
 
                 # TODO: change pred_text to something more sensible in manifest
-                self.data.append({"graphemes": item["text_graphemes"], "phonemes": item["text"]})
+                graphemes = item["text_graphemes"]
+                if do_lower:
+                    graphemes = graphemes.lower()
+                self.data.append({"graphemes": graphemes, "phonemes": item["text"]})
 
         print(f"=======> Filtered {num_filtered} entries.")
 

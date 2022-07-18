@@ -5,7 +5,7 @@
 JOB_ID=$1
 BATCH_SIZE=64
 PER_WORD=${2:-"None"}
-VERSION=7
+VERSION=8
 
 if [[ ${PER_WORD,,} == "true" ]]; then
   PER_WORD="--per_word "
@@ -13,8 +13,8 @@ if [[ ${PER_WORD,,} == "true" ]]; then
 fi
 echo "PER_WORD: ${PER_WORD}"
 
-for file in /mnt/sdb_4/g2p/chpts/t5_generative/v${VERSION}/${JOB_ID}/g2p/T5G2P/*/checkpoints/T5G2P.nemo
-#for file in /mnt/sdb_4/g2p/chpts/t5_generative/v7/results_wiki25_no_aligner/g2p/T5G2P/*/checkpoints/T5G2P.nemo
+#for file in /mnt/sdb_4/g2p/chpts/t5_generative/v${VERSION}/${JOB_ID}/g2p/T5G2P/*/checkpoints/T5G2P.nemo
+for file in /mnt/sdb_4/g2p/chpts/t5_generative/v8/3137260/2022-07-16_02-15-04/checkpoints/T5G2P.nemo
 do
   LOG_CLEAN=${JOB_ID}_log_clean.txt
   LOG_NO_CLEAN=${JOB_ID}_log_no_clean.txt
@@ -37,4 +37,5 @@ do
   cat ${LOG_CLEAN}
   echo "=======> Eval for ${JOB_ID} with CLEAN=False"
   cat ${LOG_NO_CLEAN}
+  echo ${file}
 done

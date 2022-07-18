@@ -167,7 +167,7 @@ class T5G2PModel(ModelPT):  # TODO: Check parent class
         if "dataloader_params" not in cfg or not isinstance(cfg.dataloader_params, DictConfig):
             raise ValueError(f"No dataloader_params for {name}")
 
-        dataset = T5G2PDataset(cfg.manifest_filepath, self._tokenizer, self.max_source_len, self.max_target_len)
+        dataset = T5G2PDataset(cfg.manifest_filepath, self._tokenizer, self.max_source_len, self.max_target_len, self.do_lower)
 
         return torch.utils.data.DataLoader(dataset, collate_fn=dataset.collate_fn, **cfg.dataloader_params)
 

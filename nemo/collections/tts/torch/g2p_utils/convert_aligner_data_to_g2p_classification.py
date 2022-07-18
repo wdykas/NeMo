@@ -8,7 +8,9 @@ import string
 punct = string.punctuation
 
 def is_valid(text, start_idx, end_idx):
-	if (start_idx > 0 and text[start_idx - 1].isalpha()) or (end_idx < (len(text) - 1) and text[end_idx].isalpha()):
+	if start_idx > 0 and (text[start_idx - 1].isalpha() or text[start_idx - 1].isdigit()):
+		return False
+	if end_idx < len(text) and (text[end_idx].isalpha() or text[end_idx].isdigit()):
 		return False
 	return True
 
@@ -30,6 +32,7 @@ def convert_to_wiki_format(manifests):
 				found_in_line = []
 				text = line["text_graphemes"]
 				text = text.lower()
+
 				for heteronym in heteronyms:
 					if heteronym in text:
 						start_idx = text.find(heteronym)

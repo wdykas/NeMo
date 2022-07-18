@@ -79,7 +79,7 @@ class G2PClassificationDataset(Dataset):
         """
 
         super().__init__()
-
+        print(f"\nprocessing: {dir_name}")
         if not os.path.exists(dir_name):
             raise ValueError(f"{dir_name} not found")
 
@@ -100,34 +100,40 @@ class G2PClassificationDataset(Dataset):
                 self.data.append({"input": sentence, "target": target, "target_and_negatives": target_and_negatives})
         print("--->", len(self.data), dir_name)
 
-        # TODO: refactor
-        if "train" in dir_name:
-            #  add Aligner data data
-            lj_manifest = "/mnt/sdb_4/g2p/data_ipa/training_data_v8/raw_files/filtered_disamb_ljspeech_train_ipa.json"
-            hifi_9017_manifest = "/mnt/sdb_4/g2p/data_ipa/training_data_v8/raw_files/disamb_9017_clean_train_heteronyms_filtered_ipa.json"
-            data = convert_to_wiki_format([lj_manifest, hifi_9017_manifest])
-            for sentence, start_end_index, homograph, word_id in zip(*data):
-                start, end = start_end_index
-                target, target_and_negatives = self._prepare_sample(sentence, start, end, homograph, word_id)
-                self.data.append({"input": sentence, "target": target, "target_and_negatives": target_and_negatives})
-            print("--->", len(self.data), "aligner")
+        # # TODO: refactor
+        # if "train" in dir_name:
+        #     #  add Aligner data data
+        #     print("\nprocessing: aligner data")
+        #     lj_manifest = "/mnt/sdb_4/g2p/data_ipa/training_data_v8/raw_files/filtered_disamb_ljspeech_train_ipa.json"
+        #     hifi_9017_manifest = "/mnt/sdb_4/g2p/data_ipa/training_data_v8/raw_files/disamb_9017_clean_train_heteronyms_filtered_ipa.json"
+        #     data = convert_to_wiki_format([lj_manifest, hifi_9017_manifest])
+        #     for sentence, start_end_index, homograph, word_id in zip(*data):
+        #         start, end = start_end_index
+        #         target, target_and_negatives = self._prepare_sample(sentence, start, end, homograph, word_id)
+        #         self.data.append({"input": sentence, "target": target, "target_and_negatives": target_and_negatives})
+        #     print("--->", len(self.data), "aligner")
 
 
     def _prepare_sample(self, sentence, start, end, homograph, word_id):
-        homograph_span = sentence[start:end]
-        l_context_len = len(self.tokenizer.tokenize(sentence[:start], add_special_tokens=False))
-        r_context_len = len(self.tokenizer.tokenize(sentence[end:], add_special_tokens=False))
+        # TODO refactor do all tokenization here, remove from collate
+        l_context = self.tokenizer.tokenize(sentence[:start], add_special_tokens=False)
+        r_context = self.tokenizer.tokenize(sentence[end:], add_special_tokens=False)
+        l_context_len = len(l_context)
+        r_context_len = len(r_context)
+        sentence_tokenized = self.tokenizer.tokenize(sentence)
 
         grapheme_ipa_forms = self.wiki_homograph_dict[homograph]
-        target_len = len(self.tokenizer.tokenize(homograph_span, add_special_tokens=False))
+        target_len = len(sentence_tokenized[l_context_len:len(sentence_tokenized)-r_context_len])
         target = self.target_ipa.index(grapheme_ipa_forms[word_id])
 
         # add extra -100 tokens at the begging and end for [CLS] and [SEP] bert tokens, TODO: remove hardcoding
         target = (
                 [-100] * (l_context_len + 1) + [target] + [-100] * (target_len - 1) + [-100] * (r_context_len + 1)
         )
-
         target_and_negatives = [self.target_ipa.index(ipa_) for wordid_, ipa_ in grapheme_ipa_forms.items()]
+
+        if len(target) != len(self.tokenizer.tokenize(sentence, add_special_tokens=True)):
+            import pdb; pdb.set_trace()
         return target, target_and_negatives
 
     def __len__(self):
