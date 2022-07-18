@@ -63,6 +63,7 @@ FIGURE_PATTERN = re.compile(
     r'(\.|^) *(Figure|FIGURE|Fig\.|FIG\.) [a-zA-Z]?[0-9]+[a-zA-Z]?[.:]? *', flags=re.MULTILINE
 )
 NOTES_LINE_PATTERN = re.compile('^[ \t]*Notes:.*\n', flags=re.MULTILINE)
+ESCAPE_CHARACTERS_PATTERN = re.compile('[\t\v\r\f]')
 ADDITIONAL_FILE_PATTERN = re.compile(
     r'(^|\.) *([Aa]dditional [Ff]ile|ADDITIONAL FILE) [a-zA-Z]?[0-9]+[a-zA-Z]?[.:]? *(?=[A-Z])', flags=re.MULTILINE
 )
@@ -1135,10 +1136,11 @@ class PubMedWorker:
             original_text = original_text[:ref_header.span()[0]]
         text = UPPERCASE_INTRO.sub(r'\1', big.ALL_PARENTHESES.sub(' ', SQUARE_BRACKETS_PATTERN.sub(' ', original_text)))
         text = NOTES_LINE_PATTERN.sub('', text)
-        text = text.replace('\t', '\n')
-        text = text.replace('\v', '\n')
-        text = text.replace('\r', '\n')
-        text = text.replace('\f', '\n')
+        text = ESCAPE_CHARACTERS_PATTERN.sub('\n', text)
+        # text = text.replace('\t', '\n')
+        # text = text.replace('\v', '\n')
+        # text = text.replace('\r', '\n')
+        # text = text.replace('\f', '\n')
         text = ADDITIONAL_FILE_PATTERN.sub('', text)
         text = FIGURE_PATTERN.sub(r'\1 ', text)
         text = FIGURE_PATTERN.sub(r'\1 ', text)
