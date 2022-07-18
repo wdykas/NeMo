@@ -68,6 +68,7 @@ class T5G2PModel(ModelPT):  # TODO: Check parent class
 
         self.max_source_len = cfg.get("max_source_len", self._tokenizer.model_max_length)
         self.max_target_len = cfg.get("max_target_len", self._tokenizer.model_max_length)
+        self.do_lower = cfg.get("do_lower", False)
 
         # Ensure passed cfg is compliant with schema
         schema = OmegaConf.structured(T5G2PConfig)
