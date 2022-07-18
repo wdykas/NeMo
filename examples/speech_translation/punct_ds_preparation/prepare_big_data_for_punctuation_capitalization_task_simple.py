@@ -62,6 +62,7 @@ LOWER_DOT_UPPER_PATTERN = re.compile(r'([a-z])\.([A-Z0-9])')
 FIGURE_PATTERN = re.compile(
     r'(\.|^) *(Figure|FIGURE|Fig\.|FIG\.) [a-zA-Z]?[0-9]+[a-zA-Z]?[.:]? *', flags=re.MULTILINE
 )
+NOTES_LINE_PATTERN = re.compile('^[ \t]*Notes:.*\n', flags=re.MULTILINE)
 ADDITIONAL_FILE_PATTERN = re.compile(
     r'(^|\.) *([Aa]dditional [Ff]ile|ADDITIONAL FILE) [a-zA-Z]?[0-9]+[a-zA-Z]?[.:]? *(?=[A-Z])', flags=re.MULTILINE
 )
@@ -79,7 +80,7 @@ DOI_PATTERN = re.compile('doi:', flags=re.IGNORECASE)
 BROKEN_YEAR_PATTERN = re.compile('^ *[0-9]+([A-Z])', flags=re.MULTILINE)
 REFERENCES_SECTION_PATTERN = re.compile('^ *={2,} *refs|^ *references *$', flags=re.IGNORECASE | re.MULTILINE)
 NUMBERS_WITHOUT_PUNCTUATION_PATTERN = re.compile(r'[0-9.]+ *(\([0-9. ]+\))? *[0-9.]+')
-LIST_PATTERN = re.compile(f'^ *(?:{small.ROMAN_NUMERAL.pattern}|[0-9]+|[a-z]) *[.)]', flags=re.I | re.MULTILINE)
+LIST_PATTERN = re.compile(f'^ *(?:{small.ROMAN_NUMERAL.pattern}|[0-9]+|[a-z]) *[.)]?', flags=re.I | re.MULTILINE)
 NEW_LINE_WITH_SPACES_PATTERN = re.compile(' *\n *')
 DOUBLE_HYPHEN_PATTERN = re.compile(' *-- *')
 SQUARE_BRACKETS_PATTERN = re.compile(r' ?\[[^]]+] *')
@@ -1133,6 +1134,11 @@ class PubMedWorker:
         if ref_header is not None:
             original_text = original_text[:ref_header.span()[0]]
         text = UPPERCASE_INTRO.sub(r'\1', big.ALL_PARENTHESES.sub(' ', SQUARE_BRACKETS_PATTERN.sub(' ', original_text)))
+        text = NOTES_LINE_PATTERN.sub('', text)
+        text = text.replace('\t', '\n')
+        text = text.replace('\v', '\n')
+        text = text.replace('\r', '\n')
+        text = text.replace('\f', '\n')
         text = ADDITIONAL_FILE_PATTERN.sub('', text)
         text = FIGURE_PATTERN.sub(r'\1 ', text)
         text = FIGURE_PATTERN.sub(r'\1 ', text)
