@@ -85,6 +85,7 @@ LIST_PATTERN = re.compile(f'^ *(?:{small.ROMAN_NUMERAL.pattern}|[0-9]+|[a-z]) *[
 LIST_PATTERN_NOT_TERMINATED = re.compile(f'^ *(?:{small.ROMAN_NUMERAL.pattern}|[0-9]+|[a-z]) ', flags=re.I | re.MULTILINE)
 NEW_LINE_WITH_SPACES_PATTERN = re.compile(' *\n *')
 DOUBLE_HYPHEN_PATTERN = re.compile(' *-- *')
+SQUARE_BRACKET_PUNCTUATION_NO_SPACE = re.compile('(][.,;?!:"\'-()]*)(?=\\w)')
 SQUARE_BRACKETS_PATTERN = re.compile(r' ?\[[^]]+] *')
 UNDERSCORE_PATTERN = re.compile(fr'(?<![{WC}/])_([^_]+)_(?![{WC}/])')
 WORD_CHAR_ENDING_PATTERN = re.compile(f'[{WC}]$')
@@ -1111,37 +1112,19 @@ class PubMedWorker:
         self.tokenizer = tokenizer
         self.progress_queue = progress_queue
 
-    def __call__(self, file: Path, file_id: int, doc_id: int, idx: int) -> None:
-        with file.open() as f:
-            try:
-                original_text = f.read()
-            except UnicodeDecodeError:
-                try:
-                    with file.open('r', encoding='ISO-8859-1') as f_iso:
-                        original_text = f_iso.read()
-                except UnicodeDecodeError:
-                    with file.open('rb') as fb:
-                        blob = fb.read()
-                    encoding = chardet.detect(blob)['encoding']
-                    try:
-                        original_text = blob.decode(encoding)
-                    except UnicodeDecodeError:
-                        logging.warning(
-                            f"Could not decode file {file} using 'utf-8' and 'ISO-8859-1' and determined by `chardet` "
-                            f"encoding '{encoding}'. Skipping file {file}."
-                        )
-                        return
+    def clean_text(self, original_text: str) -> str:
         original_text = small.SPACING_CHARACTERS_TO_REPLACE.sub(' ', original_text)
         ref_header = REFERENCES_SECTION_PATTERN.search(original_text)
         if ref_header is not None:
             original_text = original_text[:ref_header.span()[0]]
-        text = UPPERCASE_INTRO.sub(r'\1', big.ALL_PARENTHESES.sub(' ', SQUARE_BRACKETS_PATTERN.sub(' ', original_text)))
+        text = UPPERCASE_INTRO.sub(
+            r'\1',
+            big.ALL_PARENTHESES.sub(
+                ' ', SQUARE_BRACKETS_PATTERN.sub(' ', SQUARE_BRACKET_PUNCTUATION_NO_SPACE.sub(r'\1 ', original_text)),
+            )
+        )
         text = NOTES_LINE_PATTERN.sub('', text)
         text = ESCAPE_CHARACTERS_PATTERN.sub('\n', text)
-        # text = text.replace('\t', '\n')
-        # text = text.replace('\v', '\n')
-        # text = text.replace('\r', '\n')
-        # text = text.replace('\f', '\n')
         text = ADDITIONAL_FILE_PATTERN.sub('', text)
         text = FIGURE_PATTERN.sub(r'\1 ', text)
         text = FIGURE_PATTERN.sub(r'\1 ', text)
@@ -1158,10 +1141,6 @@ class PubMedWorker:
             p for p in NEW_LINES_PATTERN.split(text)
             if LIST_PATTERN.search(p) is None and LIST_PATTERN_NOT_TERMINATED.search(p) is None
         ]
-        # paragraphs = [
-        #     NEW_LINE_WITH_SPACES_PATTERN.sub(' ', p).strip() for p in paragraphs
-        #     if LIST_PATTERN.search(p) is None
-        # ]
         paragraphs = [UNDERSCORE_PATTERN.sub(r'\1', DOUBLE_HYPHEN_PATTERN.sub(' - ', p)) for p in paragraphs]
         paragraphs = [
             p for p in paragraphs if WORD_CHAR_ENDING_PATTERN.search(p) is None and DOI_PATTERN.search(p) is None
@@ -1199,8 +1178,31 @@ class PubMedWorker:
         text = big.normalize_punctuation(text, 'en')
         text = big.NEW_LINE_DUP.sub('\n', text)
         if not text.strip():
-            return
+            return ""
         text = text.lstrip() + ('' if text[-1] == '\n' else '\n')
+        return text
+
+    def __call__(self, file: Path, file_id: int, doc_id: int, idx: int) -> None:
+        with file.open() as f:
+            try:
+                original_text = f.read()
+            except UnicodeDecodeError:
+                try:
+                    with file.open('r', encoding='ISO-8859-1') as f_iso:
+                        original_text = f_iso.read()
+                except UnicodeDecodeError:
+                    with file.open('rb') as fb:
+                        blob = fb.read()
+                    encoding = chardet.detect(blob)['encoding']
+                    try:
+                        original_text = blob.decode(encoding)
+                    except UnicodeDecodeError:
+                        logging.warning(
+                            f"Could not decode file {file} using 'utf-8' and 'ISO-8859-1' and determined by `chardet` "
+                            f"encoding '{encoding}'. Skipping file {file}."
+                        )
+                        return
+        text = self.clean_text(original_text)
         prepared_docs = {
             doc_id: {
                 "text": text,
