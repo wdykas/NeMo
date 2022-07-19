@@ -94,13 +94,8 @@ UPPERCASE_INTRO = re.compile('[A-Z ]{2,}: ([A-Z])')
 SHORT_LINE = re.compile('^.{1,40}\n', flags=re.MULTILINE)
 LETTER = re.compile('[a-zA-Z]')
 LETTER_HYPHEN_SPACE_PATTERN = re.compile('(?<=[a-zA-Z])- ')
-TWO_CHARACTERS_ROMAN_NUMERAL = re.compile(
-    r'(M{1,3}(CM|CD|D?C{0,3})?(XC|XL|L?X{0,3})?(IX|IV|V?I{0,3})?'
-    r'|(CM|CD|DC{0,3}|C{1,3})(XC|XL|L?X{0,3})?(IX|IV|V?I{0,3})?'
-    r'|(XC|XL|LX{0,3}|X{1,3})(IX|IV|V?I{0,3})?'
-    r'|(IX|IV|VI{0,3}|I{1,3}))',
-    flags=re.I,
-)
+TWO_CHARACTERS_ROMAN_NUMERAL = re.compile(r'\b[IVXLCDM]{2,}\b')
+LONG_UPPER_CASE_WORD = re.compile(r'\b[A-Z]{2,}\b')
 
 NUM_LINES_PER_NEWS_CRAWL_TMP_FILE = 10 ** 6
 
@@ -974,6 +969,8 @@ class PG19Worker:
             NEW_LINE_WITH_SPACES_PATTERN.sub(' ', p).strip() for p in SEVERAL_NEW_LINES_PATTERN.split(text)
             if len(p) > PG_19_MIN_PARAGRAPH_LEN and LIST_PATTERN.search(p) is None
         ]
+        paragraphs = [TWO_CHARACTERS_ROMAN_NUMERAL.sub(lambda m: m.group(0).lower(), p) for p in paragraphs]
+        paragraphs = [p for p in paragraphs if LONG_UPPER_CASE_WORD.search(p) is None]
         paragraphs = [UNDERSCORE_PATTERN.sub(r'\1', DOUBLE_HYPHEN_PATTERN.sub(' - ', p)) for p in paragraphs]
         paragraphs = [p for p in paragraphs if WORD_CHAR_ENDING_PATTERN.search(p) is None]
         text = '\n'.join(paragraphs) + '\n'
