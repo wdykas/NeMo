@@ -1209,6 +1209,8 @@ class PubMedWorker:
                         )
                         return
         text = self.clean_text(original_text)
+        if not text:
+            return
         prepared_docs = {
             doc_id: {
                 "text": text,
