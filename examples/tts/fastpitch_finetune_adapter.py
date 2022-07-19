@@ -88,9 +88,9 @@ def main(cfg):
         old_emb = model.fastpitch.speaker_emb
         
         # Choose random
-        # new_speaker_emb = torch.rand(1, old_emb.embedding_dim)
+        new_speaker_emb = torch.rand(1, old_emb.embedding_dim)
         # Choose existing
-        new_speaker_emb = old_emb.weight[3, :].unsqueeze(0).detach().clone()
+        # new_speaker_emb = old_emb.weight[3, :].unsqueeze(0).detach().clone()
         
         new_emb = torch.nn.Embedding(old_emb.num_embeddings+1, old_emb.embedding_dim).from_pretrained(
             torch.cat([old_emb.weight.detach().clone(), new_speaker_emb], axis=0), freeze=False)
@@ -108,8 +108,9 @@ def main(cfg):
         adapter_cfg = adapter_modules.LinearAdapterConfig(
             in_features=model.cfg.output_fft.d_model,  # conformer specific model dim. Every layer emits this dim at its output.
             dim=256,  # the bottleneck dimension of the adapter
+            dropout=0.9,
             activation='swish',  # activation used in bottleneck block
-            norm_position='post',  # whether to use LayerNorm at the beginning or the end of the adapter
+            norm_position='pre',  # whether to use LayerNorm at the beginning or the end of the adapter
         )
         model.add_adapter(name='encoder+decoder+duration_predictor+pitch_predictor:adapter', cfg=adapter_cfg)
         # model.add_adapter(name='encoder+decoder:adapter', cfg=adapter_cfg)
