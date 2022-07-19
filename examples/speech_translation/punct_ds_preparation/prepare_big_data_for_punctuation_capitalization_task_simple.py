@@ -60,7 +60,7 @@ SEVERAL_NEW_LINES_PATTERN = re.compile('(?:\n[ \t]*){2,}')
 NEW_LINES_PATTERN = re.compile('(?:\n[ \t]*)+')
 LOWER_DOT_UPPER_PATTERN = re.compile(r'([a-z])\.([A-Z0-9])')
 FIGURE_PATTERN = re.compile(
-    r'(\.|^) *(Figure|FIGURE|Fig\.|FIG\.) [a-zA-Z]?[0-9]+[a-zA-Z]?[.:]? *', flags=re.MULTILINE
+    r'(\.|^) *(Figure|FIGURE|Fig|FIG) [a-zA-Z]?[0-9]+[a-zA-Z]?[.:]? *', flags=re.MULTILINE
 )
 NOTES_LINE_PATTERN = re.compile('^[ \t]*Notes:.*\n', flags=re.MULTILINE)
 ESCAPE_CHARACTERS_PATTERN = re.compile('[\t\v\r\f]')
@@ -86,12 +86,14 @@ LIST_PATTERN_NOT_TERMINATED = re.compile(f'^ *(?:{small.ROMAN_NUMERAL.pattern}|[
 NEW_LINE_WITH_SPACES_PATTERN = re.compile(' *\n *')
 DOUBLE_HYPHEN_PATTERN = re.compile(' *-- *')
 SQUARE_BRACKET_PUNCTUATION_NO_SPACE = re.compile('(][.,;?!:"\'-()]*)(?=\\w)')
+MATH_PATTERN = re.compile(r' [+/]+ |[=*^]')
 SQUARE_BRACKETS_PATTERN = re.compile(r' ?\[[^]]+] *')
 UNDERSCORE_PATTERN = re.compile(fr'(?<![{WC}/])_([^_]+)_(?![{WC}/])')
 WORD_CHAR_ENDING_PATTERN = re.compile(f'[{WC}]$')
 UPPERCASE_INTRO = re.compile('[A-Z ]{2,}: ([A-Z])')
 SHORT_LINE = re.compile('^.{1,40}\n', flags=re.MULTILINE)
 LETTER = re.compile('[a-zA-Z]')
+LETTER_HYPHEN_SPACE_PATTERN = re.compile('(?<=[a-zA-Z])- ')
 TWO_CHARACTERS_ROMAN_NUMERAL = re.compile(
     r'(M{1,3}(CM|CD|D?C{0,3})?(XC|XL|L?X{0,3})?(IX|IV|V?I{0,3})?'
     r'|(CM|CD|DC{0,3}|C{1,3})(XC|XL|L?X{0,3})?(IX|IV|V?I{0,3})?'
@@ -1118,7 +1120,7 @@ class PubMedWorker:
         if ref_header is not None:
             original_text = original_text[:ref_header.span()[0]]
         text = UPPERCASE_INTRO.sub(
-            r'\1',
+            r' \1',
             big.ALL_PARENTHESES.sub(
                 ' ', SQUARE_BRACKETS_PATTERN.sub(' ', SQUARE_BRACKET_PUNCTUATION_NO_SPACE.sub(r'\1 ', original_text)),
             )
@@ -1143,7 +1145,10 @@ class PubMedWorker:
         ]
         paragraphs = [UNDERSCORE_PATTERN.sub(r'\1', DOUBLE_HYPHEN_PATTERN.sub(' - ', p)) for p in paragraphs]
         paragraphs = [
-            p for p in paragraphs if WORD_CHAR_ENDING_PATTERN.search(p) is None and DOI_PATTERN.search(p) is None
+            p for p in paragraphs
+            if WORD_CHAR_ENDING_PATTERN.search(p) is None
+            and DOI_PATTERN.search(p) is None
+            and MATH_PATTERN.search(p) is None
         ]
         new_paragraphs = []
         global tok_chars
@@ -1176,6 +1181,7 @@ class PubMedWorker:
         text = SHORT_LINE.sub('\n', text)
         text = BROKEN_YEAR_PATTERN.sub('', text)
         text = big.normalize_punctuation(text, 'en')
+        text = LETTER_HYPHEN_SPACE_PATTERN.sub(' - ', text)
         text = big.NEW_LINE_DUP.sub('\n', text)
         if not text.strip():
             return ""
