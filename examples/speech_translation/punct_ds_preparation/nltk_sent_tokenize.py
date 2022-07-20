@@ -4,6 +4,8 @@ from typing import Generator
 
 import nltk
 
+import prepare_small_data_for_punctuation_capitalization_task as small
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
@@ -19,7 +21,8 @@ def sentence_generator(input_file: Path) -> Generator[str, None, None]:
     with input_file.open() as in_f:
         for line in in_f:
             for sent in nltk.sent_tokenize(line):
-                yield sent.rstrip()
+                if len(small.WORD.findall(sent)) > 0:
+                    yield sent.rstrip()
 
 
 def main() -> None:
