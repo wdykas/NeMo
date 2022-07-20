@@ -85,7 +85,7 @@ LIST_PATTERN = re.compile(f'^ *(?:{small.ROMAN_NUMERAL.pattern}|[0-9]+|[a-z]) *[
 LIST_PATTERN_NOT_TERMINATED = re.compile(f'^ *(?:{small.ROMAN_NUMERAL.pattern}|[0-9]+|[a-z]) ', flags=re.I | re.MULTILINE)
 NEW_LINE_WITH_SPACES_PATTERN = re.compile(' *\n *')
 DOUBLE_HYPHEN_PATTERN = re.compile(' *-- *')
-SQUARE_BRACKET_PUNCTUATION_NO_SPACE = re.compile('(][.,;?!:"\'-()]*)(?=\\w)')
+SQUARE_BRACKET_PUNCTUATION_NO_SPACE = re.compile('([])][.,;?!:"\'-()]*)(?=\\w)')
 MATH_PATTERN = re.compile(r' [+/]+ |[=*^]')
 SQUARE_BRACKETS_PATTERN = re.compile(r' ?\[[^]]+] *')
 UNDERSCORE_PATTERN = re.compile(fr'(?<![{WC}/])_([^_]+)_(?![{WC}/])')
