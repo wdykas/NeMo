@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from http.client import NON_AUTHORITATIVE_INFORMATION
 from typing import Dict, Optional
 
 import torch
@@ -20,6 +21,7 @@ from torch import nn
 from nemo.core.classes import Exportable, NeuralModule
 from nemo.core.classes.common import typecheck
 from nemo.core.neural_types import ChannelType, NeuralType
+from transformers import BertModel, BertConfig
 
 __all__ = ['PromptEncoder']
 
@@ -71,6 +73,9 @@ class PromptEncoder(NeuralModule, Exportable):
         self.mlp_head = nn.Sequential(
             nn.Linear(self.hidden_size, self.hidden_size), nn.ReLU(), nn.Linear(self.hidden_size, self.hidden_size)
         )
+        
+        bert_config = BertConfig(vocab_size=50304, max_position_embeddings=2048, hidden_size=768, num_attention_heads=1, num_attention_layers=1, type_vocab_size=1)
+        self.bert_encoder = BertModel(bert_config)
 
     @typecheck()
     def forward(self, taskname_embeddings) -> torch.Tensor:
@@ -82,4 +87,6 @@ class PromptEncoder(NeuralModule, Exportable):
         # Replace general input with task specific embeddings to specify the correct task
         input_embeds[:, 0:length, :] = taskname_embeddings[:, 0:length, :]
         output_embeds = self.mlp_head(self.lstm_head(input_embeds)[0])
+        #output_embeds = self.mlp_head(self.bert_encoder(input_embeds)[0].last_hidden_state)
+        #output_embeds = self.mlp_head(input_embeds[0])
         return output_embeds
