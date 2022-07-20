@@ -43,7 +43,7 @@ def main() -> None:
                 current_segment = ""
                 n_sent_in_current_segment = 0
                 n_words_in_current_segment = 0
-            elif n_sent_in_current_segment >= args.counts[segment_num_sent_i]:
+            elif n_sent_in_current_segment >= num_sent_in_segment[segment_num_sent_i]:
                 f.write(current_segment + sent + '\n')
                 current_segment = ""
                 n_sent_in_current_segment = 0
