@@ -56,7 +56,8 @@ def main() -> None:
                 if n_sent_in_current_segment > 1:
                     current_segment += ' '
                 current_segment += sent
-        f.write(current_segment + '\n')
+        if current_segment:
+            f.write(current_segment + '\n')
 
 
 if __name__ == "__main__":
