@@ -36,7 +36,7 @@ def main() -> None:
             n_sent_in_current_segment += 1
             if n_words_in_current_segment + len(small.WORD.findall(sent)) >= args.max_number_of_words_int_segment:
                 if n_sent_in_current_segment > 1:
-                    f.write(current_segment + '\n')
+                    f.write(current_segment.lstrip() + '\n')
                     segment_num_sent_i = (segment_num_sent_i + 1) % len(num_sent_in_segment)
                     if segment_num_sent_i == 0:
                         random.shuffle(num_sent_in_segment)
@@ -44,7 +44,7 @@ def main() -> None:
                 n_sent_in_current_segment = 0
                 n_words_in_current_segment = 0
             elif n_sent_in_current_segment >= num_sent_in_segment[segment_num_sent_i]:
-                f.write(current_segment + ' ' + sent + '\n')
+                f.write(current_segment.lstrip() + ' ' + sent + '\n')
                 current_segment = ""
                 n_sent_in_current_segment = 0
                 n_words_in_current_segment = 0
