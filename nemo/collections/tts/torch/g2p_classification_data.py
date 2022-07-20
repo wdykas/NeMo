@@ -102,10 +102,24 @@ class G2PClassificationDataset(Dataset):
         if "train" in dir_name:
             #  add Aligner data data
             print("\nprocessing: aligner data")
-            lj_manifest = "/mnt/sdb_4/g2p/data_ipa/training_data_v8/raw_files/filtered_disamb_ljspeech_train_ipa.json"
-            hifi_9017_manifest = "/mnt/sdb_4/g2p/data_ipa/training_data_v8/raw_files/disamb_9017_clean_train_heteronyms_filtered_ipa.json"
-            data = convert_to_wiki_format([lj_manifest, hifi_9017_manifest])
-            for sentence, start_end_index, homograph, word_id in zip(*data):
+            manifest = "/mnt/sdb_4/g2p/data_ipa/disambiguated/ipa/lj_9017_92.json"
+            sentences, start_end_indices, homographs, word_ids = [], [], [], []
+            import json
+            with open(manifest, "r") as f:
+                for line in f:
+                    line = json.loads(line)
+                    for se, h, w in zip(line["start_end"], line["homograph_span"], line["word_id"]):
+                        start_end_indices.append(se)
+                        homographs.append(h)
+                        word_ids.append(w)
+                        sentences.append(line["text_normalized"])
+                        if line["text_normalized"][se[0]:se[1]] != h:
+                            import pdb; pdb.set_trace()
+
+            # # lj_manifest = "/mnt/sdb_4/g2p/data_ipa/training_data_v8/raw_files/filtered_disamb_ljspeech_train_ipa.json"
+            # # hifi_9017_manifest = "/mnt/sdb_4/g2p/data_ipa/training_data_v8/raw_files/disamb_9017_clean_train_heteronyms_filtered_ipa.json"
+            # data = convert_to_wiki_format([lj_manifest, hifi_9017_manifest])
+            for sentence, start_end_index, homograph, word_id in zip(sentences, start_end_indices, homographs, word_ids ):
                 start, end = start_end_index
                 target, target_and_negatives = self._prepare_sample(sentence, start, end, homograph, word_id)
                 self.data.append({"input": sentence, "target": target, "target_and_negatives": target_and_negatives})
@@ -120,7 +134,7 @@ class G2PClassificationDataset(Dataset):
         r_context_len = len(r_context)
         sentence_tokenized = self.tokenizer.tokenize(sentence)
 
-        grapheme_ipa_forms = self.wiki_homograph_dict[homograph]
+        grapheme_ipa_forms = self.wiki_homograph_dict[homograph.lower()]
         target_len = len(sentence_tokenized[l_context_len:len(sentence_tokenized)-r_context_len])
         target = self.target_ipa.index(grapheme_ipa_forms[word_id])
 

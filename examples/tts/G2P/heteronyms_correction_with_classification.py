@@ -257,14 +257,17 @@ def get_metrics(manifest: str):
     # collect all examples with multiple phoneme options and same grapheme form, choose the one with min PER
     all_graphemes = {k: v for k, v in all_graphemes.items() if len(v) > 1}
     lines_to_drop = []
-    for phon_amb_indices  in all_graphemes.values():
-        refs = all_references[phon_amb_indices[0]:phon_amb_indices[-1] + 1]
-        preds = all_preds[phon_amb_indices[0]:phon_amb_indices[-1] + 1]
+    for phon_amb_indices in all_graphemes.values():
+        refs, preds = [], []
+        for phon_amb_indices_ in phon_amb_indices:
+            refs.append(all_references[phon_amb_indices_])
+            preds.append(all_preds[phon_amb_indices_])
         pers = []
         for ref_, pred_ in zip(refs, preds):
             pers.append(word_error_rate(hypotheses=[pred_], references=[ref_], use_cer=True))
 
         min_idx = pers.index(min(pers))
+
         phon_amb_indices.pop(min_idx)
         lines_to_drop.extend(phon_amb_indices)
 

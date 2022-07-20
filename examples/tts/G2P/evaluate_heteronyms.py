@@ -20,73 +20,86 @@ def eval_heteronyms(manifest, target_homograph=None):
     dict_target_homograph = {}
 
     num_skipped = 0
-    num_lines = 0
     correct = 0
     wordid_to_nemo_cmu = get_wordid_to_nemo()
     errors = []
+    num_examples = 0
     with open(manifest, "r") as f_in:
         for line in tqdm(f_in):
-            num_lines += 1
             line = json.loads(line)
-            graphemes = clean(line["text_graphemes"], do_lower=False)
-            graphemes = _process_wiki_eval(graphemes)
-            phonemes_preds = clean(line["pred_text"])
-            phonemes_gt = clean(line["text"])
+            homograph_spans = line["homograph_span"]
+            wordids = line["word_id"]
+            start_end_indices = line["start_end"]
+            if isinstance(homograph_spans, str):
+                homograph_spans = [homograph_spans]
+                wordids = [wordids]
+                start_end_indices = [start_end_indices]
 
-            homograph = line["homograph_span"]
-            homograph_ipa = wordid_to_nemo_cmu[line["word_id"]]
-            homograph_count_in_grapheme = graphemes.lower().count(homograph.lower())
-            is_correct = False
+            for homograph, word_id, start_end in zip(homograph_spans, wordids, start_end_indices):
+                num_examples += 1
+                graphemes = clean(line["text_graphemes"], do_lower=False)
+                graphemes = _process_wiki_eval(graphemes)
+                phonemes_preds = clean(line["pred_text"])
+                phonemes_gt = clean(line["text"])
 
-            # if target_homograph is not None:
-            #     if homograph != target_homograph:
-            #         continue
-            #     else:
-            #         if homograph_ipa not in dict_target_homograph:
-            #             dict_target_homograph[homograph_ipa] = 0
-            #         dict_target_homograph[homograph_ipa] += 1
-            #         print("=" * 40)
-            #         print(graphemes)
-            #         print("PRED:", phonemes_preds)
-            #         print("GT  :", homograph_ipa)
-            #         print("=" * 40)
+                homograph_ipa = wordid_to_nemo_cmu[word_id]
+                homograph_count_in_grapheme = graphemes.lower().count(homograph.lower())
+                is_correct = False
 
-            if homograph_count_in_grapheme == 1:
-                if homograph_ipa in phonemes_preds:
+                if target_homograph is not None:
+                    if homograph != target_homograph:
+                        continue
+                    else:
+                        if homograph_ipa not in dict_target_homograph:
+                            dict_target_homograph[homograph_ipa] = 0
+                        dict_target_homograph[homograph_ipa] += 1
+                        # print("=" * 40)
+                        # print(graphemes)
+                        # print("PRED:", phonemes_preds)
+                        # print("GT  :", homograph_ipa)
+                        # print("=" * 40)
+
+                if homograph_count_in_grapheme == 1:
+                    if homograph_ipa in phonemes_preds:
+                        is_correct = True
+                elif homograph_count_in_grapheme > 1 and graphemes.count(homograph.lower()) == phonemes_preds.count(
+                    homograph_ipa
+                ):
                     is_correct = True
-            elif homograph_count_in_grapheme > 1 and graphemes.count(homograph.lower()) == phonemes_preds.count(
-                homograph_ipa
-            ):
-                is_correct = True
-            else:
-                if graphemes.count("-") == phonemes_gt.count("-") and graphemes.count("-") > 0:
-                    graphemes = graphemes.replace("-", " - ")
-                    phonemes_gt = phonemes_gt.replace("-", " - ")
-                    phonemes_preds = phonemes_preds.replace("-", " - ")
-
-                graphemes = graphemes.split()
-                phonemes_preds = phonemes_preds.split()
-                phonemes_gt = phonemes_gt.split()
-
-                if graphemes.count(homograph) == 1:
-                    if phonemes_preds.count(homograph_ipa) == 1:
-                        is_correct = True
-                elif len(graphemes) != len(phonemes_preds) or len(phonemes_preds) != len(phonemes_gt):
-                    print(phonemes_preds)
-                    print(phonemes_gt)
-                    print(graphemes)
-                    print(line["homograph_span"])
-
-                    num_skipped += 1
                 else:
-                    idx = graphemes.index(line["homograph_span"])
-                    if phonemes_preds[idx] == phonemes_gt[idx]:
-                        is_correct = True
+                    if graphemes.count("-") == phonemes_gt.count("-") and graphemes.count("-") > 0:
+                        graphemes = graphemes.replace("-", " - ")
+                        phonemes_gt = phonemes_gt.replace("-", " - ")
+                        phonemes_preds = phonemes_preds.replace("-", " - ")
 
-            if is_correct:
-                correct += 1
-            else:
-                errors.append(line)
+                    graphemes = graphemes.split()
+                    phonemes_preds = phonemes_preds.split()
+                    phonemes_gt = phonemes_gt.split()
+
+                    if graphemes.count(homograph) == 1:
+                        if phonemes_preds.count(homograph_ipa) == 1:
+                            is_correct = True
+                    elif len(graphemes) != len(phonemes_preds) or len(phonemes_preds) != len(phonemes_gt):
+                        print("SKIPPING:")
+                        print(phonemes_preds)
+                        print(phonemes_gt)
+                        print(graphemes)
+                        print(homograph)
+
+                        num_skipped += 1
+                    else:
+                        idx = graphemes.index(homograph)
+                        if phonemes_preds[idx] == phonemes_gt[idx]:
+                            is_correct = True
+
+                if is_correct:
+                    correct += 1
+                else:
+                    entry = {k: v for k, v in line.items()}
+                    entry["word_id"] = word_id
+                    entry["start_end"] = start_end
+                    entry["homograph_span"] = homograph
+                    errors.append(entry)
 
     errors_file = os.path.basename(manifest).replace(".json", "_errors.json")
     with open(errors_file, "w") as f:
@@ -96,9 +109,14 @@ def eval_heteronyms(manifest, target_homograph=None):
     print(f"Errors saved in {errors_file}")
 
     print(
-        f"{correct*100/num_lines:.2f}% -- {correct} out of {num_lines}, num_lines: {num_lines}, skipped: {num_skipped}"
+        f"{correct*100/num_examples:.2f}% -- {correct} out of {num_examples}, num_lines: {num_examples}, skipped: {num_skipped}"
     )
-    print(len(dict_target_homograph), dict_target_homograph)
+    if target_homograph is not None:
+        total = sum(dict_target_homograph.values())
+        print(target_homograph.upper(), dict_target_homograph)
+        print(
+            f"{correct * 100 / total:.2f}% -- {correct} out of {total}, skipped: {num_skipped}"
+        )
 
 
 if __name__ == "__main__":

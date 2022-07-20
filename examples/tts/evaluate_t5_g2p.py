@@ -88,6 +88,7 @@ def main():
         g2p_model = g2p_model.cuda()
     g2p_model.eval()
 
+    g2p_model.max_source_len = 512
     if args.per_word:
         with open(args.output, "w", encoding="utf-8") as f_out, open(args.manifest_filepath, "r") as f_in:
             for line in f_in:
