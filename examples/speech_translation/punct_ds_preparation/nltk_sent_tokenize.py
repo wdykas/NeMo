@@ -1,5 +1,6 @@
 import argparse
 from pathlib import Path
+from typing import Generator
 
 import nltk
 
@@ -14,12 +15,18 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def main() -> None:
-    args = parse_args()
-    with args.input_file.open() as in_f, args.output_file.open('w') as out_f:
+def sentence_generator(input_file: Path) -> Generator[str, None, None]:
+    with input_file.open() as in_f:
         for line in in_f:
             for sent in nltk.sent_tokenize(line):
-                out_f.write(sent.rstrip() + '\n')
+                yield sent.rstrip()
+
+
+def main() -> None:
+    args = parse_args()
+    with args.output_file.open('w') as out_f:
+        for sent in sentence_generator(args.input_file):
+            out_f.write(sent + '\n')
 
 
 if __name__ == "__main__":
