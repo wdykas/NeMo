@@ -138,12 +138,12 @@ class WaveformFeaturizerAndEmbedding(WaveformFeaturizer):
         file_path,
         other_utterance_file,
         second_speaker_file,
-        third_speaker_file,
         offset=0,
         duration=0,
         other_utterance_duration=None,
         second_speaker_duration=None,
-        third_speaker_duration=None,
+        scale_factor=None,
+        scale_factor2=None,
         trim=False,
         orig_sr=None,
     ):
@@ -177,20 +177,11 @@ class WaveformFeaturizerAndEmbedding(WaveformFeaturizer):
             orig_sr=orig_sr,
         )
         
-        
-        third_speaker = AudioSegment.from_file(
-            third_speaker_file,
-            target_sr=self.sample_rate,
-            int_values=self.int_values,
-            offset=offset,
-            duration=third_speaker_duration,
-            trim=trim,
-            orig_sr=orig_sr,
-        )
-        return self.process_segment(audio, other_utterance=other_utterance, second_speaker=second_speaker, third_speaker=third_speaker)
+    
+        return self.process_segment(audio, other_utterance=other_utterance, second_speaker=second_speaker,  scale_factor=scale_factor, scale_factor_second=scale_factor2)
 
-    def process_segment(self, audio_segment, other_utterance, second_speaker=None, third_speaker=None):
-        self.augmentor.perturb(audio_segment, other_utterance=other_utterance, second_speaker=second_speaker, third_speaker=third_speaker)
+    def process_segment(self, audio_segment, other_utterance, second_speaker=None, scale_factor=None, scale_factor_second=None):
+        self.augmentor.perturb(audio_segment, second_speaker=second_speaker, scale_factor=scale_factor, scale_factor_second=scale_factor_second)
         return (
             torch.tensor(audio_segment.samples, dtype=torch.float),
             torch.tensor(other_utterance.samples, dtype=torch.float),

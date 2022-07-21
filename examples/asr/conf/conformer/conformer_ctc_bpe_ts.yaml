@@ -48,27 +48,6 @@ model:
     augmentor:
       rir_noise_speaker:
         prob: 0
-        rir_manifest_path: null
-        rir_tar_filepaths: null
-        rir_prob: 0
-        noise_manifest_paths: null
-        min_snr_db: [0]
-        max_snr_db: [50]
-        noise_tar_filepaths: null
-        apply_noise_rir: True
-        max_additions: 1
-        max_duration: 2.0
-        bg_min_snr_db: [10]
-        bg_max_snr_db: [50]
-        bg_noise_manifest_paths: null
-        bg_noise_tar_filepaths: null
-        apply_foreground_noise: False
-        max_overlap: 1.0
-        min_overlap: 0.0
-        two_sided_overlap: 0.0
-        max_padded_silence: 0.0
-        speaker_min_snr_db: 0.0
-        speaker_max_snr_db: 0.0
     manifest_filepath: ???
     synthetic_generation: true
     sample_rate: ${model.sample_rate}
@@ -89,6 +68,10 @@ model:
     bucketing_batch_size: null
 
   validation_ds:
+    augmentor:
+      rir_noise_speaker:
+        prob: 0
+    synthetic_generation: false
     manifest_filepath: ???
     sample_rate: ${model.sample_rate}
     batch_size: 16 # you may increase batch_size if your memory allows
@@ -98,6 +81,10 @@ model:
     use_start_end_token: false
 
   test_ds:
+    augmentor:
+      rir_noise_speaker:
+        prob: 0
+    synthetic_generation: false
     manifest_filepath: null
     sample_rate: ${model.sample_rate}
     batch_size: 16 # you may increase batch_size if your memory allows

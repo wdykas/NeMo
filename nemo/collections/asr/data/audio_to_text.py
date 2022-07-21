@@ -607,7 +607,7 @@ class AudioAndEmbeddingToBPEDataset(AudioToBPEDataset):
         return_sample_id: bool = False,
         synthetic_generation: bool = False,
     ):
-        keep_fields = ["other_audio_filepath", "other_duration", "other_offset"]
+        keep_fields = ["audio_filepath2", "duration2", "scale_factor2", "scale_factor", "audio_filepath_adapt", "duration_adapt"]
         super().__init__(
             manifest_filepath=manifest_filepath,
             tokenizer=tokenizer,
@@ -621,17 +621,16 @@ class AudioAndEmbeddingToBPEDataset(AudioToBPEDataset):
             use_start_end_token=use_start_end_token,
             return_sample_id=return_sample_id,
             index_by_speaker_id=synthetic_generation == True,
-            keep_fields=[] if synthetic_generation else keep_fields,
+            keep_fields=keep_fields,
         )  # inits  ASRManifestProcessor
 
-        if synthetic_generation:
-            self.featurizer = WaveformFeaturizerAndEmbedding(
-                sample_rate=sample_rate, int_values=int_values, augmentor=augmentor
-            )
+        self.featurizer = WaveformFeaturizerAndEmbedding(
+            sample_rate=sample_rate, int_values=int_values, augmentor=augmentor
+        )
         self.synthetic_generation = synthetic_generation
 
-        # self.eval_dir= '/home/yangzhang/code/ts_asr/data/ls_train_clean_mixed'
-        # self.manifest_eval= self.eval_dir + '/manifest.json'
+        self.eval_dir= '/home/yangzhang/code/ts_asr/data/ls_train_clean_mixed'
+        self.manifest_eval= self.eval_dir + '/manifest.json'
         # os.makedirs(self.eval_dir, exist_ok=True)
         # with open(self.manifest_eval, 'w') as fp:
         #     pass
@@ -668,36 +667,9 @@ class AudioAndEmbeddingToBPEDataset(AudioToBPEDataset):
             other_utterance_duration = other_utterance.duration
             other_utterance_file = other_utterance.audio_file
 
-            if len(self.manifest_processor.collection.speaker_mapping) == 1:
-                raise ValueError("only one speaker in dataset")
-
-            second_speaker_id = np.random.choice(list(self.manifest_processor.collection.speaker_mapping.keys()))
-            third_speaker_id = np.random.choice(list(self.manifest_processor.collection.speaker_mapping.keys()))
         
-            i = 0
-            while second_speaker_id == target_speaker  and i < 100:
-                second_speaker_id = np.random.choice(list(self.manifest_processor.collection.speaker_mapping.keys()))
-                i += 1
-            i = 0
-            while third_speaker_id == target_speaker  and i < 100:
-                third_speaker_id = np.random.choice(list(self.manifest_processor.collection.speaker_mapping.keys()))
-                i += 1
-
-
-            second_speaker_file_index = np.random.choice(
-                self.manifest_processor.collection.speaker_mapping[second_speaker_id]
-            )
-            second_speaker_file = self.manifest_processor.collection[second_speaker_file_index]
-            second_speaker_duration = second_speaker_file.duration
-            second_speaker_file = second_speaker_file.audio_file
-
-
-            third_speaker_file_index = np.random.choice(
-                self.manifest_processor.collection.speaker_mapping[third_speaker_id]
-            )
-            third_speaker_file = self.manifest_processor.collection[third_speaker_file_index]
-            third_speaker_duration = third_speaker_file.duration
-            third_speaker_file = third_speaker_file.audio_file
+            second_speaker_duration = sample.duration2
+            second_speaker_file = sample.audio_filepath2
             
             features, speaker_features = self.featurizer.process(
                 sample.audio_file,
@@ -706,8 +678,8 @@ class AudioAndEmbeddingToBPEDataset(AudioToBPEDataset):
                 other_utterance_duration=other_utterance_duration,
                 second_speaker_file=second_speaker_file,
                 second_speaker_duration=second_speaker_duration,
-                third_speaker_file=third_speaker_file,
-                third_speaker_duration=third_speaker_duration,
+                scale_factor=sample.scale_factor,
+                scale_factor2=sample.scale_factor2,
                 offset=offset,
                 trim=self.trim,
                 orig_sr=sample.orig_sr,
@@ -717,28 +689,50 @@ class AudioAndEmbeddingToBPEDataset(AudioToBPEDataset):
             #     f = f"{self.eval_dir}/{index}.wav"
             #     sf.write(f, features, 16000)
             #     with open(self.manifest_eval, 'a') as fp:
-            #         tmp = {"audio_filepath": f, "individual_audio_file": sample.audio_file, "speaker": target_speaker, "duration": len(f)/16000, "text": sample.text_raw, "overlap_audio_filepath_1": second_speaker_file, "overlap_audio_filepath_2": third_speaker_file}
+            #         tmp = {"audio_filepath": f, "individual_audio_file": sample.audio_file, "speaker": target_speaker, "duration": len(f)/16000, "text": sample.text_raw, "overlap_audio_filepath_1": second_speaker_file, "other_utterance_file": other_utterance_file}
             #         print(tmp)
             #         fp.write(json.dumps(tmp) + "\n")
                     
                     
-            #     f = f"{self.eval_individual_dir}/{index}.wav"
-            #     sf.write(f, speaker_features, 16000)
-            #     with open(self.manifest_eval_aux_utterance, 'a') as fp:
-            #         tmp = {"audio_filepath": f, "individual_audio_file": other_utterance.audio_file, "speaker": target_speaker, "duration": other_utterance.duration, "text": other_utterance.text_raw}
-            #         fp.write(json.dumps(tmp) + "\n")
+                # f = f"{self.eval_individual_dir}/{index}.wav"
+                # sf.write(f, speaker_features, 16000)
+                # with open(self.manifest_eval_aux_utterance, 'a') as fp:
+                #     tmp = {"audio_filepath": f, "individual_audio_file": other_utterance.audio_file, "speaker": target_speaker, "duration": other_utterance.duration, "text": other_utterance.text_raw}
+                #     fp.write(json.dumps(tmp) + "\n")
 
         else:
-            other_offset = sample.other_offset
-            if other_offset is None:
-                other_offset = 0
-            features = self.featurizer.process(
-                sample.audio_file, offset=offset, duration=sample.duration, trim=self.trim, orig_sr=sample.orig_sr
+            target_speaker = sample.speaker
+
+            other_utterance_duration = sample.duration_adapt
+            other_utterance_file = sample.audio_filepath_adapt
+
+        
+            second_speaker_duration = sample.duration2
+            second_speaker_file = sample.audio_filepath2
+            
+            features, speaker_features = self.featurizer.process(
+                sample.audio_file,
+                duration=sample.duration,
+                other_utterance_file=other_utterance_file,
+                other_utterance_duration=other_utterance_duration,
+                second_speaker_file=second_speaker_file,
+                second_speaker_duration=second_speaker_duration,
+                scale_factor=sample.scale_factor,
+                scale_factor2=sample.scale_factor2,
+                offset=offset,
+                trim=self.trim,
+                orig_sr=sample.orig_sr,
             )
-            speaker_features = AudioSegment.from_file(
-                sample.other_audio_filepath, offset = other_offset, duration=sample.other_duration, trim=self.trim, orig_sr=sample.orig_sr
-            )
-            speaker_features = torch.tensor(speaker_features.samples, dtype=torch.float)
+
+            # for generating eval data
+            # if "cv" in self.manifest_filepath:
+            # f = f"{self.eval_dir}/{index}.wav"
+            # sf.write(f, features, 16000)
+            # with open(self.manifest_eval, 'a') as fp:
+            #     tmp = {"audio_filepath": f, "individual_audio_file": sample.audio_file, "speaker": target_speaker, "duration": len(f)/16000, "text": sample.text_raw, "overlap_audio_filepath_1": second_speaker_file, "other_utterance_file": other_utterance_file}
+            #     print(tmp)
+            #     fp.write(json.dumps(tmp) + "\n")
+
         embed_len = torch.tensor(speaker_features.shape[0]).long()
 
         f, fl = features, torch.tensor(features.shape[0]).long()
