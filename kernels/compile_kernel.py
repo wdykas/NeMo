@@ -15,8 +15,8 @@ def forward_torch_softmax(input, mask, scale):
     return probs
 
 
-import fused_kernels.build.scaled_masked_softmax_cuda
-print(fused_kernels.build.scaled_masked_softmax_cuda.forward)
+import fused_kernels.build.scaled_masked_softmax_cuda_new
+print(fused_kernels.build.scaled_masked_softmax_cuda_new.forward)
 
 scale_t = torch.tensor([1.0])
 
@@ -33,9 +33,9 @@ backward = torch.rand((1, 1, 1, 2048), dtype=torch.float16, device='cuda:0')
 backward2 = backward.clone()
 
 
-softmax_results = fused_kernels.build.scaled_masked_softmax_cuda.forward(inputs, masks, scale_t[0])
+softmax_results = fused_kernels.build.scaled_masked_softmax_cuda_new.forward(inputs, masks, scale_t[0])
 
-back_grad = fused_kernels.build.scaled_masked_softmax_cuda.backward(backward, softmax_results, scale_t[0])
+back_grad = fused_kernels.build.scaled_masked_softmax_cuda_new.backward(backward, softmax_results, scale_t[0])
 
 inputs.requires_grad = True
 softmax_results_torch = forward_torch_softmax(inputs, masks, scale_t[0].item())

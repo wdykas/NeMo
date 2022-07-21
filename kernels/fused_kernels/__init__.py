@@ -64,7 +64,7 @@ def load():
     sources=[srcpath / 'scaled_masked_softmax.cpp',
              srcpath / 'scaled_masked_softmax_cuda.cu']
     scaled_masked_softmax_cuda = _cpp_extention_load_helper(
-        "scaled_masked_softmax_cuda", sources, extra_cuda_flags)
+        "scaled_masked_softmax_cuda_new", sources, extra_cuda_flags)
 
 
 def _get_cuda_bare_metal_version(cuda_dir):
