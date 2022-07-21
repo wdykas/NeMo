@@ -586,13 +586,17 @@ __global__ void scaled_masked_softmax_warp_forward_new(
     acc_t val = 0.0;
     for (int i = 0; i < num_reductions; i++){
         val = -10000.0;
-        if (offset + i*threads_per_block + local_idx < element_count){
+        if (i*threads_per_block + local_idx < element_count){
             val = src[offset + i*threads_per_block + local_idx] * scale;
             if (mask[mask_offset + i*threads_per_block + local_idx] == 1) {
                 val = -10000.0;
             }
             values[i] = val;
         }
+        //if (local_idx<32 and blockIdx.x==1){
+        //    printf("bid %d, lid %d, offset %d, blocks %d, v: %f, mask_offset %d\n", blockIdx.x, local_idx, offset, gridDim.x, val, mask_offset);
+        //}
+
         val = warp_reduce_new<acc_t, C10_WARP_SIZE, Max>(val);
         if (lane==0) {
             shared[wid] = max(val, shared[wid]);
@@ -624,7 +628,7 @@ __global__ void scaled_masked_softmax_warp_forward_new(
 
     for (int i = 0; i < num_reductions; i++){
         val = 0.0;
-        if (offset + i*threads_per_block + local_idx < element_count){
+        if (i*threads_per_block + local_idx < element_count){
             val = values[i];
         }
         val = warp_reduce_new<acc_t, C10_WARP_SIZE, Add>(val);
@@ -645,8 +649,12 @@ __global__ void scaled_masked_softmax_warp_forward_new(
 
     reduced_val = shared[0];
 
+    //if (local_idx<32){
+    //    printf("bid %d, lid %d, offset %d, blocks %d, v: %f, mask_offset %d\n", blockIdx.x, local_idx, offset, gridDim.x, reduced_val, mask_offset);
+    //}
+
     for (int i = 0; i < num_reductions; i++){
-       if (offset + i*threads_per_block + local_idx < element_count){
+       if (i*threads_per_block + local_idx < element_count){
          dst[offset + i*threads_per_block + local_idx] = values[i] / reduced_val;
        }
     }
