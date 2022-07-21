@@ -239,100 +239,165 @@ __device__ __forceinline__ acc_t warp_reduce_new(acc_t val) {
 //}
 
 template <typename input_t, typename output_t, typename acc_t, int log2_elements>
-__global__ void scaled_masked_softmax_warp_backward(
-    output_t *gradInput, 
+__global__ void scaled_masked_softmax_warp_backward_new(
+    output_t *gradInput, //[batches, attn_heads, q_len, k_len]
     input_t *grad, 
-    const input_t *output,
+    const input_t *output, //[batches, attn_heads, q_len, k_len]
     acc_t scale, 
-    int micro_batch_size, 
     int element_count)
 {
-    // WARP_SIZE and WARP_BATCH must match the return values batches_per_warp and 
-    // warp_size of method warp_softmax_backward_kernel.
-    constexpr int next_power_of_two = 1 << log2_elements;
-    constexpr int WARP_SIZE = (next_power_of_two < C10_WARP_SIZE) ? next_power_of_two : C10_WARP_SIZE;
-    constexpr int WARP_ITERATIONS = next_power_of_two / WARP_SIZE;
-    constexpr int WARP_BATCH = (next_power_of_two <= 128) ? 2 : 1;
-    constexpr int ELEMENTS_PER_LDG_STG = (WARP_ITERATIONS < 4) ? 1 : 4;
+    int threads_per_block = blockDim.x; 
+    // Shared mem for 32 partial sums. assume 1024 threads per block, we can handle 32 * 32 = 1024 warps at once
+    // maximum shared cached 32
+    static __shared__ acc_t shared[C10_WARP_SIZE]; 
 
-    // blockDim/threadIdx = (WARP_SIZE, WARPS_PER_BLOCK, )
-    // gridDim/blockIdx = (seq_len, attn_heads, batches) 
-    int first_batch = (blockDim.y * blockIdx.x + threadIdx.y) * WARP_BATCH;
-    
-    // micro_batch_size might not be a multiple of WARP_BATCH. Check how
-    // many batches have to computed within this WARP.
-    int local_batches = micro_batch_size - first_batch;
-    if (local_batches > WARP_BATCH)
-        local_batches = WARP_BATCH;
+    // number of 1024 threads reductions 
+    int num_reductions =  (element_count - 1) / threads_per_block + 1;
 
-    // there might be multiple batches per warp. compute the index within the batch
+    int offset = blockIdx.x * element_count;
+
     int local_idx = threadIdx.x;
+    int lane = threadIdx.x % C10_WARP_SIZE;
+    int wid = threadIdx.x / C10_WARP_SIZE;
 
-    // the first element to process by the current thread
-    int thread_offset = first_batch * element_count + ELEMENTS_PER_LDG_STG * local_idx;
-    grad += thread_offset;
-    output += thread_offset;
-    gradInput += thread_offset;
+    // first find the max value
+    if (local_idx < C10_WARP_SIZE){
+        shared[local_idx] = 0.0;
+    }
+    __syncthreads();
 
-    // load data from global memory
-    acc_t grad_reg[WARP_BATCH][WARP_ITERATIONS] { 0.0f };
-    acc_t output_reg[WARP_BATCH][WARP_ITERATIONS] { 0.0f };
-    input_t temp_grad[ELEMENTS_PER_LDG_STG];
-    input_t temp_output[ELEMENTS_PER_LDG_STG];
-    #pragma unroll
-    for (int i = 0;  i < WARP_BATCH;  ++i) {
-        int batch_element_count = (i >= local_batches) ? 0 : element_count;
+    acc_t values[4];
+    acc_t out_values[4];
+    acc_t val = 0.0;
 
-        #pragma unroll
-        for (int it = 0;  it < WARP_ITERATIONS;  it+=ELEMENTS_PER_LDG_STG) {
-            int element_index = ELEMENTS_PER_LDG_STG * local_idx + it * WARP_SIZE;
-            if (element_index < batch_element_count) {
-                copy_vector<input_t, ELEMENTS_PER_LDG_STG>(temp_grad, grad + i * element_count + it * WARP_SIZE);
-                copy_vector<input_t, ELEMENTS_PER_LDG_STG>(temp_output, output + i * element_count + it * WARP_SIZE);
-
-                #pragma unroll
-                for (int element = 0; element < ELEMENTS_PER_LDG_STG; ++element) {
-                    output_reg[i][it + element] = (acc_t)temp_output[element];
-                }
-                #pragma unroll
-                for (int element = 0; element < ELEMENTS_PER_LDG_STG; ++element) {
-                    grad_reg[i][it + element] = (acc_t)temp_grad[element] * output_reg[i][it + element];
-                }
-            } 
+    for (int i = 0; i < num_reductions; i++){
+        val = 0.0;
+        if (i*threads_per_block + local_idx < element_count){
+            out_values[i] = output[offset + i*threads_per_block + local_idx];
+            val = grad[offset + i*threads_per_block + local_idx]*out_values[i];
+            values[i] = val;
+        }
+        val = warp_reduce_new<acc_t, C10_WARP_SIZE, Add>(val);
+        if (lane==0) {
+            shared[wid] += val;
+        }
+        __syncthreads();
+    }
+    // final shared reduction
+    if (local_idx < C10_WARP_SIZE) {
+        acc_t val = shared[local_idx];
+        val = warp_reduce_new<acc_t, C10_WARP_SIZE, Add>(val);
+        if (lane==0) {
+            shared[wid] = val;
         }
     }
-   
-    acc_t sum[WARP_BATCH];
-    #pragma unroll
-    for (int i = 0;  i < WARP_BATCH;  ++i) {
-        sum[i] = grad_reg[i][0];
-        #pragma unroll
-        for (int it = 1;  it < WARP_ITERATIONS;  ++it) {
-            sum[i] += grad_reg[i][it];
-        }
-    }
-    warp_reduce<acc_t, WARP_BATCH, WARP_SIZE, Add>(sum);
+    __syncthreads();
 
-    // store result
-    #pragma unroll
-    for (int i = 0;  i < WARP_BATCH;  ++i) {
-        if (i >= local_batches)
-            break;
-        #pragma unroll
-        for (int it = 0;  it < WARP_ITERATIONS;  it+=ELEMENTS_PER_LDG_STG) {
-            int element_index = ELEMENTS_PER_LDG_STG * local_idx + it * WARP_SIZE;
-            if (element_index < element_count) {
-                // compute gradients
-                output_t out[ELEMENTS_PER_LDG_STG];
-                #pragma unroll
-                for (int element = 0; element < ELEMENTS_PER_LDG_STG; ++element) {
-                    out[element] = (output_t)(scale * (grad_reg[i][it + element] - output_reg[i][it + element] * sum[i]));
-                }
-                copy_vector<output_t, ELEMENTS_PER_LDG_STG>(gradInput + i * element_count + it * WARP_SIZE, out);
-            } 
-        }
+    acc_t reduced_val = shared[0];
+
+    for (int i = 0; i < num_reductions; i++){
+       if (i*threads_per_block + local_idx < element_count){
+         gradInput[offset + i*threads_per_block + local_idx] = (output_t)(scale*(values[i] - out_values[i]*reduced_val)); 
+       }
     }
 }
+
+// template <typename input_t, typename output_t, typename acc_t, int log2_elements>
+// __global__ void scaled_masked_softmax_warp_backward(
+//     output_t *gradInput, 
+//     input_t *grad, 
+//     const input_t *output,
+//     acc_t scale, 
+//     int micro_batch_size, 
+//     int element_count)
+// {
+//     // WARP_SIZE and WARP_BATCH must match the return values batches_per_warp and 
+//     // warp_size of method warp_softmax_backward_kernel.
+//     constexpr int next_power_of_two = 1 << log2_elements;
+//     constexpr int WARP_SIZE = (next_power_of_two < C10_WARP_SIZE) ? next_power_of_two : C10_WARP_SIZE;
+//     constexpr int WARP_ITERATIONS = next_power_of_two / WARP_SIZE;
+//     constexpr int WARP_BATCH = (next_power_of_two <= 128) ? 2 : 1;
+//     constexpr int ELEMENTS_PER_LDG_STG = (WARP_ITERATIONS < 4) ? 1 : 4;
+// 
+//     // blockDim/threadIdx = (WARP_SIZE, WARPS_PER_BLOCK, )
+//     // gridDim/blockIdx = (seq_len, attn_heads, batches) 
+//     int first_batch = (blockDim.y * blockIdx.x + threadIdx.y) * WARP_BATCH;
+//     
+//     // micro_batch_size might not be a multiple of WARP_BATCH. Check how
+//     // many batches have to computed within this WARP.
+//     int local_batches = micro_batch_size - first_batch;
+//     if (local_batches > WARP_BATCH)
+//         local_batches = WARP_BATCH;
+// 
+//     // there might be multiple batches per warp. compute the index within the batch
+//     int local_idx = threadIdx.x;
+// 
+//     // the first element to process by the current thread
+//     int thread_offset = first_batch * element_count + ELEMENTS_PER_LDG_STG * local_idx;
+//     grad += thread_offset;
+//     output += thread_offset;
+//     gradInput += thread_offset;
+// 
+//     // load data from global memory
+//     acc_t grad_reg[WARP_BATCH][WARP_ITERATIONS] { 0.0f };
+//     acc_t output_reg[WARP_BATCH][WARP_ITERATIONS] { 0.0f };
+//     input_t temp_grad[ELEMENTS_PER_LDG_STG];
+//     input_t temp_output[ELEMENTS_PER_LDG_STG];
+//     #pragma unroll
+//     for (int i = 0;  i < WARP_BATCH;  ++i) {
+//         int batch_element_count = (i >= local_batches) ? 0 : element_count;
+// 
+//         #pragma unroll
+//         for (int it = 0;  it < WARP_ITERATIONS;  it+=ELEMENTS_PER_LDG_STG) {
+//             int element_index = ELEMENTS_PER_LDG_STG * local_idx + it * WARP_SIZE;
+//             if (element_index < batch_element_count) {
+//                 copy_vector<input_t, ELEMENTS_PER_LDG_STG>(temp_grad, grad + i * element_count + it * WARP_SIZE);
+//                 copy_vector<input_t, ELEMENTS_PER_LDG_STG>(temp_output, output + i * element_count + it * WARP_SIZE);
+// 
+//                 #pragma unroll
+//                 for (int element = 0; element < ELEMENTS_PER_LDG_STG; ++element) {
+//                     output_reg[i][it + element] = (acc_t)temp_output[element];
+//                 }
+//                 #pragma unroll
+//                 for (int element = 0; element < ELEMENTS_PER_LDG_STG; ++element) {
+//                     grad_reg[i][it + element] = (acc_t)temp_grad[element] * output_reg[i][it + element];
+//                 }
+//             } 
+//         }
+//     }
+//    
+//     acc_t sum[WARP_BATCH];
+//     #pragma unroll
+//     for (int i = 0;  i < WARP_BATCH;  ++i) {
+//         sum[i] = grad_reg[i][0];
+//         #pragma unroll
+//         for (int it = 1;  it < WARP_ITERATIONS;  ++it) {
+//             sum[i] += grad_reg[i][it];
+//         }
+//     }
+//     warp_reduce<acc_t, WARP_BATCH, WARP_SIZE, Add>(sum);
+// 
+//     // store result
+//     #pragma unroll
+//     for (int i = 0;  i < WARP_BATCH;  ++i) {
+//         if (i >= local_batches)
+//             break;
+//         #pragma unroll
+//         for (int it = 0;  it < WARP_ITERATIONS;  it+=ELEMENTS_PER_LDG_STG) {
+//             int element_index = ELEMENTS_PER_LDG_STG * local_idx + it * WARP_SIZE;
+//             if (element_index < element_count) {
+//                 // compute gradients
+//                 output_t out[ELEMENTS_PER_LDG_STG];
+//                 #pragma unroll
+//                 for (int element = 0; element < ELEMENTS_PER_LDG_STG; ++element) {
+//                     out[element] = (output_t)(scale * (grad_reg[i][it + element] - output_reg[i][it + element] * sum[i]));
+//                 }
+//                 copy_vector<output_t, ELEMENTS_PER_LDG_STG>(gradInput + i * element_count + it * WARP_SIZE, out);
+//             } 
+//         }
+//     }
+// }
+
 } // end of anonymous namespace
 
 int get_batch_per_block(int query_seq_len, int key_seq_len, int batches, int attn_heads){
@@ -444,7 +509,7 @@ int get_batch_per_block(int query_seq_len, int key_seq_len, int batches, int att
 //}
 
 template<typename input_t, typename output_t, typename acc_t>
-void dispatch_scaled_masked_softmax_backward(
+void dispatch_scaled_masked_softmax_backward_new(
     output_t *grad_input, 
     input_t *grad, 
     const input_t *output, 
@@ -454,85 +519,21 @@ void dispatch_scaled_masked_softmax_backward(
     int batches,
     int attn_heads)
 {
-    TORCH_INTERNAL_ASSERT( key_seq_len >= 0 && key_seq_len <= 4096 );
-    if (key_seq_len == 0) {
-       return;
-    } else {
-        int log2_elements = log2_ceil(key_seq_len);
-        const int next_power_of_two = 1 << log2_elements;
-        int batch_count = batches *  attn_heads * query_seq_len;
-
-        // This value must match the WARP_SIZE constexpr value computed inside softmax_warp_backward.
-        int warp_size = (next_power_of_two < C10_WARP_SIZE) ? next_power_of_two : C10_WARP_SIZE;
-
-        // This value must match the WARP_BATCH constexpr value computed inside softmax_warp_backward.
-        int batches_per_warp = (next_power_of_two <= 128) ? 2 : 1;
-
+    TORCH_INTERNAL_ASSERT(key_seq_len >= 0 && key_seq_len <= 4096);
+    if (key_seq_len == 0)
+    {
+        return;
+    }
+    else
+    {
+        int batch_count = batches * attn_heads * query_seq_len;
         // use 128 threads per block to maximimize gpu utilization
-        constexpr int threads_per_block = 128;
+        constexpr int threads_per_block = 1024;
+        dim3 blocks(batch_count, 1, 1);
+        dim3 threads(threads_per_block, 1, 1);
 
-        int warps_per_block = (threads_per_block / warp_size);
-        int batches_per_block = warps_per_block * batches_per_warp;
-        int blocks = batch_count/batches_per_block;
-        dim3 threads(warp_size, warps_per_block, 1);
-        // Launch code would be more elegant if C++ supported FOR CONSTEXPR
-        switch (log2_elements) {
-            case 0: // 1
-                scaled_masked_softmax_warp_backward<input_t, output_t, acc_t, 0>
-                    <<<blocks, threads, 0, at::cuda::getCurrentCUDAStream()>>>(grad_input, grad, output, scale, batch_count, key_seq_len);
-                break;
-            case 1: // 2
-                scaled_masked_softmax_warp_backward<input_t, output_t, acc_t, 1>
-                    <<<blocks, threads, 0, at::cuda::getCurrentCUDAStream()>>>(grad_input, grad, output, scale, batch_count, key_seq_len);
-                break;
-            case 2: // 4
-                scaled_masked_softmax_warp_backward<input_t, output_t, acc_t, 2>
-                    <<<blocks, threads, 0, at::cuda::getCurrentCUDAStream()>>>(grad_input, grad, output, scale, batch_count, key_seq_len);
-                break;
-            case 3: // 8
-                scaled_masked_softmax_warp_backward<input_t, output_t, acc_t, 3>
-                    <<<blocks, threads, 0, at::cuda::getCurrentCUDAStream()>>>(grad_input, grad, output, scale, batch_count, key_seq_len);
-                break;
-            case 4: // 16
-                scaled_masked_softmax_warp_backward<input_t, output_t, acc_t, 4>
-                    <<<blocks, threads, 0, at::cuda::getCurrentCUDAStream()>>>(grad_input, grad, output, scale, batch_count, key_seq_len);
-                break;
-            case 5: // 32
-                scaled_masked_softmax_warp_backward<input_t, output_t, acc_t, 5>
-                    <<<blocks, threads, 0, at::cuda::getCurrentCUDAStream()>>>(grad_input, grad, output, scale, batch_count, key_seq_len);
-                break;
-            case 6: // 64
-                scaled_masked_softmax_warp_backward<input_t, output_t, acc_t, 6>
-                    <<<blocks, threads, 0, at::cuda::getCurrentCUDAStream()>>>(grad_input, grad, output, scale, batch_count, key_seq_len);
-                break;
-            case 7: // 128
-                scaled_masked_softmax_warp_backward<input_t, output_t, acc_t, 7>
-                    <<<blocks, threads, 0, at::cuda::getCurrentCUDAStream()>>>(grad_input, grad, output, scale, batch_count, key_seq_len);
-                break;
-            case 8: // 256
-                scaled_masked_softmax_warp_backward<input_t, output_t, acc_t, 8>
-                    <<<blocks, threads, 0, at::cuda::getCurrentCUDAStream()>>>(grad_input, grad, output, scale, batch_count, key_seq_len);
-                break;
-            case 9: // 512
-                scaled_masked_softmax_warp_backward<input_t, output_t, acc_t, 9>
-                    <<<blocks, threads, 0, at::cuda::getCurrentCUDAStream()>>>(grad_input, grad, output, scale, batch_count, key_seq_len);
-                break;
-            case 10: // 1024
-                scaled_masked_softmax_warp_backward<input_t, output_t, acc_t, 10>
-                    <<<blocks, threads, 0, at::cuda::getCurrentCUDAStream()>>>(grad_input, grad, output, scale, batch_count, key_seq_len);
-                break;
-            case 11: // 2048
-                scaled_masked_softmax_warp_backward<input_t, output_t, acc_t, 11>
-                    <<<blocks, threads, 0, at::cuda::getCurrentCUDAStream()>>>(grad_input, grad, output, scale, batch_count, key_seq_len);
-                break;
-			case 12: // 4096
-                scaled_masked_softmax_warp_backward<input_t, output_t, acc_t, 12>
-                    <<<blocks, threads, 0, at::cuda::getCurrentCUDAStream()>>>(grad_input, grad, output, scale, batch_count, key_seq_len);
-                break;
-
-            default:
-                break;
-        }
+        scaled_masked_softmax_warp_backward_new<input_t, output_t, acc_t, 12>
+            <<<blocks, threads, 0, at::cuda::getCurrentCUDAStream()>>>(grad_input, grad, output, scale, key_seq_len);
     }
 }
 
@@ -555,7 +556,7 @@ __global__ void scaled_masked_softmax_warp_forward_new(
     int threads_per_block = blockDim.x; 
     // Shared mem for 32 partial sums. assume 1024 threads per block, we can handle 32 * 32 = 1024 warps at once
     // maximum shared cached 32
-    static __shared__ acc_t shared[32]; 
+    static __shared__ acc_t shared[C10_WARP_SIZE]; 
 
     // number of 1024 threads reductions 
     int num_reductions =  (element_count - 1) / threads_per_block + 1;
@@ -578,7 +579,7 @@ __global__ void scaled_masked_softmax_warp_forward_new(
     int wid = threadIdx.x / C10_WARP_SIZE;
 
     // first find the max value
-    if (local_idx < 32){
+    if (local_idx < C10_WARP_SIZE){
         shared[local_idx] = -10000.0;
     }
     __syncthreads();
@@ -604,7 +605,7 @@ __global__ void scaled_masked_softmax_warp_forward_new(
         __syncthreads();
     }
     // final shared reduction
-    if (local_idx < 32) {
+    if (local_idx < C10_WARP_SIZE) {
         acc_t val = shared[local_idx];
         val = warp_reduce_new<acc_t, C10_WARP_SIZE, Max>(val);
         if (lane==0) {
@@ -621,7 +622,7 @@ __global__ void scaled_masked_softmax_warp_forward_new(
     }
 
     // find the sum 
-    if (local_idx < 32){
+    if (local_idx < C10_WARP_SIZE){
         shared[local_idx] = 0.0;
     }
     __syncthreads();
@@ -638,7 +639,7 @@ __global__ void scaled_masked_softmax_warp_forward_new(
         __syncthreads();
     }
     // final shared reduction
-    if (local_idx < 32) {
+    if (local_idx < C10_WARP_SIZE) {
         acc_t val = shared[local_idx];
         val = warp_reduce_new<acc_t, C10_WARP_SIZE, Add>(val);
         if (lane==0) {
@@ -678,7 +679,6 @@ void dispatch_scaled_masked_softmax_forward_new(
     if (key_seq_len == 0) {
         return;
     } else {
-        int num_warps =  (key_seq_len - 1) / C10_WARP_SIZE + 1;
         int batch_count = batches * attn_heads * query_seq_len;
 
         // use 128 threads per block to maximimize gpu utilization
