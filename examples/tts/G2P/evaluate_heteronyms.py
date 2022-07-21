@@ -8,6 +8,8 @@ import argparse
 parser = argparse.ArgumentParser(description="Calculate accuracy of heteronyms predictions")
 parser.add_argument("--manifest", type=str, help="Path to manifest files with model predictions")
 parser.add_argument("--target", type=str, default=None, help="heteronym to use for accuracy calculation, the rest heteronyms will be ignored")
+parser.add_argument("--grapheme_field", default="text_graphemes", type=str, help="Name of the field in the manifest to load grapheme input from ")
+
 
 def _process_wiki_eval(graphemes):
     graphemes = graphemes.replace("says sorry for calling guest 'retard'", "says sorry for calling guest retard")
@@ -37,7 +39,7 @@ def eval_heteronyms(manifest, target_homograph=None):
 
             for homograph, word_id, start_end in zip(homograph_spans, wordids, start_end_indices):
                 num_examples += 1
-                graphemes = clean(line["text_graphemes"], do_lower=False)
+                graphemes = clean(line[args.grapheme_field], do_lower=False)
                 graphemes = _process_wiki_eval(graphemes)
                 phonemes_preds = clean(line["pred_text"])
                 phonemes_gt = clean(line["text"])
@@ -85,6 +87,7 @@ def eval_heteronyms(manifest, target_homograph=None):
                         print(phonemes_gt)
                         print(graphemes)
                         print(homograph)
+                        import pdb; pdb.set_trace()
 
                         num_skipped += 1
                     else:

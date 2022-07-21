@@ -29,7 +29,7 @@ model:
   train_ds:
     dataset:
       _target_: "nemo.collections.tts.torch.data.T5G2PDataset"
-      data_dir: ${train_dataset}
+      manifest: ${train_dataset}
       wordids: "/home/ebakhturina/g2p_scripts/WikipediaHomographData-master/data/wordids.tsv"
       context_len: 5
     dataloader_params:
@@ -41,7 +41,7 @@ model:
   validation_ds:
     dataset:
       #_target_: "nemo.collections.tts.data.datalayers.T5G2PDataset"
-      data_dir: ${validation_dataset}
+      manifest: ${validation_dataset}
       context_len: 5
     dataloader_params:
       drop_last: false
@@ -52,7 +52,7 @@ model:
   test_ds:
     dataset:
       #_target_: "nemo.collections.tts.data.datalayers.T5G2PDataset"
-      data_dir: null
+      manifest: null
       context_len: 5
     dataloader_params:
       drop_last: false

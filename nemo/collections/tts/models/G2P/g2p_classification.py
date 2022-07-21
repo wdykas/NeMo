@@ -208,7 +208,7 @@ class G2PClassificationModel(ModelPT):
 
     # Functions for processing data
     def setup_training_data(self, train_data_config: Optional[DictConfig]):
-        if not train_data_config or train_data_config.dataset.data_dir is None:
+        if not train_data_config or train_data_config.dataset.manifest is None:
             logging.info(
                 f"Dataloader config or file_path for the train is missing, so no data loader for train is created!"
             )
@@ -217,7 +217,7 @@ class G2PClassificationModel(ModelPT):
         self._train_dl = self._setup_dataloader_from_config(cfg=train_data_config, data_split="train")
 
     def setup_validation_data(self, val_data_config: Optional[DictConfig]):
-        if not val_data_config or val_data_config.dataset.data_dir is None:
+        if not val_data_config or val_data_config.dataset.manifest is None:
             logging.info(
                 f"Dataloader config or file_path for the validation is missing, so no data loader for validation is created!"
             )
@@ -226,7 +226,7 @@ class G2PClassificationModel(ModelPT):
         self._validation_dl = self._setup_dataloader_from_config(cfg=val_data_config, data_split="val")
 
     def setup_test_data(self, test_data_config: Optional[DictConfig]):
-        if not test_data_config or test_data_config.dataset.data_dir is None:
+        if not test_data_config or test_data_config.dataset.manifest is None:
             logging.info(
                 f"Dataloader config or file_path for the test is missing, so no data loader for test is created!"
             )
@@ -247,7 +247,7 @@ class G2PClassificationModel(ModelPT):
             raise ValueError(f"Wordids failed to setup or doesn't exist - {data_split}")
 
         dataset = G2PClassificationDataset(
-            dir_name=cfg.dataset.data_dir,
+            manifest=cfg.dataset.manifest,
             tokenizer=self.tokenizer,
             wordid_map=self.wordids,
             context_len=cfg.dataset.context_len,

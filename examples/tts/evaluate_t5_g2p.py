@@ -47,8 +47,8 @@ parser.add_argument(
     "--model_ckpt", type=str, required=True, help="T5 G2P model checkpoint for prediction",
 )
 parser.add_argument("--manifest_filepath", type=str, required=True, help="Path to evaluation data")
-parser.add_argument("--batch_size", type=int, default=4)
-parser.add_argument("--num_workers", type=int, default=0)
+parser.add_argument("--batch_size", type=int, default=64)
+parser.add_argument("--num_workers", type=int, default=2)
 parser.add_argument(
     "--output", type=str, default="T5_generative_predictions.json", help="Path to store model's predictions"
 )
@@ -59,7 +59,7 @@ parser.add_argument(
 )
 parser.add_argument("--per_word", action="store_true", help="Set to True to run inference per word")
 parser.add_argument("--heteronyms_model", default=None, type=str, help="Path to a pre-trained classification model for heteronyms disambiguation")
-
+parser.add_argument("--grapheme_field", default="text_graphemes", type=str, help="Name of the field in the manifest to load grapheme input from ")
 
 def main():
     args = parser.parse_args()

@@ -961,7 +961,8 @@ class T5G2PDataset(Dataset):
         tokenizer: PreTrainedTokenizerBase,
         max_source_len: int = 512,
         max_target_len: int = 512,
-        do_lower: bool = False
+        do_lower: bool = False,
+        grapheme_field: str = "text_graphemes" # "norm_text_graphemes" #"text_graphemes"
     ):
         # TODO: docstring
         super().__init__()
@@ -982,9 +983,9 @@ class T5G2PDataset(Dataset):
                 # TODO: better filtering of max source/target length? tokenize first??
                 item = json.loads(line)
 
-                if len(item["text_graphemes"]) > max_source_len:
+                if len(item[grapheme_field]) > max_source_len:
                     num_filtered += 1
-                    print(f"dropping {len(item['text_graphemes'])} longer max_source_len")
+                    print(f"dropping {len(item[grapheme_field])} longer max_source_len")
                     continue
                 if len(item["text"]) > max_target_len:
                     num_filtered += 1
@@ -992,7 +993,7 @@ class T5G2PDataset(Dataset):
                     continue
 
                 # TODO: change pred_text to something more sensible in manifest
-                graphemes = item["text_graphemes"]
+                graphemes = item[grapheme_field]
                 if do_lower:
                     graphemes = graphemes.lower()
                 self.data.append({"graphemes": graphemes, "phonemes": item["text"]})

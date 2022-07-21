@@ -64,7 +64,7 @@ class G2PClassificationDataset(Dataset):
 
     def __init__(
         self,
-        dir_name: str,
+        manifest: str,
         tokenizer: PreTrainedTokenizerBase,
         wordid_map: str = "wordids.tsv",
         context_len: int = 3,
@@ -77,9 +77,9 @@ class G2PClassificationDataset(Dataset):
         """
 
         super().__init__()
-        print(f"\nprocessing: {dir_name}")
-        if not os.path.exists(dir_name):
-            raise ValueError(f"{dir_name} not found")
+        print(f"\nprocessing: {manifest}")
+        if not os.path.exists(manifest):
+            raise ValueError(f"{manifest} not found")
 
         self.tokenizer = tokenizer
         self.max_seq_len = max_seq_len
@@ -89,41 +89,51 @@ class G2PClassificationDataset(Dataset):
 
         self.wiki_homograph_dict, self.target_ipa, self.target_ipa_label_to_id = read_wordids(wordid_map)
 
-        for file in tqdm(glob(f"{dir_name}/*.tsv")):
-            file_data = read_wikihomograph_file(file)
+        import json
+        def read_normalized_data(dir_name):
+            data = {}
+            for manifest in tqdm(glob(f"{dir_name}/*.json")):
+                with open(manifest, "r", encoding="utf-8") as f:
+                    for i, line in enumerate(f):
+                        line = json.loads(line)
+                        data[line["norm_text_graphemes"]] = line["original_graphemes"]
+            return data
 
-            for sentence, start_end_index, homograph, word_id in zip(*file_data):
-                start, end = start_end_index
-                target, target_and_negatives = self._prepare_sample(sentence, start, end, homograph, word_id)
-                self.data.append({"input": sentence, "target": target, "target_and_negatives": target_and_negatives})
-        print("--->", len(self.data), dir_name)
+        norm_data = read_normalized_data("/home/ebakhturina/g2p_scripts/WikipediaHomographData-master/data/train_normalized_8_missing_entries")
 
         # TODO: refactor
-        if "train" in dir_name:
-            #  add Aligner data data
-            print("\nprocessing: aligner data")
-            manifest = "/mnt/sdb_4/g2p/data_ipa/disambiguated/ipa/lj_9017_92.json"
-            sentences, start_end_indices, homographs, word_ids = [], [], [], []
-            import json
-            with open(manifest, "r") as f:
-                for line in f:
-                    line = json.loads(line)
-                    for se, h, w in zip(line["start_end"], line["homograph_span"], line["word_id"]):
-                        start_end_indices.append(se)
-                        homographs.append(h)
-                        word_ids.append(w)
-                        sentences.append(line["text_normalized"])
-                        if line["text_normalized"][se[0]:se[1]] != h:
-                            import pdb; pdb.set_trace()
+        sentences, start_end_indices, homographs, word_ids = [], [], [], []
 
-            # # lj_manifest = "/mnt/sdb_4/g2p/data_ipa/training_data_v8/raw_files/filtered_disamb_ljspeech_train_ipa.json"
-            # # hifi_9017_manifest = "/mnt/sdb_4/g2p/data_ipa/training_data_v8/raw_files/disamb_9017_clean_train_heteronyms_filtered_ipa.json"
-            # data = convert_to_wiki_format([lj_manifest, hifi_9017_manifest])
-            for sentence, start_end_index, homograph, word_id in zip(sentences, start_end_indices, homographs, word_ids ):
-                start, end = start_end_index
-                target, target_and_negatives = self._prepare_sample(sentence, start, end, homograph, word_id)
-                self.data.append({"input": sentence, "target": target, "target_and_negatives": target_and_negatives})
-            print("--->", len(self.data), "aligner")
+        with open(manifest, "r") as f:
+            for line in f:
+                line = json.loads(line)
+                cur_start_end, cur_homographs, cur_word_ids = line["start_end"], line["homograph_span"], line["word_id"]
+                if isinstance(cur_homographs, str):
+                    cur_start_end, cur_homographs, cur_word_ids = [cur_start_end], [cur_homographs], [cur_word_ids]
+
+                for se, h, w in zip(cur_start_end, cur_homographs, cur_word_ids):
+                    start_end_indices.append(se)
+                    homographs.append(h)
+                    word_ids.append(w)
+
+                    if "text_normalized" in line:
+                        grapheme_sent = line["text_normalized"]
+                    else:
+                        if line["norm_text_graphemes"] in norm_data:
+                            grapheme_sent = norm_data[line["norm_text_graphemes"]]
+                        else:
+                            import pdb; pdb.set_trace()
+                            print()
+                    sentences.append(grapheme_sent)
+                    if grapheme_sent[se[0]:se[1]] != h:
+                        import pdb; pdb.set_trace()
+                        print()
+
+        for sentence, start_end_index, homograph, word_id in zip(sentences, start_end_indices, homographs, word_ids):
+            start, end = start_end_index
+            target, target_and_negatives = self._prepare_sample(sentence, start, end, homograph, word_id)
+            self.data.append({"input": sentence, "target": target, "target_and_negatives": target_and_negatives})
+        print("--->", len(self.data), manifest)
 
 
     def _prepare_sample(self, sentence, start, end, homograph, word_id):

@@ -13,8 +13,7 @@ if [[ ${PER_WORD,,} == "true" ]]; then
 fi
 echo "PER_WORD: ${PER_WORD}"
 
-#for file in /mnt/sdb_4/g2p/chpts/t5_generative/v${VERSION}/${JOB_ID}/g2p/T5G2P/*/checkpoints/T5G2P.nemo
-for file in /mnt/sdb/test2/g2p/results/g2p/T5G2P/3148608/checkpoints/T5G2P.nemo
+for file in /mnt/sdb_4/g2p/chpts/t5_generative/v${VERSION}/${JOB_ID}/g2p/T5G2P/*/checkpoints/T5G2P.nemo
 do
   LOG_CLEAN=${JOB_ID}_log_clean.txt
   LOG_NO_CLEAN=${JOB_ID}_log_no_clean.txt
@@ -32,7 +31,7 @@ do
   python ../evaluate_t5_g2p.py --model_ckpt=$file --manifest_filepath=/mnt/sdb_4/g2p/data_ipa/evaluation_sets_v${VERSION}/CMU_TEST_MULTI/cmu_test.json --batch_size=$BATCH_SIZE > "/tmp/cmu${JOB_ID}.txt"
   python ../evaluate_t5_g2p.py --model_ckpt=$file --manifest_filepath=/mnt/sdb_4/g2p/data_ipa/evaluation_sets_v${VERSION}/eval_wikihomograph.json --output=$output_heteronyms_wiki --batch_size=$BATCH_SIZE ${PER_WORD}> "/tmp/wiki${JOB_ID}.txt"
   python evaluate_heteronyms.py --manifest=$output_heteronyms_wiki > "/tmp/wiki_heteronyms${JOB_ID}.txt"
-  python ../evaluate_t5_g2p.py --model_ckpt=$file --manifest_filepath=/mnt/sdb_4/g2p/data_ipa/evaluation_sets_v${VERSION}/lj_hifi_dev_heteronyms_ipa.json --output=$output_heteronyms_lj_hifi_dev --batch_size=$BATCH_SIZE ${PER_WORD}> "/tmp/lj_hifi_dev${JOB_ID}.txt"
+  python ../evaluate_t5_g2p.py --model_ckpt=$file --manifest_filepath=/mnt/sdb_4/g2p/data_ipa/disambiguated/ipa/100entries_92_train_lj_hifi_dev_jocelyn_short_ipa.json --output=$output_heteronyms_lj_hifi_dev --batch_size=$BATCH_SIZE ${PER_WORD}> "/tmp/lj_hifi_dev${JOB_ID}.txt"
   python evaluate_heteronyms.py --manifest=$output_heteronyms_lj_hifi_dev > "/tmp/lj_hifi_dev${JOB_ID}.txt"
   tail -n 7 "/tmp/cmu${JOB_ID}.txt" "/tmp/wiki${JOB_ID}.txt" "/tmp/wiki_heteronyms${JOB_ID}.txt" "/tmp/lj_hifi_dev${JOB_ID}.txt" > ${LOG_NO_CLEAN}
 
