@@ -20,16 +20,27 @@ print(fused_kernels.build.scaled_masked_softmax_cuda.forward)
 
 scale_t = torch.tensor([1.0])
 
-inputs = torch.rand((2, 4, 323, 3222), dtype=torch.float16, device='cuda:0')
-masks =  torch.randint(0, 2, (1, 1, 323, 3222), dtype=torch.bool, device='cuda:0')
-# inputs = torch.rand((1, 1, 1, 4096), dtype=torch.float16, device='cuda:0')
-# masks =  torch.randint(0, 2, (1, 1, 1, 4096), dtype=torch.bool, device='cuda:0')
+# inputs = torch.rand((2, 4, 323, 3222), dtype=torch.float16, device='cuda:0')
+# masks =  torch.randint(0, 2, (1, 1, 323, 3222), dtype=torch.bool, device='cuda:0')
+# masks =  torch.zeros((1, 1, 323, 3222), dtype=torch.bool, device='cuda:0')
+
+inputs = torch.rand((1, 1, 1, 2048), dtype=torch.float16, device='cuda:0')
+masks =  torch.randint(0, 2, (1, 1, 1, 2048), dtype=torch.bool, device='cuda:0')
 # inputs = torch.rand((1, 1, 2, 32), dtype=torch.float16, device='cuda:0')
 # masks =  torch.randint(0, 2, (1, 1, 2, 32), dtype=torch.bool, device='cuda:0')
+# backward = torch.rand((2, 4, 323, 3222), dtype=torch.float16, device='cuda:0')
+backward = torch.rand((1, 1, 1, 2048), dtype=torch.float16, device='cuda:0')
+backward2 = backward.clone()
 
 
 softmax_results = fused_kernels.build.scaled_masked_softmax_cuda.forward(inputs, masks, scale_t[0])
-softmax_results_torch = forward_torch_softmax(inputs, masks, scale_t[0].item())
 
+back_grad = fused_kernels.build.scaled_masked_softmax_cuda.backward(backward, softmax_results, scale_t[0])
+
+inputs.requires_grad = True
+softmax_results_torch = forward_torch_softmax(inputs, masks, scale_t[0].item())
+softmax_results_torch.backward(backward2)
 print((softmax_results_torch - softmax_results).abs().max())
+print((back_grad - inputs.grad).abs().max())
+
 # print(softmax_results)
