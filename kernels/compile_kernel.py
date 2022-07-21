@@ -27,12 +27,12 @@ scale_t = torch.tensor([1.0])
 # masks =  torch.randint(0, 2, (1, 1, 323, 3222), dtype=torch.bool, device='cuda:0')
 # masks =  torch.zeros((1, 1, 323, 3222), dtype=torch.bool, device='cuda:0')
 batch = 2
-inputs = torch.rand((batch, 16, 4096, 4096), dtype=torch.float16, device='cuda:0')
-masks =  torch.randint(0, 2, (batch, 1, 4096, 4096), dtype=torch.bool, device='cuda:0')
+inputs = torch.rand((batch, 16, 2048, 2048), dtype=torch.float16, device='cuda:0')
+masks =  torch.randint(0, 2, (batch, 1, 2048, 2048), dtype=torch.bool, device='cuda:0')
 # inputs = torch.rand((1, 1, 2, 32), dtype=torch.float16, device='cuda:0')
 # masks =  torch.randint(0, 2, (1, 1, 2, 32), dtype=torch.bool, device='cuda:0')
 # backward = torch.rand((2, 4, 323, 3222), dtype=torch.float16, device='cuda:0')
-backward = torch.rand((batch, 16, 4096, 4096), dtype=torch.float16, device='cuda:0')
+backward = torch.rand((batch, 16, 2048, 2048), dtype=torch.float16, device='cuda:0')
 backward2 = backward.clone()
 
 
@@ -51,17 +51,11 @@ print((back_grad - inputs.grad).abs().max())
 
 beg = time.time()
 for i in range(30):
-    fused_kernels.build.scaled_masked_softmax_cuda_new.forward(inputs, masks, scale_t[0])
+    scaled_masked_softmax_cuda.forward(inputs, masks, scale_t[0])
 torch.cuda.synchronize(device='cuda:0')
 end = time.time()
 print('apex',end - beg)
 
-beg = time.time()
-for i in range(30):
-    fused_kernels.build.scaled_masked_softmax_cuda_new.forward(inputs, masks, scale_t[0])
-torch.cuda.synchronize(device='cuda:0')
-end = time.time()
-print('yi',end - beg)
 
 beg = time.time()
 for i in range(30):
@@ -70,3 +64,9 @@ torch.cuda.synchronize(device='cuda:0')
 end = time.time()
 print('torch',end - beg)
 
+beg = time.time()
+for i in range(30):
+    fused_kernels.build.scaled_masked_softmax_cuda_new.forward(inputs, masks, scale_t[0])
+torch.cuda.synchronize(device='cuda:0')
+end = time.time()
+print('yi',end - beg)

@@ -94,7 +94,7 @@ __global__ void scaled_masked_softmax_warp_backward_new(
     acc_t values[4];
     acc_t out_values[4];
     acc_t val = 0.0;
-
+    #pragma unroll
     for (int i = 0; i < num_reductions; i++){
         val = 0.0;
         if (i*threads_per_block + local_idx < element_count){
@@ -119,7 +119,7 @@ __global__ void scaled_masked_softmax_warp_backward_new(
     __syncthreads();
 
     acc_t reduced_val = shared[0];
-
+    #pragma unroll
     for (int i = 0; i < num_reductions; i++){
        if (i*threads_per_block + local_idx < element_count){
          gradInput[offset + i*threads_per_block + local_idx] = (output_t)(scale*(values[i] - out_values[i]*reduced_val)); 
@@ -206,6 +206,7 @@ __global__ void scaled_masked_softmax_warp_forward_new(
     __syncthreads();
     acc_t values[4];
     acc_t val = 0.0;
+    #pragma unroll
     for (int i = 0; i < num_reductions; i++){
         val = -10000.0;
         if (i*threads_per_block + local_idx < element_count){
@@ -238,6 +239,7 @@ __global__ void scaled_masked_softmax_warp_forward_new(
     acc_t reduced_val = shared[0];
 
     // update the values
+    #pragma unroll
     for (int i = 0; i < num_reductions; i++){
         values[i] = std::exp(values[i] - reduced_val);
     }
@@ -248,6 +250,7 @@ __global__ void scaled_masked_softmax_warp_forward_new(
     }
     __syncthreads();
 
+    #pragma unroll
     for (int i = 0; i < num_reductions; i++){
         val = 0.0;
         if (i*threads_per_block + local_idx < element_count){
@@ -275,6 +278,7 @@ __global__ void scaled_masked_softmax_warp_forward_new(
     //    printf("bid %d, lid %d, offset %d, blocks %d, v: %f, mask_offset %d\n", blockIdx.x, local_idx, offset, gridDim.x, reduced_val, mask_offset);
     //}
 
+    #pragma unroll
     for (int i = 0; i < num_reductions; i++){
        if (i*threads_per_block + local_idx < element_count){
          dst[offset + i*threads_per_block + local_idx] = values[i] / reduced_val;
