@@ -1,11 +1,12 @@
 import torch
 from apex._autocast_utils import _cast_if_autocast_enabled
+import nemo.collections.nlp.modules.common.megatron.fused_kernels 
 
 
 class ScaledMaskedSoftmax(torch.autograd.Function):
     @staticmethod
     def forward(ctx, inputs, mask, scale):
-        from nemo.collections.nlp.modules.common.megatron.fused_kernels.build import scaled_masked_softmax_cuda_new
+        import scaled_masked_softmax_cuda_new
         scale_t = torch.tensor([scale])
         softmax_results = scaled_masked_softmax_cuda_new.forward(inputs, mask, scale_t[0])
         ctx.save_for_backward(softmax_results, scale_t)
@@ -13,7 +14,7 @@ class ScaledMaskedSoftmax(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, output_grads):
-        from nemo.collections.nlp.modules.common.megatron.fused_kernels.build import scaled_masked_softmax_cuda_new
+        import scaled_masked_softmax_cuda_new
 
         softmax_results, scale_t = ctx.saved_tensors
 
