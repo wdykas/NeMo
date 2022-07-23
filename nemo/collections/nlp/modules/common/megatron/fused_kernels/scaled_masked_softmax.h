@@ -72,11 +72,13 @@ __global__ void scaled_masked_softmax_warp_backward_new(
     int element_count)
 {
     int threads_per_block = blockDim.x; 
-    //the first element_count is used for cache, the last 128 is used for reduction
-    extern __shared__ acc_t local_data[];
-    // maximum shared cached 32
-    acc_t *shared = &(local_data[element_count]);
-    // number of 1024 threads reductions 
+    //the first element_count*2 elements are used for cache, the last 128 is used for reduction
+    extern __shared__ acc_t shared_data[];
+    input_t *local_data = (input_t *)shared_data;
+    input_t *output_data = &local_data[element_count];
+    // maximum shared cached 128, enough for 4096 elements reduction into 4096/32= 128 elements
+    acc_t *shared = (acc_t *)(&(local_data[element_count*2]));
+
     int num_reductions =  (element_count - 1) / threads_per_block + 1;
 
     int offset = blockIdx.x * element_count;
@@ -87,10 +89,12 @@ __global__ void scaled_masked_softmax_warp_backward_new(
     int warps_per_thread_block = threads_per_block / C10_WARP_SIZE; 
 
     // load the data to local data
+    acc_t val = 0.0;
     for (int i = local_idx; i < element_count; i += threads_per_block)
     {
-        local_data[i] = output[offset + i] * grad[offset + i];
-        //val = grad[offset + i*threads_per_block + local_idx]*out_values[i];
+        val = output[offset + i];
+        output_data[i] = val;
+        local_data[i] = val * grad[offset + i];
     }
 
     // find the sum 
@@ -99,7 +103,6 @@ __global__ void scaled_masked_softmax_warp_backward_new(
     }
     __syncthreads();
 
-    acc_t val = 0.0;
     #pragma unroll
     for (int i = 0; i < num_reductions; i++){
         if (i*threads_per_block + local_idx < element_count){
@@ -134,13 +137,13 @@ __global__ void scaled_masked_softmax_warp_backward_new(
         }
     }
     __syncthreads();
-    acc_t reduced_val = shared[0];
+    val = shared[0];
 
     //acc_t reduced_val = (shared[0] + shared[1]) + (shared[2] + shared[3]);
 
     #pragma unroll
     for (int i = local_idx; i < element_count; i += threads_per_block){
-        gradInput[offset + i] = (output_t)(scale*(local_data[i] - output[offset + i]*reduced_val)); 
+        gradInput[offset + i] = (output_t)(scale*(local_data[i] - output_data[i]*val)); 
     }
 }
 
@@ -171,7 +174,7 @@ void dispatch_scaled_masked_softmax_backward_new(
         dim3 threads(threads_per_block, 1, 1);
 
         scaled_masked_softmax_warp_backward_new<input_t, output_t, acc_t, 12>
-            <<<blocks, threads, sizeof(acc_t) * (key_seq_len + 128), at::cuda::getCurrentCUDAStream()>>>(grad_input, grad, output, scale, key_seq_len);
+            <<<blocks, threads, sizeof(input_t)*key_seq_len*2 + sizeof(acc_t)*128, at::cuda::getCurrentCUDAStream()>>>(grad_input, grad, output, scale, key_seq_len);
     }
 }
 

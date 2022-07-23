@@ -24,10 +24,10 @@ scale_t = torch.tensor([1.0])
 # inputs = torch.rand((2, 4, 323, 3222), dtype=torch.float16, device='cuda:0')
 # masks =  torch.randint(0, 2, (1, 1, 323, 3222), dtype=torch.bool, device='cuda:0')
 # masks =  torch.zeros((1, 1, 323, 3222), dtype=torch.bool, device='cuda:0')
-batch = 4 
+batch = 2 
 attn = 16
-qlen = 2048
-klen = 2048
+qlen = 2221
+klen = 3323
 inputs = torch.rand((batch, attn, qlen, klen), dtype=torch.float16, device='cuda:0')
 masks =  torch.randint(0, 2, (batch, 1, qlen, klen), dtype=torch.bool, device='cuda:0')
 # inputs = torch.rand((1, 1, 2, 32), dtype=torch.float16, device='cuda:0')
