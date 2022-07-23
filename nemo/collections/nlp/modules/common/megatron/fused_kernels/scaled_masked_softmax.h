@@ -126,7 +126,17 @@ __global__ void scaled_masked_softmax_warp_backward_new(
 
     __syncthreads();
 
-    acc_t reduced_val = (shared[0] + shared[1]) + (shared[2] + shared[3]);
+    if (local_idx < C10_WARP_SIZE) {
+        val = shared[local_idx];
+        val = warp_reduce_new<acc_t, 4, Add>(val);
+        if (lane==0) {
+            shared[wid] = val;
+        }
+    }
+    __syncthreads();
+    acc_t reduced_val = shared[0];
+
+    //acc_t reduced_val = (shared[0] + shared[1]) + (shared[2] + shared[3]);
 
     #pragma unroll
     for (int i = local_idx; i < element_count; i += threads_per_block){
@@ -156,7 +166,7 @@ void dispatch_scaled_masked_softmax_backward_new(
     {
         int batch_count = batches * attn_heads * query_seq_len;
         // use 128 threads per block to maximimize gpu utilization
-        constexpr int threads_per_block = 256;
+        constexpr int threads_per_block = 128;
         dim3 blocks(batch_count, 1, 1);
         dim3 threads(threads_per_block, 1, 1);
 
@@ -253,7 +263,15 @@ __global__ void scaled_masked_softmax_warp_forward_new(
     }
     __syncthreads();
 
-    acc_t reduced_val = max(max(shared[0], shared[1]), max(shared[2],shared[3]));
+    if (local_idx < C10_WARP_SIZE) {
+        val = shared[local_idx];
+        val = warp_reduce_new<acc_t, 4, Max>(val);
+        if (lane==0) {
+            shared[wid] = val;
+        }
+    }
+    __syncthreads();
+    acc_t reduced_val = shared[0];
 
     // update the values
     #pragma unroll
@@ -292,7 +310,15 @@ __global__ void scaled_masked_softmax_warp_forward_new(
 
     __syncthreads();
 
-    reduced_val = (shared[0] + shared[1]) + (shared[2] + shared[3]);
+    if (local_idx < C10_WARP_SIZE) {
+        val = shared[local_idx];
+        val = warp_reduce_new<acc_t, 4, Add>(val);
+        if (lane==0) {
+            shared[wid] = val;
+        }
+    }
+    __syncthreads();
+    reduced_val = shared[0];
     //if (local_idx<32){
     //    printf("bid %d, lid %d, offset %d, blocks %d, v: %f, mask_offset %d\n", blockIdx.x, local_idx, offset, gridDim.x, reduced_val, mask_offset);
     //}
@@ -323,7 +349,7 @@ void dispatch_scaled_masked_softmax_forward_new(
         int batch_count = batches * attn_heads * query_seq_len;
 
         // use 128 threads per block to maximimize gpu utilization
-        constexpr int threads_per_block = 256;
+        constexpr int threads_per_block = 128;
 
         dim3 blocks(batch_count, 1, 1);
         dim3 threads(threads_per_block, 1, 1);
