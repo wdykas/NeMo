@@ -40,6 +40,7 @@ def load():
     # Build path
     srcpath = pathlib.Path(__file__).parent.absolute()
     buildpath = srcpath / 'build'
+    buildpath = '/tmp/'
     _create_build_dir(buildpath)
 
     # Helper function to build the kernels.

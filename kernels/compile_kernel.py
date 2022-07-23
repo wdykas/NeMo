@@ -1,7 +1,8 @@
 import torch
 import time
 import scaled_masked_softmax_cuda
-from nemo.collections.nlp.modules.common.megatron.fused_kernels.build import scaled_masked_softmax_cuda_new
+import nemo.collections.nlp.modules.common.megatron.fused_kernels 
+import scaled_masked_softmax_cuda_new
 
 
 
@@ -26,8 +27,8 @@ scale_t = torch.tensor([1.0])
 # masks =  torch.zeros((1, 1, 323, 3222), dtype=torch.bool, device='cuda:0')
 batch = 2 
 attn = 16
-qlen = 2221
-klen = 3323
+qlen = 2348
+klen = 3123
 inputs = torch.rand((batch, attn, qlen, klen), dtype=torch.float16, device='cuda:0')
 masks =  torch.randint(0, 2, (batch, 1, qlen, klen), dtype=torch.bool, device='cuda:0')
 # inputs = torch.rand((1, 1, 2, 32), dtype=torch.float16, device='cuda:0')
