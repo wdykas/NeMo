@@ -88,12 +88,12 @@ def main(cfg):
         old_emb = model.fastpitch.speaker_emb
         
         # Choose random
-        new_speaker_emb = torch.rand(1, old_emb.embedding_dim)
+        # new_speaker_emb = torch.rand(1, old_emb.embedding_dim)
         # Choose existing
-        # new_speaker_emb = old_emb.weight[3, :].unsqueeze(0).detach().clone()
+        new_speaker_emb = old_emb.weight[7, :].unsqueeze(0).detach().clone()
         
         new_emb = torch.nn.Embedding(old_emb.num_embeddings+1, old_emb.embedding_dim).from_pretrained(
-            torch.cat([old_emb.weight.detach().clone(), new_speaker_emb], axis=0), freeze=False)
+            torch.cat([old_emb.weight.detach().clone(), new_speaker_emb], axis=0), freeze=True)
         model.fastpitch.speaker_emb = new_emb
         model.cfg.n_speakers += 1
     
