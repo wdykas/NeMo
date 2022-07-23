@@ -67,7 +67,7 @@ print('torch',end - beg)
 
 beg = time.time()
 for i in range(30):
-    fused_kernels.build.scaled_masked_softmax_cuda_new.forward(inputs, masks, scale_t[0])
+    scaled_masked_softmax_cuda_new.forward(inputs, masks, scale_t[0])
 torch.cuda.synchronize(device='cuda:0')
 end = time.time()
 print('yi',end - beg)

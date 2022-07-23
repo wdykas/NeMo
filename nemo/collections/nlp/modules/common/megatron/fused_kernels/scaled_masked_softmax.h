@@ -72,13 +72,10 @@ __global__ void scaled_masked_softmax_warp_backward_new(
     int element_count)
 {
     int threads_per_block = blockDim.x; 
-    // Shared mem for 32 partial sums. assume 1024 threads per block, we can handle 32 * 32 = 1024 warps at once
+    //the first element_count is used for cache, the last 128 is used for reduction
+    extern __shared__ acc_t local_data[];
     // maximum shared cached 32
-    static __shared__ acc_t shared[C10_WARP_SIZE]; 
-    static __shared__ acc_t local_data[4096]; 
-    // load the data to local data
-
-
+    acc_t *shared = &(local_data[element_count]);
     // number of 1024 threads reductions 
     int num_reductions =  (element_count - 1) / threads_per_block + 1;
 
@@ -87,46 +84,53 @@ __global__ void scaled_masked_softmax_warp_backward_new(
     int local_idx = threadIdx.x;
     int lane = threadIdx.x % C10_WARP_SIZE;
     int wid = threadIdx.x / C10_WARP_SIZE;
+    int warps_per_thread_block = threads_per_block / C10_WARP_SIZE; 
 
-    // first find the max value
-    if (local_idx < C10_WARP_SIZE){
-        shared[local_idx] = 0.0;
+    // load the data to local data
+    for (int i = local_idx; i < element_count; i += threads_per_block)
+    {
+        local_data[i] = output[offset + i] * grad[offset + i];
+        //val = grad[offset + i*threads_per_block + local_idx]*out_values[i];
+    }
+
+    // find the sum 
+    for (int i = local_idx; i < 128; i += threads_per_block){
+        shared[i] = 0.0;
     }
     __syncthreads();
 
-    acc_t values[4];
-    acc_t out_values[4];
     acc_t val = 0.0;
     #pragma unroll
     for (int i = 0; i < num_reductions; i++){
-        val = 0.0;
         if (i*threads_per_block + local_idx < element_count){
-            out_values[i] = output[offset + i*threads_per_block + local_idx];
-            val = grad[offset + i*threads_per_block + local_idx]*out_values[i];
-            values[i] = val;
+            val = local_data[i*threads_per_block + local_idx];
+        }
+        else{
+            val = 0.0;
         }
         val = warp_reduce_new<acc_t, C10_WARP_SIZE, Add>(val);
         if (lane==0) {
-            shared[wid] += val;
+            shared[wid + warps_per_thread_block*i] = val;
         }
         __syncthreads();
     }
+
     // final shared reduction
-    if (local_idx < C10_WARP_SIZE) {
-        acc_t val = shared[local_idx];
+    if (local_idx < 128) {
+        val = shared[local_idx];
         val = warp_reduce_new<acc_t, C10_WARP_SIZE, Add>(val);
         if (lane==0) {
             shared[wid] = val;
         }
     }
+
     __syncthreads();
 
-    acc_t reduced_val = shared[0];
+    acc_t reduced_val = (shared[0] + shared[1]) + (shared[2] + shared[3]);
+
     #pragma unroll
-    for (int i = 0; i < num_reductions; i++){
-       if (i*threads_per_block + local_idx < element_count){
-         gradInput[offset + i*threads_per_block + local_idx] = (output_t)(scale*(values[i] - out_values[i]*reduced_val)); 
-       }
+    for (int i = local_idx; i < element_count; i += threads_per_block){
+        gradInput[offset + i] = (output_t)(scale*(local_data[i] - output[offset + i]*reduced_val)); 
     }
 }
 
@@ -157,7 +161,7 @@ void dispatch_scaled_masked_softmax_backward_new(
         dim3 threads(threads_per_block, 1, 1);
 
         scaled_masked_softmax_warp_backward_new<input_t, output_t, acc_t, 12>
-            <<<blocks, threads, 0, at::cuda::getCurrentCUDAStream()>>>(grad_input, grad, output, scale, key_seq_len);
+            <<<blocks, threads, sizeof(acc_t) * (key_seq_len + 128), at::cuda::getCurrentCUDAStream()>>>(grad_input, grad, output, scale, key_seq_len);
     }
 }
 
@@ -179,11 +183,10 @@ __global__ void scaled_masked_softmax_warp_forward_new(
 {
     // min threawds_per_block has to be bigger than 128
     int threads_per_block = blockDim.x; 
+    //  the first element_count is used for cache, the last 128 is used for reduction
+    extern __shared__ acc_t local_data[];
     // maximum shared cached 128, enough for 4096 elements reduction into 4096/32= 128 elements
-    static __shared__ acc_t shared[128];  
-    // shared storage for maximum 4096 elements
-    static __shared__ acc_t local_data[4096]; 
-
+    acc_t *shared = &(local_data[element_count]);
     // number of 1024 threads reductions 
     int num_reductions =  (element_count - 1) / threads_per_block + 1;
 
@@ -325,6 +328,6 @@ void dispatch_scaled_masked_softmax_forward_new(
         dim3 blocks(batch_count, 1, 1);
         dim3 threads(threads_per_block, 1, 1);
         scaled_masked_softmax_warp_forward_new<input_t, output_t, acc_t>
-            <<<blocks, threads, 0, at::cuda::getCurrentCUDAStream()>>>(dst, src, mask, scale, query_seq_len, attn_heads, key_seq_len, pad_batches);
+            <<<blocks, threads, sizeof(acc_t) * (key_seq_len + 128), at::cuda::getCurrentCUDAStream()>>>(dst, src, mask, scale, query_seq_len, attn_heads, key_seq_len, pad_batches);
     }
 }
