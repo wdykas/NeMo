@@ -42,6 +42,10 @@ def update_model_config_to_support_adapter(config) -> DictConfig:
         if duration_predictor_adapter_metadata is not None:
             config.duration_predictor._target_ = duration_predictor_adapter_metadata.adapter_class_path
             
+        aligner_adapter_metadata = adapter_mixins.get_registered_adapter(config.alignment_module._target_)
+        if aligner_adapter_metadata is not None:
+            config.alignment_module._target_ = aligner_adapter_metadata.adapter_class_path
+            
     return config
 
 
@@ -113,6 +117,7 @@ def main(cfg):
             norm_position='pre',  # whether to use LayerNorm at the beginning or the end of the adapter
         )
         model.add_adapter(name='encoder+decoder+duration_predictor+pitch_predictor:adapter', cfg=adapter_cfg)
+        # model.add_adapter(name='encoder+decoder+duration_predictor+pitch_predictor+aligner:adapter', cfg=adapter_cfg)
         # model.add_adapter(name='encoder+decoder:adapter', cfg=adapter_cfg)
         model.set_enabled_adapters(enabled=False)
         model.set_enabled_adapters('adapter', enabled=True)

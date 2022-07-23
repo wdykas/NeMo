@@ -17,7 +17,7 @@ from typing import Tuple
 import torch
 from torch.autograd import Variable
 from torch.nn import functional as F
-
+from nemo.core.classes import adapter_mixins
 
 class PartialConv1d(torch.nn.Conv1d):
     """
@@ -97,7 +97,7 @@ class LinearNorm(torch.nn.Module):
         return self.linear_layer(x)
 
 
-class ConvNorm(torch.nn.Module):
+class ConvNorm(torch.nn.Module, adapter_mixins.AdapterModuleMixin):
     def __init__(
         self,
         in_channels,
@@ -140,6 +140,11 @@ class ConvNorm(torch.nn.Module):
             conv_signal = self.conv(signal, mask)
         else:
             conv_signal = self.conv(signal)
+            
+        # [TODO]
+        if self.is_adapter_available():
+            conv_signal = self.forward_enabled_adapters(conv_signal.transpose(1,2)).transpose(1, 2)
+            
         return conv_signal
 
 
