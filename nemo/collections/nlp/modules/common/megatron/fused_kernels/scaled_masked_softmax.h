@@ -75,6 +75,9 @@ __global__ void scaled_masked_softmax_warp_backward_new(
     // Shared mem for 32 partial sums. assume 1024 threads per block, we can handle 32 * 32 = 1024 warps at once
     // maximum shared cached 32
     static __shared__ acc_t shared[C10_WARP_SIZE]; 
+    static __shared__ acc_t local_data[4096]; 
+    // load the data to local data
+
 
     // number of 1024 threads reductions 
     int num_reductions =  (element_count - 1) / threads_per_block + 1;
@@ -149,7 +152,7 @@ void dispatch_scaled_masked_softmax_backward_new(
     {
         int batch_count = batches * attn_heads * query_seq_len;
         // use 128 threads per block to maximimize gpu utilization
-        constexpr int threads_per_block = 1024;
+        constexpr int threads_per_block = 256;
         dim3 blocks(batch_count, 1, 1);
         dim3 threads(threads_per_block, 1, 1);
 
@@ -174,10 +177,12 @@ __global__ void scaled_masked_softmax_warp_forward_new(
     int element_count,      // key_len
     int pad_batches)        // mask batch size 
 {
+    // min threawds_per_block has to be bigger than 128
     int threads_per_block = blockDim.x; 
-    // Shared mem for 32 partial sums. assume 1024 threads per block, we can handle 32 * 32 = 1024 warps at once
-    // maximum shared cached 32
-    static __shared__ acc_t shared[C10_WARP_SIZE]; 
+    // maximum shared cached 128, enough for 4096 elements reduction into 4096/32= 128 elements
+    static __shared__ acc_t shared[128];  
+    // shared storage for maximum 4096 elements
+    static __shared__ acc_t local_data[4096]; 
 
     // number of 1024 threads reductions 
     int num_reductions =  (element_count - 1) / threads_per_block + 1;
@@ -194,41 +199,50 @@ __global__ void scaled_masked_softmax_warp_forward_new(
         mask_offset = (mask_batch_id * query_len + query_id) * element_count;
     }
 
-
     int local_idx = threadIdx.x;
     int lane = threadIdx.x % C10_WARP_SIZE;
     int wid = threadIdx.x / C10_WARP_SIZE;
+    int warps_per_thread_block = threads_per_block / C10_WARP_SIZE; 
+
+    // load the data to local data
+    for (int i = local_idx; i < element_count; i += threads_per_block)
+    {
+        // TODO, use the copy vector method
+        if (mask[mask_offset + i] == 1)
+        {
+            local_data[i] = -10000.0;
+        }
+        else
+        {
+            local_data[i] = src[offset + i] * scale;
+        }
+    }
 
     // first find the max value
-    if (local_idx < C10_WARP_SIZE){
-        shared[local_idx] = -10000.0;
+    for (int i = local_idx; i < 128; i += threads_per_block){
+        shared[i] = -10000.0;
     }
     __syncthreads();
-    acc_t values[4];
-    acc_t val = 0.0;
+    acc_t val = -10000.0;
     #pragma unroll
     for (int i = 0; i < num_reductions; i++){
-        val = -10000.0;
         if (i*threads_per_block + local_idx < element_count){
-            val = src[offset + i*threads_per_block + local_idx] * scale;
-            if (mask[mask_offset + i*threads_per_block + local_idx] == 1) {
-                val = -10000.0;
-            }
-            values[i] = val;
+            val = local_data[i*threads_per_block + local_idx];
         }
-        //if (local_idx<32 and blockIdx.x==1){
-        //    printf("bid %d, lid %d, offset %d, blocks %d, v: %f, mask_offset %d\n", blockIdx.x, local_idx, offset, gridDim.x, val, mask_offset);
-        //}
+        else{
+            val = -10000.0;
+        }
 
         val = warp_reduce_new<acc_t, C10_WARP_SIZE, Max>(val);
+
         if (lane==0) {
-            shared[wid] = max(val, shared[wid]);
+            shared[wid + warps_per_thread_block*i] = val;
         }
         __syncthreads();
     }
     // final shared reduction
-    if (local_idx < C10_WARP_SIZE) {
-        acc_t val = shared[local_idx];
+    if (local_idx < 128) {
+        val = shared[local_idx];
         val = warp_reduce_new<acc_t, C10_WARP_SIZE, Max>(val);
         if (lane==0) {
             shared[wid] = val;
@@ -236,55 +250,54 @@ __global__ void scaled_masked_softmax_warp_forward_new(
     }
     __syncthreads();
 
-    acc_t reduced_val = shared[0];
+    acc_t reduced_val = max(max(shared[0], shared[1]), max(shared[2],shared[3]));
 
     // update the values
     #pragma unroll
-    for (int i = 0; i < num_reductions; i++){
-        values[i] = std::exp(values[i] - reduced_val);
+    for (int i = local_idx; i < element_count; i += threads_per_block){
+        local_data[i] = std::exp(local_data[i] - reduced_val);
     }
 
     // find the sum 
-    if (local_idx < C10_WARP_SIZE){
-        shared[local_idx] = 0.0;
+    for (int i = local_idx; i < 128; i += threads_per_block){
+        shared[i] = 0.0;
     }
     __syncthreads();
 
     #pragma unroll
     for (int i = 0; i < num_reductions; i++){
-        val = 0.0;
         if (i*threads_per_block + local_idx < element_count){
-            val = values[i];
+            val = local_data[i*threads_per_block + local_idx];
+        }
+        else{
+            val = 0.0;
         }
         val = warp_reduce_new<acc_t, C10_WARP_SIZE, Add>(val);
         if (lane==0) {
-            shared[wid] += val;
+            shared[wid + warps_per_thread_block*i] = val;
         }
         __syncthreads();
     }
     // final shared reduction
-    if (local_idx < C10_WARP_SIZE) {
-        acc_t val = shared[local_idx];
+    if (local_idx < 128) {
+        val = shared[local_idx];
         val = warp_reduce_new<acc_t, C10_WARP_SIZE, Add>(val);
         if (lane==0) {
             shared[wid] = val;
         }
     }
+
     __syncthreads();
 
-    reduced_val = shared[0];
-
+    reduced_val = (shared[0] + shared[1]) + (shared[2] + shared[3]);
     //if (local_idx<32){
     //    printf("bid %d, lid %d, offset %d, blocks %d, v: %f, mask_offset %d\n", blockIdx.x, local_idx, offset, gridDim.x, reduced_val, mask_offset);
     //}
 
     #pragma unroll
-    for (int i = 0; i < num_reductions; i++){
-       if (i*threads_per_block + local_idx < element_count){
-         dst[offset + i*threads_per_block + local_idx] = values[i] / reduced_val;
-       }
+    for (int i = local_idx; i < element_count; i += threads_per_block){
+         dst[offset + i] = local_data[i] / reduced_val;
     }
-
 }
 
 
@@ -307,7 +320,7 @@ void dispatch_scaled_masked_softmax_forward_new(
         int batch_count = batches * attn_heads * query_seq_len;
 
         // use 128 threads per block to maximimize gpu utilization
-        constexpr int threads_per_block = 1024;
+        constexpr int threads_per_block = 256;
 
         dim3 blocks(batch_count, 1, 1);
         dim3 threads(threads_per_block, 1, 1);

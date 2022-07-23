@@ -1,9 +1,8 @@
-import fused_kernels
 import torch
 import time
 import scaled_masked_softmax_cuda
+from nemo.collections.nlp.modules.common.megatron.fused_kernels.build import scaled_masked_softmax_cuda_new
 
-fused_kernels.load()
 
 
 def attention_mask_func(attention_scores, attention_mask):
@@ -18,27 +17,29 @@ def forward_torch_softmax(input, mask, scale):
     return probs
 
 
-import fused_kernels.build.scaled_masked_softmax_cuda_new
-print(fused_kernels.build.scaled_masked_softmax_cuda_new.forward)
+print(scaled_masked_softmax_cuda_new.forward)
 
 scale_t = torch.tensor([1.0])
 
 # inputs = torch.rand((2, 4, 323, 3222), dtype=torch.float16, device='cuda:0')
 # masks =  torch.randint(0, 2, (1, 1, 323, 3222), dtype=torch.bool, device='cuda:0')
 # masks =  torch.zeros((1, 1, 323, 3222), dtype=torch.bool, device='cuda:0')
-batch = 2
-inputs = torch.rand((batch, 16, 2048, 2048), dtype=torch.float16, device='cuda:0')
-masks =  torch.randint(0, 2, (batch, 1, 2048, 2048), dtype=torch.bool, device='cuda:0')
+batch = 4 
+attn = 16
+qlen = 2048
+klen = 2048
+inputs = torch.rand((batch, attn, qlen, klen), dtype=torch.float16, device='cuda:0')
+masks =  torch.randint(0, 2, (batch, 1, qlen, klen), dtype=torch.bool, device='cuda:0')
 # inputs = torch.rand((1, 1, 2, 32), dtype=torch.float16, device='cuda:0')
 # masks =  torch.randint(0, 2, (1, 1, 2, 32), dtype=torch.bool, device='cuda:0')
 # backward = torch.rand((2, 4, 323, 3222), dtype=torch.float16, device='cuda:0')
-backward = torch.rand((batch, 16, 2048, 2048), dtype=torch.float16, device='cuda:0')
+backward = torch.rand((batch, attn, qlen, klen), dtype=torch.float16, device='cuda:0')
 backward2 = backward.clone()
 
 
-softmax_results = fused_kernels.build.scaled_masked_softmax_cuda_new.forward(inputs, masks, scale_t[0])
+softmax_results = scaled_masked_softmax_cuda_new.forward(inputs, masks, scale_t[0])
 
-back_grad = fused_kernels.build.scaled_masked_softmax_cuda_new.backward(backward, softmax_results, scale_t[0])
+back_grad = scaled_masked_softmax_cuda_new.backward(backward, softmax_results, scale_t[0])
 
 inputs.requires_grad = True
 softmax_results_torch = forward_torch_softmax(inputs, masks, scale_t[0].item())
