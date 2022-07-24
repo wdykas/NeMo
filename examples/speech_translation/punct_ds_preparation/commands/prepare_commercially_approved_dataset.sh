@@ -89,6 +89,11 @@ if [[ " ${modes[*]} " == " labels " \
     || " ${modes[*]} " == " all " ]]; then
   for i in "${!dataset_names[@]}"; do
     for fn in dev_segments.txt dev_sentences.txt test_segments.txt test_sentences.txt train_segments.txt train_sentences.txt; do
+      if [[ "${fn%%_*}" == train ]]; then
+        num_jobs=24
+      else
+        num_jobs=1
+      fi
       dataset_dir="${DATA_DIR}/${dataset_names[$i]}"
       python text_to_punc_cap_dataset.py \
         --input_text "${dataset_dir}/${fn}" \
@@ -96,7 +101,7 @@ if [[ " ${modes[*]} " == " labels " \
         --create_model_input \
         --bert_labels \
         --allowed_punctuation ',.?' \
-        --num_jobs 1
+        --num_jobs "${num_jobs}"
     done
   done
 fi
