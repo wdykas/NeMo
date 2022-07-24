@@ -21,43 +21,63 @@ num_dev_lines=(2000 2000 5000 12000 1000 15000)
 num_test_lines=(4000 4000 10000 24000 2000 30000)
 
 
-for i in "${!dataset_names[@]}"; do
-  dataset_dir="${DATA_DIR}/${dataset_names[$i]}"
-  echo "Processing ${dataset_dir}"
-  if [[ " ${modes[*]} " == " unite " || " ${modes[*]} " == " all " ]]; then
+
+echo "Processing ${dataset_dir}"
+if [[ " ${modes[*]} " == " unite " || " ${modes[*]} " == " all " ]]; then
+  for i in "${!dataset_names[@]}"; do
+    dataset_dir="${DATA_DIR}/${dataset_names[$i]}"
     python unite_documents_into_plain_text.py \
       --input_dir "${dataset_dir}/documents" \
       --output "${dataset_dir}/united_documents.txt"
-  fi
-  remaining_file="${dataset_dir}/remaining.txt"
-  if [[ " ${modes[*]} " == " extract " || " ${modes[*]} " == " all " ]]; then
+  done
+fi
+remaining_file="${dataset_dir}/remaining.txt"
+if [[ " ${modes[*]} " == " extract " || " ${modes[*]} " == " all " ]]; then
+  for i in "${!dataset_names[@]}"; do
+    dataset_dir="${DATA_DIR}/${dataset_names[$i]}"
     python extract_lines.py \
       --input_file "${dataset_dir}/united_documents.txt" \
       --extracted_file "${dataset_dir}/dev_lines.txt" \
       --remaining_file "${remaining_file}" \
       --num_lines_to_extract "${num_dev_lines[$i]}"
-  fi
-  if [[ " ${modes[*]} " == " extract " || " ${modes[*]} " == " all " ]]; then
+  done
+fi
+if [[ " ${modes[*]} " == " extract " || " ${modes[*]} " == " all " ]]; then
+  for i in "${!dataset_names[@]}"; do
+    dataset_dir="${DATA_DIR}/${dataset_names[$i]}"
     python extract_lines.py \
       --input_file "${remaining_file}" \
       --extracted_file "${dataset_dir}/test_lines.txt" \
       --remaining_file "${dataset_dir}/train_lines.txt" \
       --num_lines_to_extract "${num_test_lines[$i]}"
-  fi
-  for fn in dev_lines.txt test_lines.txt train_lines.txt; do
-    if [[ " ${modes[*]} " == " sentences " || " ${modes[*]} " == " all " ]]; then
+  done
+fi
+
+if [[ " ${modes[*]} " == " sentences " || " ${modes[*]} " == " all " ]]; then
+  for i in "${!dataset_names[@]}"; do
+    for fn in dev_lines.txt test_lines.txt train_lines.txt; do
+      dataset_dir="${DATA_DIR}/${dataset_names[$i]}"
       python join_sentences_with_ratios.py \
         --input_file "${dataset_dir}/${fn}" \
         --output_file "${dataset_dir}/${fn%%_lines.txt}_sentences.txt"
-    fi
-    if [[ " ${modes[*]} " == " segments " || " ${modes[*]} " == " all " ]]; then
+    done
+  done
+fi
+if [[ " ${modes[*]} " == " segments " || " ${modes[*]} " == " all " ]]; then
+  for i in "${!dataset_names[@]}"; do
+    for fn in dev_lines.txt test_lines.txt train_lines.txt; do
+      dataset_dir="${DATA_DIR}/${dataset_names[$i]}"
       python cut_segments.py \
         --input_file "${dataset_dir}/${fn}" \
         --output_file "${dataset_dir}/${fn%%_lines.txt}_segments.txt"
-    fi
+    done
   done
-  if [[ " ${modes[*]} " == " labels " || " ${modes[*]} " == " all " ]]; then
+fi
+
+if [[ " ${modes[*]} " == " labels " || " ${modes[*]} " == " all " ]]; then
+  for i in "${!dataset_names[@]}"; do
     for fn in dev_segments.txt dev_sentences.txt test_segments.txt test_sentences.txt train_segments.txt train_sentences.txt; do
+      dataset_dir="${DATA_DIR}/${dataset_names[$i]}"
       python text_to_punc_cap_dataset.py \
         --input_text "${dataset_dir}/${fn}" \
         --output_dir "${dataset_dir}/${fn%%.txt}" \
@@ -66,8 +86,8 @@ for i in "${!dataset_names[@]}"; do
         --allowed_punctuation ',.?' \
         --num_jobs 1
     done
-  fi
-done
+  done
+fi
 
 output_dataset_dir="${DATA_DIR}/${RESULT_DATASET_NAME}"
 not_shuffled_dir="${output_dataset_dir}/train_not_shuffled"
@@ -77,7 +97,7 @@ if [[ " ${modes[*]} " == " cat " || " ${modes[*]} " == " all " ]]; then
     not_shuffled_file="${not_shuffled_dir}/${fn}"
     > "${not_shuffled_file}"
     for ds_name in "${dataset_names[@]}"; do
-      cat "${dataset_dir}/${ds_name}/train_"{segments,sentences}"/${fn}" >> "${not_shuffled_file}"
+      cat "${DATA_DIR}/${ds_name}/train_"{segments,sentences}"/${fn}" >> "${not_shuffled_file}"
     done
   done
 fi
