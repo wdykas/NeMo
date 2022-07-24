@@ -77,9 +77,13 @@ class FusedScaleMaskSoftmax(torch.nn.Module):
         if self.is_kernel_available(mask, *input.size()):
             res = self.forward_fused_softmax(input, mask)
             control = self.forward_torch_softmax(input, mask).detach()
-            if (res - control).abs().max() > 1e-3:
-                torch.save(input, '/result/input.pth')
-                torch.save(mask, '/result/mask.pth')
+            all_k_masked = mask.all(axis=-1)
+            zero_attention_mask = (1.0 - all_k_masked.float())[:, :, :, None]
+            control = zero_attention_mask * control
+            if (res - control).abs().max() > 1e-2:
+                torch.save(input, '/results/input.pth')
+                torch.save(mask, '/results/mask.pth')
+                torch.save(self.scale, '/results/scale.pth')
                 import sys
                 sys.exit(0)
             return self.forward_fused_softmax(input, mask)
