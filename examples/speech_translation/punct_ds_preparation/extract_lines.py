@@ -30,6 +30,10 @@ def parse_args() -> argparse.Namespace:
 
 def get_num_lines(input_file: Union[str, os.PathLike]) -> int:
     result = run(['wc', '-l', str(input_file)], stdout=PIPE, stderr=PIPE)
+    stdout = result.stdout.decode('utf-8')
+    if result.returncode != 0:
+        print("STDOUT:", stdout, "STDERR:", result.stderr.decode('utf-8'), sep='\n')
+        raise RuntimeError(f"Command `wc -l {input_file}` failed with return code {result.returncode}")
     if not result:
         raise ValueError(
             f"Bash command `wc -l {input_file}` returned and empty string. "

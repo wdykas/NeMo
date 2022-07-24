@@ -29,16 +29,17 @@ for i in "${!dataset_names[@]}"; do
       --input_dir "${dataset_dir}/documents" \
       --output "${dataset_dir}/united_documents.txt"
   fi
+  remaining_file="${dataset_dir}/remaining.txt"
   if [[ " ${modes[*]} " == " extract " || " ${modes[*]} " == " all " ]]; then
     python extract_lines.py \
       --input_file "${dataset_dir}/united_documents.txt" \
       --extracted_file "${dataset_dir}/dev_lines.txt" \
-      --remaining_file "${dataset_dir}/remaining.txt" \
+      --remaining_file "${remaining_file}" \
       --num_lines_to_extract "${num_dev_lines[$i]}"
   fi
   if [[ " ${modes[*]} " == " extract " || " ${modes[*]} " == " all " ]]; then
     python extract_lines.py \
-      --input_file "${dataset_dir}/remaining_txt" \
+      --input_file "${remaining_file}" \
       --extracted_file "${dataset_dir}/test_lines.txt" \
       --remaining_file "${dataset_dir}/train_lines.txt" \
       --num_lines_to_extract "${num_test_lines[$i]}"
