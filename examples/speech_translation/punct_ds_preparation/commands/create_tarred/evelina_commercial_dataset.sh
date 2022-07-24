@@ -7,5 +7,5 @@ python ~/NeMo/examples/nlp/token_classification/data/create_punctuation_capitali
   --tokens_in_batch="${tokens_in_batch}" \
   --num_batches_per_tarfile 100 \
   --lines_per_dataset_fragment 200000 \
-  --tokenizer_name /home/apeganov/pretrained_tokenizers/bert_base_uncased \
+  --tokenizer_name /home/apeganov/pretrained_tokenizers/bert_large_uncased \
   --use_fast_tokenizer
