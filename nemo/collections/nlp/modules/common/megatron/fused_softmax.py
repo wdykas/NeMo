@@ -75,6 +75,13 @@ class FusedScaleMaskSoftmax(torch.nn.Module):
         assert input.dim() == 4
 
         if self.is_kernel_available(mask, *input.size()):
+            res = self.forward_fused_softmax(input, mask)
+            control = self.forward_torch_softmax(input, mask).detach()
+            if (res - control).abs().max() > 1e-3:
+                torch.save(input, '/result/input.pth')
+                torch.save(input, '/result/mask.pth')
+                import sys
+                sys.exit(0)
             return self.forward_fused_softmax(input, mask)
         else:
             return self.forward_torch_softmax(input, mask)

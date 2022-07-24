@@ -49,6 +49,8 @@ print((softmax_results_torch - softmax_results).abs().max())
 print((back_grad - inputs.grad).abs().max())
 
 # print(softmax_results)
+# forward mode
+torch.autograd.functional.jvp(lambda i: forward_torch_softmax(i, masks, scale_t[0]), inputs, inputs)
 
 
 beg = time.time()
