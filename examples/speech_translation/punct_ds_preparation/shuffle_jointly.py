@@ -185,6 +185,7 @@ def main():
     args = get_args()
     input_file_objects = [inp_file.open(buffering=BUFFER_SIZE) for inp_file in args.input_files]
     united_file_path = args.tmp_dir / args.united_file_name
+    args.tmp_dir.mkdir(parents=True, exist_ok=True)
     lines = [inp_obj.readline().strip('\n') for inp_obj in input_file_objects]
     line_number = 0
     num_lines = get_num_lines(args.input_files[0])
