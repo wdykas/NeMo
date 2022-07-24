@@ -13,9 +13,9 @@ from itertools import accumulate
 from math import ceil
 from pathlib import Path
 from queue import Empty
-from subprocess import run
+from subprocess import PIPE, run
 from time import sleep
-from typing import Dict, List, Match, Pattern, Set, Tuple, Union
+from typing import Dict, List, Match, Optional, Pattern, Set, Tuple, Union
 
 import nltk
 import numpy as np
@@ -1075,8 +1075,18 @@ def write_dataset_sub(
                 af.write(wrong_characters.sub('', small.WORD_WITH_FOLLOWING_PUNCTUATION.sub(repl, original_text)))
 
 
+def get_num_lines(input_file: Union[str, os.PathLike]) -> int:
+    result = run(['wc', '-l', str(input_file)], stdout=PIPE, stderr=PIPE)
+    if not result:
+        raise ValueError(
+            f"Bash command `wc -l {input_file}` returned and empty string. "
+            f"Possibly, file {input_file} does not exist."
+        )
+    return int(result.stdout.decode('utf-8').split()[0])
+
+
 def write_dataset_parallel(
-    borders: Tuple[int, int],
+    borders: Optional[Tuple[int, int]],
     input_file: Union[str, os.PathLike],
     output_dir: Union[str, os.PathLike],
     create_model_input: bool,
@@ -1087,6 +1097,8 @@ def write_dataset_parallel(
     no_label_if_all_characters_are_upper_case: bool,
     num_jobs: int,
 ):
+    if borders is None:
+        borders = [0, get_num_lines(input_file)]
     output_dir = Path(output_dir).expanduser()
     num_jobs = min(num_jobs, borders[1] - borders[0])
     num_parts = max(ceil((borders[1] - borders[0]) / MAX_NUM_LINES_PER_PROCESS), num_jobs)
@@ -1130,7 +1142,7 @@ def write_dataset_parallel(
 
 
 def write_dataset_fast(
-    borders,
+    borders: Optional[Tuple[int, int]],
     input_file,
     output_dir,
     create_model_input,
@@ -1149,11 +1161,14 @@ def write_dataset_fast(
     text_fn, input_fn = output_dir / Path('text.txt'), output_dir / Path('input.txt')
     bert_fn, ar_fn = output_dir / Path('bert_labels.txt'), output_dir / Path('autoregressive_labels.txt')
     autoregressive_text = ""
-    input_text = ""
     with input_file.open(buffering=BUFFER_SIZE) as in_f:
-        move_to_line(in_f, borders[0])
-        for l_i in range(borders[1] - borders[0]):
-            input_text += in_f.readline()
+        if borders is None:
+            input_text = in_f.read()
+        else:
+            input_text = ""
+            move_to_line(in_f, borders[0])
+            for l_i in range(borders[1] - borders[0]):
+                input_text += in_f.readline()
     if part_number is None:
         prog = tqdm(total=len(input_text), desc="Total", unit='char', unit_scale=True)
     with text_fn.open('w', buffering=BUFFER_SIZE) as tf, \
