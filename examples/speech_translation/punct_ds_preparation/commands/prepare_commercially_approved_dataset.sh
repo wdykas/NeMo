@@ -1,11 +1,11 @@
 set -e -x
 
 modes="${@:-all}"
-echo "Running in modes ${modes}"
+echo "Running in modes: ${modes}"
 sleep 10
 modes=( ${modes} )
 
-DATA_DIR=/media/apeganov/DATA/punctuation_and_capitalization/simplest/3_128/europarl_raw_x1_05.06.2022
+DATA_DIR=/media/apeganov/DATA/punctuation_and_capitalization/simplest/3_128
 RESULT_DATASET_NAME=commercial
 
 dataset_names=(
