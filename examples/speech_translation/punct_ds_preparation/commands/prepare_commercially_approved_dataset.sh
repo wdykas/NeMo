@@ -101,7 +101,8 @@ if [[ " ${modes[*]} " == " labels " \
         --create_model_input \
         --bert_labels \
         --allowed_punctuation ',.?' \
-        --num_jobs "${num_jobs}"
+        --num_jobs "${num_jobs}" \
+        --no_label_if_all_characters_are_upper_case
     done
   done
 fi
