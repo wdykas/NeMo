@@ -31,29 +31,32 @@ if [[ " ${modes[*]} " == " unite " || " ${modes[*]} " == " all " ]]; then
       --output "${dataset_dir}/united_documents.txt"
   done
 fi
-remaining_file="${dataset_dir}/remaining.txt"
-if [[ " ${modes[*]} " == " extract " || " ${modes[*]} " == " all " ]]; then
+
+if [[ " ${modes[*]} " == " extract " || " ${modes[*]} " == " unite " ||  " ${modes[*]} " == " all " ]]; then
   for i in "${!dataset_names[@]}"; do
     dataset_dir="${DATA_DIR}/${dataset_names[$i]}"
     python extract_lines.py \
       --input_file "${dataset_dir}/united_documents.txt" \
       --extracted_file "${dataset_dir}/dev_lines.txt" \
-      --remaining_file "${remaining_file}" \
+      --remaining_file "${dataset_dir}/remaining.txt" \
       --num_lines_to_extract "${num_dev_lines[$i]}"
   done
 fi
-if [[ " ${modes[*]} " == " extract " || " ${modes[*]} " == " all " ]]; then
+if [[ " ${modes[*]} " == " extract " || " ${modes[*]} " == " unite " ||  " ${modes[*]} " == " all " ]]; then
   for i in "${!dataset_names[@]}"; do
     dataset_dir="${DATA_DIR}/${dataset_names[$i]}"
     python extract_lines.py \
-      --input_file "${remaining_file}" \
+      --input_file "${dataset_dir}/remaining.txt" \
       --extracted_file "${dataset_dir}/test_lines.txt" \
       --remaining_file "${dataset_dir}/train_lines.txt" \
       --num_lines_to_extract "${num_test_lines[$i]}"
   done
 fi
 
-if [[ " ${modes[*]} " == " sentences " || " ${modes[*]} " == " all " ]]; then
+if [[ " ${modes[*]} " == " sentences " \
+    ||  " ${modes[*]} " == " extract " \
+    || " ${modes[*]} " == " unite " \
+    ||  " ${modes[*]} " == " all " ]]; then
   for i in "${!dataset_names[@]}"; do
     for fn in dev_lines.txt test_lines.txt train_lines.txt; do
       dataset_dir="${DATA_DIR}/${dataset_names[$i]}"
@@ -63,7 +66,11 @@ if [[ " ${modes[*]} " == " sentences " || " ${modes[*]} " == " all " ]]; then
     done
   done
 fi
-if [[ " ${modes[*]} " == " segments " || " ${modes[*]} " == " all " ]]; then
+if [[ " ${modes[*]} " == " segments " \
+    || " ${modes[*]} " == " sentences " \
+    || " ${modes[*]} " == " extract " \
+    || " ${modes[*]} " == " unite " \
+    ||  " ${modes[*]} " == " all " ]]; then
   for i in "${!dataset_names[@]}"; do
     for fn in dev_lines.txt test_lines.txt train_lines.txt; do
       dataset_dir="${DATA_DIR}/${dataset_names[$i]}"
@@ -74,7 +81,12 @@ if [[ " ${modes[*]} " == " segments " || " ${modes[*]} " == " all " ]]; then
   done
 fi
 
-if [[ " ${modes[*]} " == " labels " || " ${modes[*]} " == " all " ]]; then
+if [[ " ${modes[*]} " == " labels " \
+    || " ${modes[*]} " == " segments " \
+    || " ${modes[*]} " == " sentences " \
+    || " ${modes[*]} " == " extract " \
+    || " ${modes[*]} " == " unite " \
+    || " ${modes[*]} " == " all " ]]; then
   for i in "${!dataset_names[@]}"; do
     for fn in dev_segments.txt dev_sentences.txt test_segments.txt test_sentences.txt train_segments.txt train_sentences.txt; do
       dataset_dir="${DATA_DIR}/${dataset_names[$i]}"
@@ -91,7 +103,13 @@ fi
 
 output_dataset_dir="${DATA_DIR}/${RESULT_DATASET_NAME}"
 not_shuffled_dir="${output_dataset_dir}/train_not_shuffled"
-if [[ " ${modes[*]} " == " cat " || " ${modes[*]} " == " all " ]]; then
+if [[ " ${modes[*]} " == " cat " \
+    || " ${modes[*]} " == " labels " \
+    || " ${modes[*]} " == " segments " \
+    || " ${modes[*]} " == " sentences " \
+    || " ${modes[*]} " == " extract " \
+    || " ${modes[*]} " == " unite " \
+    || " ${modes[*]} " == " all " ]]; then
   mkdir -p "${not_shuffled_dir}"
   for fn in input.txt bert_labels.txt text.txt; do
     not_shuffled_file="${not_shuffled_dir}/${fn}"
@@ -103,7 +121,14 @@ if [[ " ${modes[*]} " == " cat " || " ${modes[*]} " == " all " ]]; then
 fi
 
 shuffled_dir="${output_dataset_dir}/train"
-if [[ " ${modes[*]} " == " shuffle " || " ${modes[*]} " == " all " ]]; then
+if [[ " ${modes[*]} " == " shuffle " \
+    ||  " ${modes[*]} " == " cat " \
+    ||  " ${modes[*]} " == " labels " \
+    || " ${modes[*]} " == " segments " \
+    || " ${modes[*]} " == " sentences " \
+    || " ${modes[*]} " == " extract " \
+    || " ${modes[*]} " == " unite " \
+    || " ${modes[*]} " == " all " ]]; then
   python shuffle_jointly.py \
     --input_files "${not_shuffled_dir}/"{input,bert_labels,text}".txt" \
     --output_files "${shuffled_dir}/"{input,bert_labels,text}".txt" \
@@ -111,3 +136,4 @@ if [[ " ${modes[*]} " == " shuffle " || " ${modes[*]} " == " all " ]]; then
     --tmp_dir "${output_dataset_dir}/tmp"
 fi
 
+set +e +x
