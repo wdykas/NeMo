@@ -94,18 +94,18 @@ model:
     # expected format: `[PATH_TO_DEV1,PATH_TO_DEV2]` OR `PATH_TO_DEV` (Note no space between the paths and square
     # brackets)
     ds_item:
-      - /data/europarl_sentences_dev
-      - /data/google_segments_dev
-      - /data/google_segments_dev
-      - /data/google_sentences_dev
-      - /data/pg19_segments_dev
-      - /data/pg19_sentences_dev
-      - /data/pubmed_segments_dev
-      - /data/pubmed_sentences_dev
-      - /data/tatoeba_segments_dev
-      - /data/tatoeba_sentences_dev
-      - /data/un_segments_dev
-      - /data/un_sentences_dev
+      - /media/apeganov/DATA/punctuation_and_capitalization/simplest/3_128/commercial/for_upload/europarl_sentences_dev
+      - /media/apeganov/DATA/punctuation_and_capitalization/simplest/3_128/commercial/for_upload/google_segments_dev
+      - /media/apeganov/DATA/punctuation_and_capitalization/simplest/3_128/commercial/for_upload/google_segments_dev
+      - /media/apeganov/DATA/punctuation_and_capitalization/simplest/3_128/commercial/for_upload/google_sentences_dev
+      - /media/apeganov/DATA/punctuation_and_capitalization/simplest/3_128/commercial/for_upload/pg19_segments_dev
+      - /media/apeganov/DATA/punctuation_and_capitalization/simplest/3_128/commercial/for_upload/pg19_sentences_dev
+      - /media/apeganov/DATA/punctuation_and_capitalization/simplest/3_128/commercial/for_upload/pubmed_segments_dev
+      - /media/apeganov/DATA/punctuation_and_capitalization/simplest/3_128/commercial/for_upload/pubmed_sentences_dev
+      - /media/apeganov/DATA/punctuation_and_capitalization/simplest/3_128/commercial/for_upload/tatoeba_segments_dev
+      - /media/apeganov/DATA/punctuation_and_capitalization/simplest/3_128/commercial/for_upload/tatoeba_sentences_dev
+      - /media/apeganov/DATA/punctuation_and_capitalization/simplest/3_128/commercial/for_upload/un_segments_dev
+      - /media/apeganov/DATA/punctuation_and_capitalization/simplest/3_128/commercial/for_upload/un_sentences_dev
 
     text_file: input.txt
     labels_file: bert_labels.txt
@@ -128,18 +128,18 @@ model:
     # See `train_ds` section for more details on tarred dataset
     use_tarred_dataset: false
     ds_item:
-      - /data/europarl_sentences_test
-      - /data/google_segments_test
-      - /data/google_segments_test
-      - /data/google_sentences_test
-      - /data/pg19_segments_test
-      - /data/pg19_sentences_test
-      - /data/pubmed_segments_test
-      - /data/pubmed_sentences_test
-      - /data/tatoeba_segments_test
-      - /data/tatoeba_sentences_test
-      - /data/un_segments_test
-      - /data/un_sentences_test
+      - /media/apeganov/DATA/punctuation_and_capitalization/simplest/3_128/commercial/for_upload/europarl_sentences_test
+      - /media/apeganov/DATA/punctuation_and_capitalization/simplest/3_128/commercial/for_upload/google_segments_test
+      - /media/apeganov/DATA/punctuation_and_capitalization/simplest/3_128/commercial/for_upload/google_segments_test
+      - /media/apeganov/DATA/punctuation_and_capitalization/simplest/3_128/commercial/for_upload/google_sentences_test
+      - /media/apeganov/DATA/punctuation_and_capitalization/simplest/3_128/commercial/for_upload/pg19_segments_test
+      - /media/apeganov/DATA/punctuation_and_capitalization/simplest/3_128/commercial/for_upload/pg19_sentences_test
+      - /media/apeganov/DATA/punctuation_and_capitalization/simplest/3_128/commercial/for_upload/pubmed_segments_test
+      - /media/apeganov/DATA/punctuation_and_capitalization/simplest/3_128/commercial/for_upload/pubmed_sentences_test
+      - /media/apeganov/DATA/punctuation_and_capitalization/simplest/3_128/commercial/for_upload/tatoeba_segments_test
+      - /media/apeganov/DATA/punctuation_and_capitalization/simplest/3_128/commercial/for_upload/tatoeba_sentences_test
+      - /media/apeganov/DATA/punctuation_and_capitalization/simplest/3_128/commercial/for_upload/un_segments_test
+      - /media/apeganov/DATA/punctuation_and_capitalization/simplest/3_128/commercial/for_upload/un_sentences_test
 
     text_file: input.txt
     labels_file: bert_labels.txt
