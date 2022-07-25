@@ -64,18 +64,18 @@ class PromptEncoder(NeuralModule, Exportable):
         # LSTM
         self.lstm_head = torch.nn.LSTM(
             input_size=self.hidden_size,
-            hidden_size=self.hidden_size // 2,
+            hidden_size=self.hidden_size // 4,
             num_layers=num_layers,
             dropout=lstm_dropout,
             bidirectional=True,
             batch_first=True,
         )
         self.mlp_head = nn.Sequential(
-            nn.Linear(self.hidden_size, self.hidden_size), nn.ReLU(), nn.Linear(self.hidden_size, self.hidden_size)
+            nn.Linear(self.hidden_size // 2, self.hidden_size // 2), nn.ReLU(), nn.Linear(self.hidden_size // 2, self.hidden_size)
         )
         
-        bert_config = BertConfig(vocab_size=50304, max_position_embeddings=2048, hidden_size=768, num_attention_heads=1, num_attention_layers=1, type_vocab_size=1)
-        self.bert_encoder = BertModel(bert_config)
+        # bert_config = BertConfig(vocab_size=50304, max_position_embeddings=2048, hidden_size=768, num_attention_heads=1, num_attention_layers=1, type_vocab_size=1)
+        # self.bert_encoder = BertModel(bert_config)
 
     @typecheck()
     def forward(self, taskname_embeddings) -> torch.Tensor:
@@ -86,7 +86,8 @@ class PromptEncoder(NeuralModule, Exportable):
 
         # Replace general input with task specific embeddings to specify the correct task
         input_embeds[:, 0:length, :] = taskname_embeddings[:, 0:length, :]
-        output_embeds = self.mlp_head(self.lstm_head(input_embeds)[0])
+        lstm_output = self.lstm_head(input_embeds)[0]
+        output_embeds = self.mlp_head(lstm_output)
         #output_embeds = self.mlp_head(self.bert_encoder(input_embeds)[0].last_hidden_state)
-        #output_embeds = self.mlp_head(input_embeds[0])
+        #output_embeds = self.mlp_head(input_embeds)
         return output_embeds
