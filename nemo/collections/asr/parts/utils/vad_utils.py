@@ -26,7 +26,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import torch
-from pyannote.core import Annotation, Segment
+from pyannote.core import Annotation, Segment, Timeline
 from pyannote.metrics import detection
 from sklearn.model_selection import ParameterGrid
 from tqdm import tqdm
@@ -567,7 +567,7 @@ def binarization(sequence: torch.Tensor, per_args: Dict[str, float]) -> torch.Te
 
     speech_segments = torch.empty(0)
 
-    for i in range(1, len(sequence)):
+    for i in range(0, len(sequence)): #todo
         # Current frame is speech
         if speech:
             # Switch from speech to non-speech
@@ -582,7 +582,7 @@ def binarization(sequence: torch.Tensor, per_args: Dict[str, float]) -> torch.Te
                 speech = False
 
         # Current frame is non-speech
-        else:
+        else: 
             # Switch from non-speech to speech
             if sequence[i] > onset:
                 start = i * frame_length_in_sec
@@ -836,11 +836,12 @@ def vad_construct_pyannote_object_per_file(
     for index, row in label.iterrows():
         reference[Segment(row['start'], row['start'] + row['dur'])] = row['speaker']
 
+    uem = Timeline([Segment(label.iloc[0, 'start'], row['start'] + row['dur'])])
     # construct hypothsis
     hypothesis = Annotation()
     for index, row in pred.iterrows():
         hypothesis[Segment(float(row[0]), float(row[0]) + float(row[1]))] = 'Speech'
-    return reference, hypothesis
+    return reference, hypothesis, uem
 
 
 def get_parameter_grid(params: dict) -> list:
@@ -906,10 +907,10 @@ def vad_tune_threshold_on_dev(
             for filename in paired_filenames:
                 groundtruth_RTTM_file = groundtruth_RTTM_dict[filename]
                 vad_table_filepath = os.path.join(vad_table_dir, filename + ".txt")
-                reference, hypothesis = vad_construct_pyannote_object_per_file(
+                reference, hypothesis, uem = vad_construct_pyannote_object_per_file(
                     vad_table_filepath, groundtruth_RTTM_file
                 )
-                metric(reference, hypothesis)  # accumulation
+                metric(reference, hypothesis, uem=uem)  # accumulation
 
             # delete tmp table files
             shutil.rmtree(vad_table_dir, ignore_errors=True)
@@ -1035,10 +1036,8 @@ def plot(
 
     time = np.arange(offset, offset + dur, FRAME_LEN)
     frame, _ = load_tensor_from_file(path2_vad_pred)
-    print("frame", len(frame))
     frame_10ms = frame.repeat_interleave(int(per_args['frame_length_in_sec'] * 100))
     
-    print("frame_10ms", len(frame_10ms))
     frame_snippet = frame_10ms[int(offset / FRAME_LEN) : int((offset + dur) / FRAME_LEN)]
     len_pred = len(frame_snippet)
 
@@ -1063,17 +1062,13 @@ def plot(
         )  # take whole frame here for calculating onset and offset
         speech_segments = generate_vad_segment_table_per_tensor(frame, per_args_float)
         pred = gen_pred_from_speech_segments(speech_segments, frame_10ms)
-        print("pred", len(pred))
         pred_snippet = pred[int(offset / FRAME_LEN) : int((offset + dur) / FRAME_LEN)]
-
-        print("pred_snippet", len(pred_snippet))
 
 
 
     if path2ground_truth_label:
         label = extract_labels(path2ground_truth_label, time)
         ax2.plot(np.arange(len_pred) * FRAME_LEN, label, 'r', label='label')
-        print("label", len(label))
     ax2.plot(np.arange(len_pred) * FRAME_LEN, pred_snippet, 'b', label='pred')
     ax2.plot(np.arange(len_pred) * FRAME_LEN, frame_snippet, 'g--', label='speech prob')
     ax2.tick_params(axis='y', labelcolor='r')
@@ -1106,9 +1101,15 @@ def extract_labels(path2ground_truth_label: str, time: list) -> list:
     path2ground_truth_label (str): path of groundtruth label file 
     time (list) : a list of array representing time period.
     """
-
-    data = pd.read_csv(path2ground_truth_label, sep=" ", delimiter=None, header=None)
-    data = data.rename(columns={3: "start", 4: "dur", 7: "speaker"})
+    if path2ground_truth_label.endswith('.pt'):
+        data = torch.load(path2ground_truth_label)
+        data = pd.DataFrame(data)
+        data = data.rename(columns={0: "start", 1: "end"})
+        data['dur'] = data['end'] - data['start'] + 0.01
+    else:
+        data = pd.read_csv(path2ground_truth_label, sep=" ", delimiter=None, header=None)
+        data = data.rename(columns={3: "start", 4: "dur", 7: "speaker"})
+    
     labels = []
     for pos in time:
         line = data[(data["start"] <= pos) & (data["start"] + data["dur"] > pos)]
@@ -1144,7 +1145,6 @@ def generate_vad_frame_pred(
             log_probs = vad_model(input_signal=test_batch[0], input_signal_length=test_batch[1])
             probs = torch.softmax(log_probs, dim=-1)
             pred = probs[:, 1]
-            print(len(pred))
 
             if status[i] == 'start':
                 to_save = pred[:-trunc]
