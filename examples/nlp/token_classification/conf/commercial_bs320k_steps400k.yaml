@@ -97,8 +97,8 @@ model:
     # expected format: `[PATH_TO_DEV1,PATH_TO_DEV2]` OR `PATH_TO_DEV` (Note no space between the paths and square
     # brackets)
     ds_item:
+      - /media/apeganov/DATA/punctuation_and_capitalization/simplest/3_128/commercial/for_upload/europarl_segments_dev
       - /media/apeganov/DATA/punctuation_and_capitalization/simplest/3_128/commercial/for_upload/europarl_sentences_dev
-      - /media/apeganov/DATA/punctuation_and_capitalization/simplest/3_128/commercial/for_upload/google_segments_dev
       - /media/apeganov/DATA/punctuation_and_capitalization/simplest/3_128/commercial/for_upload/google_segments_dev
       - /media/apeganov/DATA/punctuation_and_capitalization/simplest/3_128/commercial/for_upload/google_sentences_dev
       - /media/apeganov/DATA/punctuation_and_capitalization/simplest/3_128/commercial/for_upload/pg19_segments_dev
@@ -131,8 +131,8 @@ model:
     # See `train_ds` section for more details on tarred dataset
     use_tarred_dataset: false
     ds_item:
+      - /media/apeganov/DATA/punctuation_and_capitalization/simplest/3_128/commercial/for_upload/europarl_segments_test
       - /media/apeganov/DATA/punctuation_and_capitalization/simplest/3_128/commercial/for_upload/europarl_sentences_test
-      - /media/apeganov/DATA/punctuation_and_capitalization/simplest/3_128/commercial/for_upload/google_segments_test
       - /media/apeganov/DATA/punctuation_and_capitalization/simplest/3_128/commercial/for_upload/google_segments_test
       - /media/apeganov/DATA/punctuation_and_capitalization/simplest/3_128/commercial/for_upload/google_sentences_test
       - /media/apeganov/DATA/punctuation_and_capitalization/simplest/3_128/commercial/for_upload/pg19_segments_test

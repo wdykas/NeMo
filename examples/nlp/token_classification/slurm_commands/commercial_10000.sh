@@ -60,7 +60,6 @@ echo "*******STARTING********" \
 	model.validation_ds.ds_item=[/data/europarl_segments_dev,\
 /data/europarl_sentences_dev,\
 /data/google_segments_dev,\
-/data/google_segments_dev,\
 /data/google_sentences_dev,\
 /data/pg19_segments_dev,\
 /data/pg19_sentences_dev,\
@@ -97,7 +96,7 @@ echo "*******STARTING********" \
 	+exp_manager.resume_ignore_no_checkpoint=True \
 	exp_manager.create_checkpoint_callback=True \
 	+exp_manager.checkpoint_callback_params.save_top_k=3 \
-	exp_manager.checkpoint_callback_params.monitor=tatoeba_sentences_dev_val_punct_f1 \
+	exp_manager.checkpoint_callback_params.monitor=val_punct_f1 \
 	exp_manager.checkpoint_callback_params.mode=max \
 	+exp_manager.checkpoint_callback_params.always_save_nemo=True \
 	model.optim.lr=1e-4 \
