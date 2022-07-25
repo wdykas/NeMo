@@ -87,7 +87,7 @@ def eval_heteronyms(manifest, target_homograph=None):
                         print(phonemes_gt)
                         print(graphemes)
                         print(homograph)
-                        import pdb; pdb.set_trace()
+                        # import pdb; pdb.set_trace()
 
                         num_skipped += 1
                     else:

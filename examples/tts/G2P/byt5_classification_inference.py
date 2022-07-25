@@ -17,6 +17,7 @@ import os
 from dataclasses import dataclass, is_dataclass
 from glob import glob
 from typing import Optional
+import json
 
 import pytorch_lightning as pl
 import torch
@@ -63,6 +64,7 @@ class TranscriptionConfig:
     # specify either filepath or data_dir
     filepath: Optional[str] = None  # Path to .tsv file
     data_dir: Optional[str] = None  # Path to a directory with .tsv file
+    manifest: Optional[str] = None # Path to .json manifest
 
     # General configs
     output_file: Optional[str] = None
@@ -125,6 +127,21 @@ def main(cfg):
             word_ids.extend(word_ids_)
     elif cfg.filepath and os.path.exists(cfg.filepath):
         sentences, start_end_indices, homographs, word_ids = read_wikihomograph_file(cfg.filepath)
+    elif cfg.manifest and os.path.exists(cfg.manifest):
+        sentences, start_end_indices, homographs, word_ids = [], [], [], []
+        with open(cfg.manifest, "r") as f:
+            for line in f:
+                line = json.loads(line)
+                if isinstance(line["homograph_span"], str):
+                    line["homograph_span"] = [line["homograph_span"]]
+                    line["word_id"] = [line["word_id"]]
+                    line["start_end"] = [line["start_end"]]
+
+                for homograph, word_id, start_end in zip(line["homograph_span"], line["word_id"], line["start_end"]):
+                    sentences.append(line["text_normalized"])
+                    start_end_indices.append(start_end)
+                    homographs.append(homograph.lower())
+                    word_ids.append(word_id)
     else:
         raise ValueError("Data dir or filepath not found.")
 
