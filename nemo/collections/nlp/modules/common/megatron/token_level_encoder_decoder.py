@@ -316,6 +316,7 @@ class MegatronTokenLevelEncoderDecoderModule(MegatronModule):
         enc_output_mask=None,
         output_enc_hidden_only=False,
         enc_input=None,
+        latent_noise_radius=0.0,
     ):
         """
         Return value is per token / per dimension (i.e., non collapsed loss value)
@@ -351,6 +352,7 @@ class MegatronTokenLevelEncoderDecoderModule(MegatronModule):
                 enc_output=None,
                 dec_layer_past=None,
                 dec_get_key_value=False,
+                latent_noise_radius=latent_noise_radius
             )
 
             if self.post_process and self.add_decoder:

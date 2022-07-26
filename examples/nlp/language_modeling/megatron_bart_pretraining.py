@@ -25,6 +25,7 @@ from nemo.collections.nlp.parts.nlp_overrides import (
     GradScaler,
     MegatronHalfPrecisionPlugin,
     NLPDDPPlugin,
+    NLPSaveRestoreConnector,
     PipelineMixedPrecisionPlugin,
 )
 from nemo.core.config import hydra_runner
@@ -82,7 +83,14 @@ def main(cfg) -> None:
     with open_dict(cfg):
         cfg.model.precision = cfg.trainer.precision
 
-    model = MegatronBARTModel(cfg.model, trainer)
+    if cfg.restore_from_path is not None:
+        model = MegatronBARTModel.restore_from(
+            cfg.restore_from_path,
+            trainer=trainer,
+            save_restore_connector=NLPSaveRestoreConnector()
+        )
+    else:
+        model = MegatronBARTModel(cfg.model, trainer)
     trainer.fit(model)
 
 

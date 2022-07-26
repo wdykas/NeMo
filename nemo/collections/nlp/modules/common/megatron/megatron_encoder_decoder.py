@@ -128,6 +128,7 @@ class MegatronTransformerEncoderDecoderModule(MegatronModule):
         dec_layer_past=None,
         dec_get_key_value=False,
         output_enc_hidden_only=False,
+        latent_noise_radius=0.0,
     ):
         # encoder
         if enc_output is None:
@@ -151,6 +152,9 @@ class MegatronTransformerEncoderDecoderModule(MegatronModule):
         # Adjust encoder attention mask if encoder is a perceiver.
         if self.encoder is not None and isinstance(self.encoder, MegatronPerceiverEncoderModule):
             enc_attn_mask = torch.ones(enc_output.size(0), self.hidden_steps).to(enc_output.device)
+
+        if latent_noise_radius > 0.0:
+            enc_output += torch.empty(enc_output.size()).normal_(0, latent_noise_radius).to(enc_output.device)
 
         dec_output = self.decode(
             dec_input=dec_input,

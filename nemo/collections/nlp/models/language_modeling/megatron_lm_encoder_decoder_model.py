@@ -184,6 +184,7 @@ class MegatronLMEncoderDecoderModel(MegatronBaseModel):
         enc_output_mask=None,
         output_enc_hidden_only=False,
         enc_input=None,
+        latent_noise_radius=0.0,
     ):
         output_tensor = self.enc_dec_model(
             enc_input_ids=encoder_input_ids,
@@ -196,6 +197,7 @@ class MegatronLMEncoderDecoderModel(MegatronBaseModel):
             enc_output_mask=enc_output_mask,
             output_enc_hidden_only=output_enc_hidden_only,
             enc_input=enc_input,
+            latent_noise_radius=latent_noise_radius,
         )
 
         return output_tensor
@@ -422,6 +424,10 @@ class MegatronLMEncoderDecoderModel(MegatronBaseModel):
                 None,  # token_type_ids
                 lm_labels,  # labels
                 None,  # enc_hidden_states
+                None,  # enc_output_mask
+                False, # output_enc_hidden_only
+                None,  # enc_input
+                self._cfg.get('latent_noise_radius', 0.0), # latent_noise_radius
             )
 
             def loss_func(output_tensor):
@@ -451,6 +457,10 @@ class MegatronLMEncoderDecoderModel(MegatronBaseModel):
                 None,  # token_type_ids
                 None,  # labels
                 enc_input,  # enc_hidden_states
+                None,  # enc_output_mask
+                False, # output_enc_hidden_only
+                None,  # enc_input
+                self._cfg.get('latent_noise_radius', 0.0), # latent_noise_radius
             )
 
             def id_func(output_tensor):
