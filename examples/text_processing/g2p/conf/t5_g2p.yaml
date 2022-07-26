@@ -3,6 +3,7 @@ name: T5G2P
 # Dataset info
 train_dataset: ???
 validation_dataset: ???
+test_dataset: null
 
 model:
   model_name: "t5-small"
@@ -14,20 +15,36 @@ model:
     dataset:
       #_target_: "nemo.collections.tts.data.datalayers.T5G2PDataset"
     manifest_filepath: ${train_dataset}
+    phoneme_field: "text" # name of the field in manifest_filepath for ground truth phonemes
+    grapheme_field: "text_graphemes" # name of the field in manifest_filepath for input grapheme text
     dataloader_params:
       drop_last: false
       shuffle: true
-      batch_size: 20 #32
+      batch_size: 20
       num_workers: 4
 
   validation_ds:
     dataset: null
       #_target_: "nemo.collections.tts.data.datalayers.T5G2PDataset"
     manifest_filepath: ${validation_dataset}
+    phoneme_field: "text" # name of the field in manifest_filepath for ground truth phonemes
+    grapheme_field: "text_graphemes" # name of the field in manifest_filepath for input grapheme text
     dataloader_params:
       drop_last: false
       shuffle: false
-      batch_size: 20 #64
+      batch_size: 20
+      num_workers: 4
+
+  test_ds:
+    dataset: null
+    #_target_: "nemo.collections.tts.data.datalayers.T5G2PDataset"
+    manifest_filepath: ${test_dataset}
+    phoneme_field: "text" # name of the field in manifest_filepath for ground truth phonemes
+    grapheme_field: "text_graphemes" # name of the field in manifest_filepath for input grapheme text
+    dataloader_params:
+      drop_last: false
+      shuffle: false
+      batch_size: 20
       num_workers: 4
 
   optim:

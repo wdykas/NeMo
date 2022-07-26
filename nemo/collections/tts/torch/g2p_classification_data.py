@@ -23,12 +23,12 @@ import torch
 from tqdm import tqdm
 from transformers import AutoTokenizer, PreTrainedTokenizerBase
 
+from nemo.collections.tts.torch.g2p_utils.convert_aligner_data_to_g2p_classification import convert_to_wiki_format
 from nemo.collections.tts.torch.g2p_utils.data_utils import (
     correct_wikihomograph_data,
     read_wikihomograph_file,
     read_wordids,
 )
-from nemo.collections.tts.torch.g2p_utils.convert_aligner_data_to_g2p_classification import convert_to_wiki_format
 from nemo.core.classes import Dataset
 from nemo.utils import logging
 
@@ -90,6 +90,7 @@ class G2PClassificationDataset(Dataset):
         self.wiki_homograph_dict, self.target_ipa, self.target_ipa_label_to_id = read_wordids(wordid_map)
 
         import json
+
         def read_normalized_data(dir_name):
             data = {}
             for manifest in tqdm(glob(f"{dir_name}/*.json")):
@@ -99,7 +100,9 @@ class G2PClassificationDataset(Dataset):
                         data[line["norm_text_graphemes"]] = line["original_graphemes"]
             return data
 
-        norm_data = read_normalized_data("/home/ebakhturina/g2p_scripts/WikipediaHomographData-master/data/train_normalized_8_missing_entries")
+        norm_data = read_normalized_data(
+            "/home/ebakhturina/g2p_scripts/WikipediaHomographData-master/data/train_normalized_8_missing_entries"
+        )
 
         # TODO: refactor
         sentences, start_end_indices, homographs, word_ids = [], [], [], []
@@ -107,7 +110,11 @@ class G2PClassificationDataset(Dataset):
         with open(manifest, "r") as f:
             for line in f:
                 line = json.loads(line)
-                cur_start_end, cur_homographs, cur_word_ids = line["start_end"], line["homograph_span"], line["word_id"]
+                cur_start_end, cur_homographs, cur_word_ids = (
+                    line["start_end"],
+                    line["homograph_span"],
+                    line["word_id"],
+                )
                 if isinstance(cur_homographs, str):
                     cur_start_end, cur_homographs, cur_word_ids = [cur_start_end], [cur_homographs], [cur_word_ids]
 
@@ -122,11 +129,15 @@ class G2PClassificationDataset(Dataset):
                         if line["norm_text_graphemes"] in norm_data:
                             grapheme_sent = norm_data[line["norm_text_graphemes"]]
                         else:
-                            import pdb; pdb.set_trace()
+                            import pdb
+
+                            pdb.set_trace()
                             print()
                     sentences.append(grapheme_sent)
-                    if grapheme_sent[se[0]:se[1]] != h:
-                        import pdb; pdb.set_trace()
+                    if grapheme_sent[se[0] : se[1]] != h:
+                        import pdb
+
+                        pdb.set_trace()
                         print()
 
         for sentence, start_end_index, homograph, word_id in zip(sentences, start_end_indices, homographs, word_ids):
@@ -134,7 +145,6 @@ class G2PClassificationDataset(Dataset):
             target, target_and_negatives = self._prepare_sample(sentence, start, end, homograph, word_id)
             self.data.append({"input": sentence, "target": target, "target_and_negatives": target_and_negatives})
         print("--->", len(self.data), manifest)
-
 
     def _prepare_sample(self, sentence, start, end, homograph, word_id):
         # TODO refactor do all tokenization here, remove from collate
@@ -145,17 +155,17 @@ class G2PClassificationDataset(Dataset):
         sentence_tokenized = self.tokenizer.tokenize(sentence)
 
         grapheme_ipa_forms = self.wiki_homograph_dict[homograph.lower()]
-        target_len = len(sentence_tokenized[l_context_len:len(sentence_tokenized)-r_context_len])
+        target_len = len(sentence_tokenized[l_context_len : len(sentence_tokenized) - r_context_len])
         target = self.target_ipa.index(grapheme_ipa_forms[word_id])
 
         # add extra -100 tokens at the begging and end for [CLS] and [SEP] bert tokens, TODO: remove hardcoding
-        target = (
-                [-100] * (l_context_len + 1) + [target] + [-100] * (target_len - 1) + [-100] * (r_context_len + 1)
-        )
+        target = [-100] * (l_context_len + 1) + [target] + [-100] * (target_len - 1) + [-100] * (r_context_len + 1)
         target_and_negatives = [self.target_ipa.index(ipa_) for wordid_, ipa_ in grapheme_ipa_forms.items()]
 
         if len(target) != len(self.tokenizer.tokenize(sentence, add_special_tokens=True)):
-            import pdb; pdb.set_trace()
+            import pdb
+
+            pdb.set_trace()
         return target, target_and_negatives
 
     def __len__(self):

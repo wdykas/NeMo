@@ -24,13 +24,14 @@ python g2p_ctc.py \
 import os
 
 import pytorch_lightning as pl
+from omegaconf import OmegaConf
 
 from nemo.collections.common.callbacks import LogEpochTimeCallback
 from nemo.collections.tts.models import CTCG2PModel
 from nemo.core.config import hydra_runner
-from nemo.utils.exp_manager import exp_manager
 from nemo.utils import logging
-from omegaconf import OmegaConf
+from nemo.utils.exp_manager import exp_manager
+
 
 @hydra_runner(config_path="conf/G2P", config_name="g2p_conformer_ctc")
 def main(cfg):

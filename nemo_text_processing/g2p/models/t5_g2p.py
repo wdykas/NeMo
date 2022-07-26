@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION & AFFILIATES.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,18 +15,18 @@
 import json
 import re
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 import torch
-from hydra.utils import instantiate
+from nemo_text_processing.g2p.data.t5_g2p import T5G2PDataset
+from nemo_text_processing.g2p.models.g2p_model import G2PModel
 from omegaconf import DictConfig, OmegaConf
 from pytorch_lightning import Trainer
+from tqdm import tqdm
 from transformers import AutoModel, AutoTokenizer, T5ForConditionalGeneration, T5Tokenizer
 
 from nemo.collections.asr.metrics.wer import word_error_rate
-from nemo.collections.tts.torch.data import T5G2PDataset
 from nemo.core.classes.common import PretrainedModelInfo, typecheck
-from nemo.core.classes.modelPT import ModelPT
 from nemo.core.neural_types import LabelsType, LossType, MaskType, NeuralType, TokenIndex
 from nemo.utils import logging
 
@@ -37,9 +37,10 @@ __all__ = ['T5G2PModel']
 class T5G2PConfig:
     train_ds: Optional[Dict[Any, Any]] = None
     validation_ds: Optional[Dict[Any, Any]] = None
+    test_ds: Optional[Dict[Any, Any]] = None
 
 
-class T5G2PModel(ModelPT):  # TODO: Check parent class
+class T5G2PModel(G2PModel):  # TODO: Check parent class
     """
     T5-based grapheme-to-phoneme model.
     """
@@ -63,7 +64,6 @@ class T5G2PModel(ModelPT):  # TODO: Check parent class
 
         # Load appropriate tokenizer from HuggingFace
         self.model_name = cfg.get("model_name", "t5-small")  # One of: t5-small, t5-base, t5-large, t5-3b, t5-11b
-        print(f"----------> Using model: {self.model_name}")
         self._tokenizer = AutoTokenizer.from_pretrained(self.model_name)
 
         self.max_source_len = cfg.get("max_source_len", self._tokenizer.model_max_length)
@@ -100,6 +100,53 @@ class T5G2PModel(ModelPT):  # TODO: Check parent class
     def training_epoch_end(self, outputs):
         return super().training_epoch_end(outputs)
 
+    # Functions for inference
+    @torch.no_grad()
+    def convert_graphemes_to_phonemes(
+        self,
+        manifest_filepath: str,
+        output_manifest_filepath: str,
+        batch_size: int = 32,
+        num_workers: int = 0,
+        target_field: Optional[str] = None,
+        verbose: Optional[bool] = True,
+    ) -> List[str]:
+        """
+        Main function for Inference
+        Args:
+            TODO
+
+        Returns: TODO
+        """
+        all_preds = self._infer(manifest_filepath, batch_size=batch_size, num_workers=num_workers)
+        all_targets = []
+        with open(manifest_filepath, "r") as f_in:
+            with open(output_manifest_filepath, 'w', encoding="utf-8") as f_out:
+                for i, line in tqdm(enumerate(f_in), disable=not verbose):
+                    line = json.loads(line)
+
+                    if target_field is not None:
+                        if target_field not in line:
+                            if i == 0:
+                                logging.error(
+                                    f"{target_field} not found in {manifest_filepath}. Skipping PER calculation"
+                                )
+                        else:
+                            line["graphemes"] = line["text"]
+                            line["text"] = line[target_field]
+                            line["PER"] = word_error_rate(hypotheses=[all_preds[i]], references=[line[target_field]])
+                            all_targets.append(line[target_field])
+
+                    line["pred_text"] = all_preds[i]
+                    f_out.write(json.dumps(line, ensure_ascii=False) + "\n")
+
+        if target_field is not None:
+            per = word_error_rate(hypotheses=all_preds, references=all_targets)
+            logging.info(f"Overall PER --- {round(per * 100, 2)}%")
+
+        logging.debug(f"Predictions saved to {output_manifest_filepath}.")
+        return all_preds
+
     # ===== Validation Functions ===== #
     def validation_step(self, batch, batch_idx, dataloader_idx=0, split="val"):
         input_ids, attention_mask, labels = batch
@@ -128,8 +175,7 @@ class T5G2PModel(ModelPT):  # TODO: Check parent class
         """
         Called at the end of validation to aggregate outputs (reduces across batches, not workers).
         """
-        # TODO: Does this need a no_grad?
-        avg_loss = torch.stack([x['val_loss'] for x in outputs]).mean()
+        avg_loss = torch.stack([x[f"{split}_loss"] for x in outputs]).mean()
         self.log(f"{split}_loss", avg_loss, sync_dist=True)
 
         if split == "test":
@@ -137,13 +183,13 @@ class T5G2PModel(ModelPT):  # TODO: Check parent class
         else:
             dataloader_name = self._validation_names[dataloader_idx].upper()
 
-        # TODO: Add better PER calculation and logging.
         avg_per = sum([x['per'] for x in outputs]) / len(outputs)
         self.log(f"{split}_per", avg_per)
+
         # to save all PER values for each dataset in WANDB
         self.log(f"{split}_per_{dataloader_name}", avg_per)
 
-        logging.info(f"--> PER: {round(avg_per * 100, 2)}% {dataloader_name}, {len(outputs)}examples")
+        logging.info(f"PER: {round(avg_per * 100, 2)}% {dataloader_name}, {len(outputs)}examples")
         return {'loss': avg_loss}
 
     def multi_test_epoch_end(self, outputs, dataloader_idx=0):
@@ -168,7 +214,15 @@ class T5G2PModel(ModelPT):  # TODO: Check parent class
         if "dataloader_params" not in cfg or not isinstance(cfg.dataloader_params, DictConfig):
             raise ValueError(f"No dataloader_params for {name}")
 
-        dataset = T5G2PDataset(cfg.manifest_filepath, self._tokenizer, self.max_source_len, self.max_target_len, self.do_lower)
+        dataset = T5G2PDataset(
+            manifest_filepath=cfg.manifest_filepath,
+            tokenizer=self._tokenizer,
+            max_source_len=self.max_source_len,
+            max_target_len=self.max_target_len,
+            do_lower=self.do_lower,
+            grapheme_field=cfg.get("grapheme_field", "text_graphemes"),
+            phoneme_field=cfg.get("phoneme_field", "text"),
+        )
 
         return torch.utils.data.DataLoader(dataset, collate_fn=dataset.collate_fn, **cfg.dataloader_params)
 

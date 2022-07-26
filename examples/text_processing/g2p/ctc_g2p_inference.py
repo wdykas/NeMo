@@ -15,25 +15,23 @@
 import json
 import os
 import sys
-
-from examples.tts.G2P.heteronyms_correction_with_classification import clean, get_metrics, correct_heteronyms
-
-sys.path.append("/home/ebakhturina/NeMo/examples/tts/G2P/data")
 from dataclasses import dataclass, is_dataclass
 from typing import Optional
 
 import pytorch_lightning as pl
 import torch
+from examples.tts.G2P.heteronyms_correction_with_classification import clean, correct_heteronyms, get_metrics
 from omegaconf import OmegaConf
 
 from nemo.collections.tts.models.G2P.g2p_ctc import CTCG2PModel
-
 from nemo.core.config import hydra_runner
 from nemo.utils import logging
 
+sys.path.append("/home/ebakhturina/NeMo/examples/tts/G2P/data")
+
 
 """
-python G2P/g2p_ctc_inference.py \
+python G2P/ctc_g2p_inference.py \
     pretrained_model=/mnt/sdb_4/g2p/chpts/byt5/2982960/g2p/G2PCTC/2022-06-07_01-00-45/checkpoints/G2PCTC.nemo \
     manifest_filepath=/home/ebakhturina/g2p_scripts/misc_data/phonemes_ipa/dev_clean_ambiguous_checked_fields_updated_word_boundaries_ipa_path.json \
     output_file=dev_clean_ambiguous_checked_fields_updated_word_boundaries_ipa_path_pred.json \
@@ -47,7 +45,7 @@ python ../../tools/speech_data_explorer/data_explorer.py --disable-caching-metri
 
 
 
-python G2P/g2p_ctc_inference.py \
+python G2P/ctc_g2p_inference.py \
 pretrained_model=/mnt/sdb_4/g2p/chpts/byt5/3043007_cased_with_punct/g2p/G2PCTC/2022-06-22_00-20-21/checkpoints/G2PCTC.nemo \
 manifest_filepath=/mnt/sdb_4/g2p/data_ipa/with_unicode_token/lower_False_Truepunct/eval_wikihomograph.json \
 output_file=cases_with_punct_eval_wiki.json pretrained_heteronyms_model=/mnt/sdb_4/g2p/chpts/homographs_classification/G2PClassification.nemo 
@@ -151,7 +149,7 @@ def main(cfg: TranscriptionConfig) -> TranscriptionConfig:
                         batch_size=cfg.batch_size,
                         num_workers=cfg.num_workers,
                         target_field=cfg.target_field,
-                        verbose = False
+                        verbose=False,
                     )
 
                 preds = " ".join(preds)
@@ -177,14 +175,12 @@ def main(cfg: TranscriptionConfig) -> TranscriptionConfig:
         correct_heteronyms(cfg.pretrained_heteronyms_model, cfg.output_file, cfg.batch_size, cfg.num_workers)
 
 
-
-
 if __name__ == '__main__':
     main()
 
 
 """
-python G2P/g2p_ctc_inference.py \
+python G2P/ctc_g2p_inference.py \
 pretrained_model=/mnt/sdb_4/g2p/chpts/byt5/3043007_cased_with_punct/g2p/G2PCTC/2022-06-22_00-20-21/checkpoints/G2PCTC.nemo manifest_filepath=sample.json output_file=sample_PRED.json pretrained_heteronyms_model=/mnt/sdb_4/g2p/chpts/homographs_classification/G2PClassification.nemo 
 
 

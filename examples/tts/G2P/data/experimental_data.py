@@ -156,8 +156,8 @@ if __name__ == "__main__":
     Use only CMU train dict part for training datasets, all CMU entries for eval/dev sets
     """
     STRESS_SYMBOLS = ["ˈ", "ˌ"]
-    WIKI_FOLDER="data"
-    VERSION = 8 # f"7_wiki_split_{WIKI_FOLDER}"
+    WIKI_FOLDER = "data"
+    VERSION = 8  # f"7_wiki_split_{WIKI_FOLDER}"
     POST_FIX = f"normalized_{VERSION}"
 
     # read nemo ipa cmu dict to get the order of words
@@ -165,7 +165,9 @@ if __name__ == "__main__":
     nemo_cmu, _ = IPAG2PProcessor._parse_as_cmu_dict(
         phoneme_dict_path=nemo_cmu, use_stresses=True, stress_symbols=STRESS_SYMBOLS, upper=True,
     )
-    heteronyms = IPAG2PProcessor._parse_file_by_lines("/home/ebakhturina/NeMo/scripts/tts_dataset_files/heteronyms-052722")
+    heteronyms = IPAG2PProcessor._parse_file_by_lines(
+        "/home/ebakhturina/NeMo/scripts/tts_dataset_files/heteronyms-052722"
+    )
 
     ipa_dicts = {
         "train": "/mnt/sdb_4/g2p/data_ipa/CharsiuG2P_data_splits/train_eng-us.tsv",
@@ -282,7 +284,9 @@ if __name__ == "__main__":
     drop_examples(
         lj_speech_disambiguated_train, output_dir=TRAINING_DATA_DIR, graphemes_to_exclude=DEV_TEST_GRAPHEMES,
     )
-    hifi_9017_disambiguated = "/mnt/sdb_4/g2p/data_ipa/disambiguated/disamb_9017_clean_train_heteronyms_filtered_ipa.json"
+    hifi_9017_disambiguated = (
+        "/mnt/sdb_4/g2p/data_ipa/disambiguated/disamb_9017_clean_train_heteronyms_filtered_ipa.json"
+    )
     drop_examples(
         hifi_9017_disambiguated, output_dir=TRAINING_DATA_DIR, graphemes_to_exclude=DEV_TEST_GRAPHEMES,
     )

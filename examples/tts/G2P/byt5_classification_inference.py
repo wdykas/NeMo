@@ -13,11 +13,11 @@
 # limitations under the License.
 
 
+import json
 import os
 from dataclasses import dataclass, is_dataclass
 from glob import glob
 from typing import Optional
-import json
 
 import pytorch_lightning as pl
 import torch
@@ -64,7 +64,7 @@ class TranscriptionConfig:
     # specify either filepath or data_dir
     filepath: Optional[str] = None  # Path to .tsv file
     data_dir: Optional[str] = None  # Path to a directory with .tsv file
-    manifest: Optional[str] = None # Path to .json manifest
+    manifest: Optional[str] = None  # Path to .json manifest
 
     # General configs
     output_file: Optional[str] = None

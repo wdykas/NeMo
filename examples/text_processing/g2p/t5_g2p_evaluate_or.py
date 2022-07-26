@@ -20,14 +20,11 @@ import sys
 from argparse import ArgumentParser
 
 import torch
-sys.path.append("/home/ebakhturina/NeMo/examples/tts/G2P")
-from examples.tts.G2P.heteronyms_correction_with_classification import clean, get_metrics, correct_heteronyms
+from examples.tts.G2P.heteronyms_correction_with_classification import clean, correct_heteronyms, get_metrics
+from nemo_text_processing.g2p.models.t5_g2p import T5G2PModel
 from omegaconf import OmegaConf
 
-from nemo.collections.asr.metrics.wer import word_error_rate
-from nemo.collections.tts.models import T5G2PModel
-from nemo.utils import logging
-
+sys.path.append("/home/ebakhturina/NeMo/examples/tts/G2P")
 
 
 try:
@@ -58,8 +55,19 @@ parser.add_argument(
     help="Set to True to lower case input graphemes and remove punctuation marks for evaluation",
 )
 parser.add_argument("--per_word", action="store_true", help="Set to True to run inference per word")
-parser.add_argument("--heteronyms_model", default=None, type=str, help="Path to a pre-trained classification model for heteronyms disambiguation")
-parser.add_argument("--grapheme_field", default="text_graphemes", type=str, help="Name of the field in the manifest to load grapheme input from ")
+parser.add_argument(
+    "--heteronyms_model",
+    default=None,
+    type=str,
+    help="Path to a pre-trained classification model for heteronyms disambiguation",
+)
+parser.add_argument(
+    "--grapheme_field",
+    default="text_graphemes",
+    type=str,
+    help="Name of the field in the manifest to load grapheme input from ",
+)
+
 
 def main():
     args = parser.parse_args()
@@ -180,9 +188,9 @@ def main():
         #         print(r)
 
         del g2p_model
-    # if False:
-    #     pass
-    # else:
+        # if False:
+        #     pass
+        # else:
 
         args.output = "/home/ebakhturina/CharsiuG2P/path_to_output/eval_wikihomograph.json_byt5-small.json"
         if args.heteronyms_model is not None:

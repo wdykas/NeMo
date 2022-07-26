@@ -19,7 +19,6 @@ from nemo.collections.tts.models.G2P.g2p_classification import G2PClassification
 from nemo.collections.tts.models.G2P.g2p_ctc import CTCG2PModel
 from nemo.collections.tts.models.hifigan import HifiGanModel
 from nemo.collections.tts.models.mixer_tts import MixerTTSModel
-from nemo.collections.tts.models.t5_g2p import T5G2PModel
 from nemo.collections.tts.models.tacotron2 import Tacotron2Model
 from nemo.collections.tts.models.two_stages import GriffinLimModel, MelPsuedoInverseModel, TwoStagesModel
 from nemo.collections.tts.models.univnet import UnivNetModel

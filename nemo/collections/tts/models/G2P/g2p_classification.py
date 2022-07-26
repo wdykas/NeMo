@@ -18,7 +18,6 @@ from typing import Optional
 import torch
 from omegaconf import DictConfig
 from pytorch_lightning import Trainer
-
 from tqdm import tqdm
 from transformers import AutoModel, AutoTokenizer
 

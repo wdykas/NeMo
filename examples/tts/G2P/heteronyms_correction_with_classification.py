@@ -1,17 +1,20 @@
 import json
+import os
+import sys  # fmt: off
+
+import pytorch_lightning as pl
+import torch
+from data_preparation_utils import remove_punctuation
 
 from nemo.collections.asr.metrics.wer import word_error_rate
-from nemo.collections.tts.torch.en_utils import english_word_tokenize
-import torch
-import pytorch_lightning as pl
-import os
 from nemo.collections.tts.models.G2P.g2p_classification import G2PClassificationModel
+from nemo.collections.tts.torch.en_utils import english_word_tokenize
 from nemo.collections.tts.torch.g2p_classification_data import read_wordids
 from nemo.collections.tts.torch.g2p_utils.data_utils import get_wordid_to_nemo
 from nemo.utils import logging
-import sys # fmt: off
-sys.path.append("/home/ebakhturina/NeMo/examples/tts/G2P/data") # fmt: off
-from data_preparation_utils import remove_punctuation
+
+sys.path.append("/home/ebakhturina/NeMo/examples/tts/G2P/data")  # fmt: off
+
 
 def correct_heteronyms(pretrained_heteronyms_model, manifest_with_preds, batch_size: int = 32, num_workers: int = 0):
     # disambiguate heteronyms using IPA-classification model
@@ -27,17 +30,13 @@ def correct_heteronyms(pretrained_heteronyms_model, manifest_with_preds, batch_s
     trainer = pl.Trainer(devices=device, accelerator=accelerator, logger=False, enable_checkpointing=False)
 
     if os.path.exists(pretrained_heteronyms_model):
-        heteronyms_model = G2PClassificationModel.restore_from(
-            pretrained_heteronyms_model, map_location=map_location
-        )
+        heteronyms_model = G2PClassificationModel.restore_from(pretrained_heteronyms_model, map_location=map_location)
     elif pretrained_heteronyms_model in G2PClassificationModel.get_available_model_names():
         heteronyms_model = G2PClassificationModel.from_pretrained(
             pretrained_heteronyms_model, map_location=map_location
         )
     else:
-        raise ValueError(
-            f'Invalid path to the pre-trained .nemo checkpoint or model name for G2PClassificationModel'
-        )
+        raise ValueError(f'Invalid path to the pre-trained .nemo checkpoint or model name for G2PClassificationModel')
 
     heteronyms_model.set_trainer(trainer)
     heteronyms_model = heteronyms_model.eval()
@@ -79,7 +78,9 @@ def correct_heteronyms(pretrained_heteronyms_model, manifest_with_preds, batch_s
             num_workers=num_workers,
         )
 
-    manifest_corrected_heteronyms = _correct_heteronym_predictions(manifest_with_preds, sentence_id_to_meta_info, target_ipa_id_to_label, heteronyms_preds)
+    manifest_corrected_heteronyms = _correct_heteronym_predictions(
+        manifest_with_preds, sentence_id_to_meta_info, target_ipa_id_to_label, heteronyms_preds
+    )
     get_metrics(manifest_corrected_heteronyms)
 
 
@@ -283,6 +284,7 @@ def get_metrics(manifest: str):
     print("=" * 40)
     return wer, per
 
+
 def _correct_heteronym_predictions(manifest, sentence_id_to_meta_info, target_ipa_id_to_label, heteronyms_preds):
     """
     :param manifest: path to manifest with G2P predictions in "pred_text"
@@ -298,7 +300,7 @@ def _correct_heteronym_predictions(manifest, sentence_id_to_meta_info, target_ip
     manifest_corrected_heteronyms = manifest.replace(".json", "_corrected_heteronyms.json")
 
     with open(manifest, "r", encoding="utf-8") as f_default, open(
-            manifest_corrected_heteronyms, "w", encoding="utf-8"
+        manifest_corrected_heteronyms, "w", encoding="utf-8"
     ) as f_corrected:
         for sent_id, line in enumerate(f_default):
             line = json.loads(line)
@@ -315,9 +317,7 @@ def _correct_heteronym_predictions(manifest, sentence_id_to_meta_info, target_ip
                     heteronyms_sent_id += 1
                     start_idx += offset
                     end_idx += offset
-                    corrected_pred_text = (
-                            corrected_pred_text[:start_idx] + ipa_pred + corrected_pred_text[end_idx:]
-                    )
+                    corrected_pred_text = corrected_pred_text[:start_idx] + ipa_pred + corrected_pred_text[end_idx:]
                     # offset to correct indices, since ipa form chosen during classification could differ in length
                     # from the predicted one
                     offset += len(ipa_pred) - (end_idx - start_idx)
@@ -330,5 +330,9 @@ def _correct_heteronym_predictions(manifest, sentence_id_to_meta_info, target_ip
 
 
 if __name__ == '__main__':
-    correct_heteronyms("/mnt/sdb_4/g2p/chpts/homographs_classification/bert_large/G2PClassification.nemo",
-                       "/home/ebakhturina/CharsiuG2P/path_to_output/eval_wikihomograph.json_byt5-small.json", 64,1)
+    correct_heteronyms(
+        "/mnt/sdb_4/g2p/chpts/homographs_classification/bert_large/G2PClassification.nemo",
+        "/home/ebakhturina/CharsiuG2P/path_to_output/eval_wikihomograph.json_byt5-small.json",
+        64,
+        1,
+    )

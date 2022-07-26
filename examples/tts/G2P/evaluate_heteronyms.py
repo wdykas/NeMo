@@ -1,21 +1,31 @@
+import argparse
 import json
 import os
+
 from examples.tts.G2P.heteronyms_correction_with_classification import clean
-from nemo.collections.tts.torch.g2p_utils.data_utils import get_wordid_to_nemo
 from tqdm import tqdm
-import argparse
+
+from nemo.collections.tts.torch.g2p_utils.data_utils import get_wordid_to_nemo
 
 parser = argparse.ArgumentParser(description="Calculate accuracy of heteronyms predictions")
 parser.add_argument("--manifest", type=str, help="Path to manifest files with model predictions")
-parser.add_argument("--target", type=str, default=None, help="heteronym to use for accuracy calculation, the rest heteronyms will be ignored")
-parser.add_argument("--grapheme_field", default="text_graphemes", type=str, help="Name of the field in the manifest to load grapheme input from ")
+parser.add_argument(
+    "--target",
+    type=str,
+    default=None,
+    help="heteronym to use for accuracy calculation, the rest heteronyms will be ignored",
+)
+parser.add_argument(
+    "--grapheme_field",
+    default="text_graphemes",
+    type=str,
+    help="Name of the field in the manifest to load grapheme input from ",
+)
 
 
 def _process_wiki_eval(graphemes):
     graphemes = graphemes.replace("says sorry for calling guest 'retard'", "says sorry for calling guest retard")
     return graphemes
-
-
 
 
 def eval_heteronyms(manifest, target_homograph=None):
@@ -117,9 +127,7 @@ def eval_heteronyms(manifest, target_homograph=None):
     if target_homograph is not None:
         total = sum(dict_target_homograph.values())
         print(target_homograph.upper(), dict_target_homograph)
-        print(
-            f"{correct * 100 / total:.2f}% -- {correct} out of {total}, skipped: {num_skipped}"
-        )
+        print(f"{correct * 100 / total:.2f}% -- {correct} out of {total}, skipped: {num_skipped}")
 
 
 if __name__ == "__main__":

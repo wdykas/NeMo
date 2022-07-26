@@ -9,9 +9,11 @@ from tqdm import tqdm
 
 from nemo.collections.tts.torch.g2p_utils.data_utils import correct_wikihomograph_data, read_wikihomograph_file
 
+
 def pre_process(text):
     text = text.replace("é", "e")
     return text
+
 
 def post_process_normalization(text):
     text = (
@@ -229,7 +231,9 @@ def prepare_wikihomograph_data(post_fix, output_dir, split, phoneme_dict=None, d
     if phoneme_dict is None:
         phoneme_dict = "/home/ebakhturina/NeMo/scripts/tts_dataset_files/ipa_cmudict-0.7b_nv22.06.txt"
     normalize_wikihomograph_data(split, post_fix, data_folder=data_folder)
-    manifest = _prepare_wikihomograph_data(post_fix, split=split, output_dir=output_dir, phoneme_dict=phoneme_dict, data_folder=data_folder)
+    manifest = _prepare_wikihomograph_data(
+        post_fix, split=split, output_dir=output_dir, phoneme_dict=phoneme_dict, data_folder=data_folder
+    )
     print('checking..')
     check_data(manifest)
 

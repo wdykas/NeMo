@@ -18,6 +18,7 @@ from typing import List
 
 import numpy as np
 import torch.nn as nn
+
 # from nemo_text_processing.text_normalization.data_loader_utils import post_process_punct
 from tqdm import tqdm
 

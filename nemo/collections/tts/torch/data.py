@@ -962,7 +962,7 @@ class T5G2PDataset(Dataset):
         max_source_len: int = 512,
         max_target_len: int = 512,
         do_lower: bool = False,
-        grapheme_field: str = "text_graphemes" # "norm_text_graphemes" #"text_graphemes"
+        grapheme_field: str = "text_graphemes",  # "norm_text_graphemes" #"text_graphemes"
     ):
         # TODO: docstring
         super().__init__()
@@ -1128,7 +1128,6 @@ class CTCG2PBPEDataset(Dataset):
         logging.info(
             f"REMOVED based on CTC max: {removed_ctc_max} examples, based on MAX_SOURCE_LEN: {removed_source_max} examples from {manifest_filepath}"
         )
-
 
     def __len__(self):
         return len(self.data)
