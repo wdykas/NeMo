@@ -154,7 +154,7 @@ class MegatronTransformerEncoderDecoderModule(MegatronModule):
             enc_attn_mask = torch.ones(enc_output.size(0), self.hidden_steps).to(enc_output.device)
 
         if latent_noise_radius > 0.0:
-            enc_output += torch.empty(enc_output.size()).normal_(0, latent_noise_radius).to(enc_output.device)
+            enc_output += torch.empty(enc_output.size()).normal_(0, latent_noise_radius).to(device=enc_output.device, dtype=enc_output.dtype)
 
         dec_output = self.decode(
             dec_input=dec_input,

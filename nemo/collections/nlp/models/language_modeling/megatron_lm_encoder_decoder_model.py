@@ -301,6 +301,16 @@ class MegatronLMEncoderDecoderModel(MegatronBaseModel):
             rank_zero_only=True,
         )
 
+        sum = 0
+        for param in self.enc_dec_model.enc_dec_model.encoder.parameters():
+            sum += param.sum()
+        print(f'Encoder Checksum : {sum}')
+
+        sum = 0
+        for param in self.enc_dec_model.enc_dec_model.decoder.parameters():
+            sum += param.sum()
+        print(f'Decoder Checksum : {sum}')
+
         return loss_mean
 
     def on_train_batch_end(self, outputs, batch, batch_idx: int, unused: Optional[int] = 0) -> None:
