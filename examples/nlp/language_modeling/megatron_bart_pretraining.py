@@ -84,11 +84,24 @@ def main(cfg) -> None:
         cfg.model.precision = cfg.trainer.precision
 
     if cfg.restore_from_path is not None:
+        pretrained_cfg = MegatronBARTModel.restore_from(
+            cfg.restore_from_path, trainer=trainer, return_config=True
+        )
+        OmegaConf.set_struct(pretrained_cfg, True)
+        with open_dict(pretrained_cfg):
+            pretrained_cfg.model.precision = cfg.trainer.precision
+            pretrained_cfg.latent_noise_radius = cfg.model.latent_noise_radius
+
         model = MegatronBARTModel.restore_from(
             cfg.restore_from_path,
             trainer=trainer,
-            save_restore_connector=NLPSaveRestoreConnector()
+            save_restore_connector=NLPSaveRestoreConnector(),
+            override_config=pretrained_cfg,
         )
+
+        if cfg.model.freeze_encoder:
+            if hasattr(model.enc_dec_model.enc_dec_model, "encoder") and model.enc_dec_model.enc_dec_model.encoder is not None:
+                model.enc_dec_model.enc_dec_model.encoder.freeze()
     else:
         model = MegatronBARTModel(cfg.model, trainer)
     trainer.fit(model)
