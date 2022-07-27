@@ -836,7 +836,7 @@ def vad_construct_pyannote_object_per_file(
     for index, row in label.iterrows():
         reference[Segment(row['start'], row['start'] + row['dur'])] = row['speaker']
 
-    uem = Timeline([Segment(label.iloc[0, 'start'], row['start'] + row['dur'])])
+    uem = Timeline([Segment(label.iloc[0]['start'], row['start'] + row['dur'])])
     # construct hypothsis
     hypothesis = Annotation()
     for index, row in pred.iterrows():
