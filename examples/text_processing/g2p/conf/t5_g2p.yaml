@@ -15,9 +15,9 @@ model:
   do_lower: false
 
   train_ds:
+    manifest_filepath: ${train_manifest}
     dataset:
       _target_: "nemo_text_processing.g2p.data.t5_g2p.T5G2PDataset"
-      manifest_filepath: ${train_manifest}
       phoneme_field: "text" # name of the field in manifest_filepath for ground truth phonemes
       grapheme_field: "text_graphemes" # name of the field in manifest_filepath for input grapheme text
     dataloader_params:
@@ -27,9 +27,9 @@ model:
       num_workers: 4
 
   validation_ds:
-    dataset: null
+    manifest_filepath: ${validation_manifest}
+    dataset:
       _target_: "nemo_text_processing.g2p.data.t5_g2p.T5G2PDataset"
-      manifest_filepath: ${validation_manifest}
       phoneme_field: "text" # name of the field in manifest_filepath for ground truth phonemes
       grapheme_field: "text_graphemes" # name of the field in manifest_filepath for input grapheme text
     dataloader_params:
@@ -39,9 +39,9 @@ model:
       num_workers: 4
 
   test_ds:
-    dataset: null
+    manifest_filepath: ${test_manifest}
+    dataset:
       _target_: "nemo_text_processing.g2p.data.t5_g2p.T5G2PDataset"
-      manifest_filepath: ${test_manifest}
       phoneme_field: "text" # name of the field in manifest_filepath for ground truth phonemes
       grapheme_field: "text_graphemes" # name of the field in manifest_filepath for input grapheme text
     dataloader_params:

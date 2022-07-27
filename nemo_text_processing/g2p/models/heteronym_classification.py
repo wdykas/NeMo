@@ -261,7 +261,7 @@ class HeteronymClassificationModel(NLPModel):
             wordid_to_idx=self.wordid_to_idx,
             wiki_homograph_dict=self.wiki_homograph_dict,
             max_seq_len=self.tokenizer.tokenizer.model_max_length,
-            with_labels=False,
+            is_training=False,
         )
 
         return torch.utils.data.DataLoader(

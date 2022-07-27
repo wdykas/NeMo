@@ -67,9 +67,9 @@ model:
     type: bpe  # Can be either bpe (SentencePiece tokenizer) or wpe (WordPiece tokenizer)
 
   train_ds:
+    manifest_filepath: ${train_manifest}
     dataset:
       _target_: "nemo_text_processing.g2p.data.ctc_g2p.CTCG2PBPEDataset"
-      manifest_filepath: ${train_manifest}
       phoneme_field: "text" # name of the field in manifest_filepath for ground truth phonemes
       grapheme_field: "text_graphemes" # name of the field in manifest_filepath for input grapheme text
     dataloader_params:
@@ -79,9 +79,9 @@ model:
       num_workers: 4
 
   validation_ds:
+    manifest_filepath: ${validation_manifest}
     dataset:
       _target_: "nemo_text_processing.g2p.data.ctc_g2p.CTCG2PBPEDataset"
-      manifest_filepath: ${validation_manifest}
       phoneme_field: "text" # name of the field in manifest_filepath for ground truth phonemes
       grapheme_field: "text_graphemes" # name of the field in manifest_filepath for input grapheme text
     dataloader_params:
@@ -91,9 +91,9 @@ model:
       num_workers: 4
 
   test_ds:
+    manifest_filepath: ${test_manifest}
     dataset:
       _target_: "nemo_text_processing.g2p.data.ctc_g2p.CTCG2PBPEDataset"
-      manifest_filepath: ${test_manifest}
       phoneme_field: "text" # name of the field in manifest_filepath for ground truth phonemes
       grapheme_field: "text_graphemes" # name of the field in manifest_filepath for input grapheme text
     dataloader_params:

@@ -26,7 +26,6 @@ from torch import nn
 from tqdm import tqdm
 from transformers import AutoConfig, AutoModel, AutoTokenizer
 
-from nemo.collections.common.tokenizers.char_tokenizer import CharTokenizer
 from nemo.core.classes.common import PretrainedModelInfo, typecheck
 from nemo.core.classes.modelPT import ModelPT
 from nemo.core.neural_types import LabelsType, LossType, MaskType, NeuralType, TokenIndex
@@ -85,7 +84,6 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
         self._setup_tokenizer(cfg.tokenizer)
 
         # Setup grapheme tokenizer
-        # TODO load unk token symbols from config
         self.tokenizer_grapheme = self.setup_grapheme_tokenizer(cfg)
 
         # Initialize vocabulary
@@ -267,9 +265,6 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
         per_denom = torch.stack([x[f"{split}_per_denom"] for x in outputs]).sum()
         per = per_num / per_denom
 
-        import pdb
-
-        pdb.set_trace()
         if split == "test":
             dataloader_name = self._test_names[dataloader_idx].upper()
         else:
@@ -308,7 +303,7 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
             do_lower=self._cfg.tokenizer_grapheme.do_lower,
             labels=self.vocabulary,
             max_source_len=self._cfg.max_source_len,
-            with_labels=False,
+            is_training=False,
         )
 
         return torch.utils.data.DataLoader(
@@ -415,12 +410,12 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
         if "dataloader_params" not in cfg or not isinstance(cfg.dataloader_params, DictConfig):
             raise ValueError(f"No dataloader_params for {name}")
 
-        if not os.path.exists(cfg.dataset.manifest_filepath):
+        if not os.path.exists(cfg.manifest_filepath):
             raise ValueError(f"{cfg.dataset.manifest_filepath} not found")
 
         dataset = instantiate(
             cfg.dataset,
-            manifest_filepath=cfg.dataset.manifest_filepath,
+            manifest_filepath=cfg.manifest_filepath,
             phoneme_field=cfg.dataset.phoneme_field,
             grapheme_field=cfg.dataset.grapheme_field,
             tokenizer_graphemes=self.tokenizer_grapheme,
@@ -429,13 +424,13 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
             labels=self.vocabulary,
             max_source_len=self.max_source_len,
             max_target_len=self.max_target_len,
-            with_labels=True,
+            is_training=True,
         )
 
         return torch.utils.data.DataLoader(dataset, collate_fn=dataset.collate_fn, **cfg.dataloader_params)
 
     def setup_training_data(self, cfg):
-        if not cfg or cfg.dataset.manifest_filepath is None:
+        if not cfg or cfg.manifest_filepath is None:
             logging.info(
                 f"Dataloader config or file_path for the train is missing, so no data loader for train is created!"
             )
@@ -444,19 +439,19 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
         self._train_dl = self._setup_dataloader_from_config(cfg, name="train")
 
     def setup_multiple_validation_data(self, val_data_config: Union[DictConfig, Dict] = None):
-        if not val_data_config or val_data_config.dataset.manifest_filepath is None:
+        if not val_data_config or val_data_config.manifest_filepath is None:
             self._validation_dl = None
             return
-        return super().setup_multiple_validation_data(val_data_config)
+        super().setup_multiple_validation_data(val_data_config)
 
     def setup_multiple_test_data(self, test_data_config: Union[DictConfig, Dict] = None):
-        if not test_data_config or test_data_config.dataset.manifest_filepath is None:
+        if not test_data_config or test_data_config.manifest_filepath is None:
             self._test_dl = None
             return
-        return super().setup_multiple_test_data(test_data_config)
+        super().setup_multiple_test_data(test_data_config)
 
     def setup_validation_data(self, cfg: Optional[DictConfig]):
-        if not cfg or cfg.dataset.manifest_filepath is None:
+        if not cfg or cfg.manifest_filepath is None:
             logging.info(
                 f"Dataloader config or file_path for the validation is missing, so no data loader for validation is created!"
             )
@@ -465,7 +460,7 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
         self._validation_dl = self._setup_dataloader_from_config(cfg, name="val")
 
     def setup_test_data(self, cfg: Optional[DictConfig]):
-        if not cfg or cfg.dataset.manifest_filepath is None:
+        if not cfg or cfg.manifest_filepath is None:
             logging.info(
                 f"Dataloader config or file_path for the test is missing, so no data loader for test is created!"
             )

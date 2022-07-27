@@ -39,7 +39,7 @@ class T5G2PDataset(Dataset):
         phoneme_field: str = "text",
     ):
         """
-        Dataset to train T5-based G2P models.
+        Dataset to train T5-based G2P generative model.
 
         Args:
             manifest_filepath: path to a .json manifest that contains "phoneme_field" and "grapheme_field"

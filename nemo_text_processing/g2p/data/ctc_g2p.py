@@ -21,22 +21,22 @@ class CTCG2PBPEDataset(Dataset):
         max_target_len: int = 512,
         phoneme_field: str = "text",
         grapheme_field: str = "text_graphemes",
-        with_labels: bool = True,
+        is_training: bool = True,
     ):
         """
         Creates a dataset to train a CTC-based G2P models.
 
         Args:
-            manifest_filepath: str,
-            tokenizer_graphemes: PreTrainedTokenizerBase,
-            tokenizer_phonemes: PreTrainedTokenizerBase,
-            do_lower: bool = True,
-            labels: List[str] = None,
-            max_source_len: int = 512,
-            max_target_len: int = 512,
-            phoneme_field: str = "text",
-            grapheme_field: str = "text_graphemes",
-            with_labels:
+            manifest_filepath: path to a .json manifest that contains "phoneme_field" and "grapheme_field"
+            tokenizer_graphemes: tokenizer for graphemes
+            tokenizer_phonemes: tokenizer for phonemes
+            do_lower: set to True to lower case input graphemes
+            labels: output labels (tokenizer_phonemes vocabulary)
+            max_source_len: max length of the grapheme input sequence (examples exceeding len will be dropped)
+            max_target_len: max length of the phoneme sequence (examples exceeding len will be dropped)
+            phoneme_field: name of the field in manifest_filepath for ground truth phonemes
+            grapheme_field: name of the field in manifest_filepath for input grapheme text
+            is_training: set to True for training and False for inference
         """
         super().__init__()
 
@@ -52,11 +52,11 @@ class CTCG2PBPEDataset(Dataset):
         self.labels_tkn2id = {l: i for i, l in enumerate(labels)}
         self.data = []
         self.pad_token = 0
-        self.with_labels = with_labels
+        self.is_training = is_training
 
         removed_ctc_max = 0
         removed_source_max = 0
-        with open(manifest_filepath, 'r') as f_in:
+        with open(manifest_filepath, "r") as f_in:
             logging.debug(f"Loading dataset from: {manifest_filepath}")
             for i, line in enumerate(f_in):
                 item = json.loads(line)
@@ -66,12 +66,12 @@ class CTCG2PBPEDataset(Dataset):
 
                 if isinstance(self.tokenizer_graphemes, PreTrainedTokenizerBase):
                     grapheme_tokens = self.tokenizer_graphemes(item[grapheme_field])
-                    grapheme_tokens_len = len(grapheme_tokens['input_ids'])
+                    grapheme_tokens_len = len(grapheme_tokens["input_ids"])
                 else:
                     grapheme_tokens = self.tokenizer_graphemes.text_to_ids(item[grapheme_field])
                     grapheme_tokens_len = len(grapheme_tokens)
 
-                if with_labels:
+                if is_training:
                     target_tokens = self.tokenizer_phonemes.text_to_ids(item[phoneme_field])
                     target_len = len(target_tokens)
 
@@ -85,18 +85,18 @@ class CTCG2PBPEDataset(Dataset):
 
                     self.data.append(
                         {
-                            "graphemes": item["text_graphemes"],
-                            "phonemes": item["text"],
+                            "graphemes": item[grapheme_field],
+                            "phonemes": item[phoneme_field],
                             "target": target_tokens,
                             "target_len": target_len,
                         }
                     )
                 else:
                     if len(grapheme_tokens) > max_source_len:
-                        item["text_graphemes"] = item["text_graphemes"][:max_source_len]
+                        item[grapheme_field] = item[grapheme_field][:max_source_len]
                         removed_source_max += 1
                     self.data.append(
-                        {"graphemes": item["text_graphemes"],}
+                        {"graphemes": item[grapheme_field],}
                     )
 
         logging.info(
@@ -117,12 +117,10 @@ class CTCG2PBPEDataset(Dataset):
         return tokens
 
     def _collate_fn(self, batch):
-        """
-
-        """
         graphemes_batch = [entry["graphemes"] for entry in batch]
 
         # Encode inputs (graphemes)
+        # for ByT5 encoder
         if isinstance(self.tokenizer_graphemes, PreTrainedTokenizerBase):
             input_encoding = self.tokenizer_graphemes(
                 graphemes_batch,
@@ -134,6 +132,7 @@ class CTCG2PBPEDataset(Dataset):
             input_ids, attention_mask = input_encoding.input_ids, input_encoding.attention_mask
             input_len = torch.sum(attention_mask, 1) - 1
         else:
+            # for Conformer encoder
             input_ids = [self.tokenizer_graphemes.text_to_ids(sentence) for sentence in graphemes_batch]
             input_len = [len(entry) for entry in input_ids]
             max_len = max(input_len)
@@ -143,7 +142,7 @@ class CTCG2PBPEDataset(Dataset):
             input_len = torch.tensor(input_len)
 
         # inference
-        if not self.with_labels:
+        if not self.is_training:
             output = (input_ids, attention_mask, input_len)
         # Encode targets (phonemes)
         else:
@@ -160,5 +159,4 @@ class CTCG2PBPEDataset(Dataset):
             padded_targets = torch.stack(padded_targets)
             target_lengths = torch.stack(target_lengths)
             output = (input_ids, attention_mask, input_len, padded_targets, target_lengths)
-
         return output
