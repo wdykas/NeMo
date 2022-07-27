@@ -21,9 +21,9 @@ from typing import Optional
 import pytorch_lightning as pl
 import torch
 from examples.tts.G2P.heteronyms_correction_with_classification import clean, correct_heteronyms, get_metrics
+from nemo_text_processing.g2p.models.g2p_ctc import CTCG2PModel
 from omegaconf import OmegaConf
 
-from nemo.collections.tts.models.G2P.g2p_ctc import CTCG2PModel
 from nemo.core.config import hydra_runner
 from nemo.utils import logging
 

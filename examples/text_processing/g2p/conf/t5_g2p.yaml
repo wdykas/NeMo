@@ -3,7 +3,9 @@ name: T5G2P
 # Dataset info
 train_dataset: ???
 validation_dataset: ???
-test_dataset: null
+do_training: True
+do_testing: False
+pretrained_model: null # path to .nemo file or model name from list_available_models()
 
 model:
   model_name: "t5-small"

@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION & AFFILIATES.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,29 +12,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-This script is a copy of g2p_ctc.py with a different config_name value since multi-GPU jobs get stuck when the config_name is updated via command line
-
-To do testing:
-python byt5_classification_train.py \
-    train_dataset=/home/ebakhturina/g2p_scripts/WikipediaHomographData-master/data/train \
-    validation_dataset=/home/ebakhturina/g2p_scripts/WikipediaHomographData-master/data/eval \
-    model.encoder.pretrained=/mnt/sdb_4/g2p/chpts/byt5/2982960/g2p/G2PCTC/2022-06-07_01-00-45/checkpoints/G2PCTC.nemo
-
-
-"""
-
 import os
 
 import pytorch_lightning as pl
+from nemo_text_processing.g2p.models.g2p_classification import G2PClassificationModel
 
 from nemo.collections.common.callbacks import LogEpochTimeCallback
-from nemo.collections.tts.models import G2PClassificationModel
 from nemo.core.config import hydra_runner
 from nemo.utils.exp_manager import exp_manager
 
 
-@hydra_runner(config_path="../conf/G2P", config_name="byt5_classification.yaml")
+"""
+This script is a copy of g2p_ctc.py with a different config_name value since multi-GPU jobs get stuck when the config_name is updated via command line
+
+To do testing:
+python g2p_classification_train.py \
+    train_dataset=/home/ebakhturina/g2p_scripts/WikipediaHomographData-master/data/train \
+    validation_dataset=/home/ebakhturina/g2p_scripts/WikipediaHomographData-master/data/eval \
+    model.encoder.pretrained=/mnt/sdb_4/g2p/chpts/byt5/2982960/g2p/G2PCTC/2022-06-07_01-00-45/checkpoints/G2PCTC.nemo
+
+"""
+
+
+@hydra_runner(config_path="conf", config_name="g2p_classification.yaml")
 def main(cfg):
     trainer = pl.Trainer(**cfg.trainer)
     exp_manager(trainer, cfg.get("exp_manager", None))

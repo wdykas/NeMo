@@ -21,9 +21,9 @@ from typing import Optional
 
 import pytorch_lightning as pl
 import torch
+from nemo_text_processing.g2p.models.g2p_classification import G2PClassificationModel
 from omegaconf import OmegaConf
 
-from nemo.collections.tts.models.G2P.g2p_classification import G2PClassificationModel
 from nemo.collections.tts.torch.g2p_classification_data import read_wikihomograph_file
 from nemo.core.config import hydra_runner
 from nemo.utils import logging

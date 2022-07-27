@@ -71,23 +71,6 @@ def main(cfg: EvaluationConfig) -> EvaluationConfig:
     map_location = torch.device('cuda:{}'.format(device[0]) if accelerator == 'gpu' else 'cpu')
     trainer = pl.Trainer(devices=device, accelerator=accelerator, logger=False, enable_checkpointing=False)
 
-    if os.path.exists(cfg.pretrained_model):
-        # restore model from .nemo file path
-        model_cfg = G2PModel.restore_from(restore_path=cfg.pretrained_model, return_config=True)
-        classpath = model_cfg.target  # original class path
-        imported_class = model_utils.import_class_by_path(classpath)
-        logging.info(f"Restoring model : {imported_class.__name__}")
-        g2p_model = imported_class.restore_from(restore_path=cfg.pretrained_model, map_location=map_location)
-        model_name = os.path.splitext(os.path.basename(cfg.pretrained_model))[0]
-        logging.info(f"Restored {model_name} model from {cfg.pretrained_model}.")
-    elif cfg.pretrained_model in G2PModel.get_available_model_names():
-        # restore model by name
-        g2p_model = G2PModel.from_pretrained(cfg.pretrained_model, map_location=map_location)
-    else:
-        raise ValueError(
-            f'Provide path to the pre-trained .nemo checkpoint or choose from {G2PModel.list_available_models()}'
-        )
-
     if not hasattr(g2p_model._cfg, 'test_ds'):
         raise ValueError(f'g2p_model.modeltest_ds was not found in the config, skipping evaluation')
 

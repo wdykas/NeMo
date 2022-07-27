@@ -3,8 +3,9 @@ name: G2PCTC
 # Dataset info
 train_dataset: ???
 validation_dataset: ???
+do_training: True
 do_testing: False
-pretrained_model: null # .nemo
+pretrained_model: null # path to .nemo file or model name from list_available_models()
 
 model:
   model_name: conformer_bpe # choose from {byt5, conformer_bpe}

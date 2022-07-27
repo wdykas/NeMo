@@ -5,9 +5,9 @@ import sys  # fmt: off
 import pytorch_lightning as pl
 import torch
 from data_preparation_utils import remove_punctuation
+from nemo_text_processing.g2p.models.g2p_classification import G2PClassificationModel
 
 from nemo.collections.asr.metrics.wer import word_error_rate
-from nemo.collections.tts.models.G2P.g2p_classification import G2PClassificationModel
 from nemo.collections.tts.torch.en_utils import english_word_tokenize
 from nemo.collections.tts.torch.g2p_classification_data import read_wordids
 from nemo.collections.tts.torch.g2p_utils.data_utils import get_wordid_to_nemo

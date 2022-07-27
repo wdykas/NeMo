@@ -273,9 +273,6 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
             log_probs=log_probs, targets=targets, input_lengths=encoded_len, target_lengths=target_lengths
         )
 
-        # preds_str = self.ctc_decoder_predictions_tensor(greedy_predictions.tolist())
-        # targets_str = [self.decode_ids_to_str(t) for t in targets.tolist()]
-
         self._wer.update(
             predictions=log_probs, targets=targets, target_lengths=target_lengths, predictions_lengths=encoded_len
         )
@@ -310,7 +307,6 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
         """
         Called at the end of validation to aggregate outputs (reduces across batches, not workers).
         """
-        # TODO: Add support for multi GPU
         avg_loss = torch.stack([x[f"{split}_loss"] for x in outputs]).mean()
         self.log(f"{split}_loss", avg_loss, prog_bar=True)
 
@@ -330,16 +326,12 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
         self.log(f"{split}_wer", wer)
         self.log(f"{split}_per", per)
 
-        # TODO: Add better PER calculation and logging.
-        avg_per = sum([x[f"{split}_per"] for x in outputs]) / len(outputs)
-
-        # to minimize val_per
-        self.log(f"{split}_per", avg_per)
+        self.log(f"{split}_per", per)
         # to save all PER values for each dataset in WANDB
         self.log(f"{split}_per_{dataloader_name}", per)
 
-        logging.info(f"--> PER: {per * 100}% {dataloader_name}")
-        logging.info(f"--> WER: {wer * 100}% {dataloader_name}")
+        logging.info(f"PER: {per * 100}% {dataloader_name}")
+        logging.info(f"WER: {wer * 100}% {dataloader_name}")
 
     def multi_test_epoch_end(self, outputs, dataloader_idx=0):
         self.multi_validation_epoch_end(outputs, dataloader_idx, split="test")

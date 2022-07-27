@@ -15,8 +15,6 @@
 
 from nemo.collections.tts.models.aligner import AlignerModel
 from nemo.collections.tts.models.fastpitch import FastPitchModel
-from nemo.collections.tts.models.G2P.g2p_classification import G2PClassificationModel
-from nemo.collections.tts.models.G2P.g2p_ctc import CTCG2PModel
 from nemo.collections.tts.models.hifigan import HifiGanModel
 from nemo.collections.tts.models.mixer_tts import MixerTTSModel
 from nemo.collections.tts.models.tacotron2 import Tacotron2Model
@@ -30,8 +28,6 @@ __all__ = [
     "TwoStagesModel",
     "GriffinLimModel",
     "MelPsuedoInverseModel",
-    "CTCG2PModel",
-    "G2PClassificationModel",
     "HifiGanModel",
     "FastPitchModel",
     "AlignerModel",

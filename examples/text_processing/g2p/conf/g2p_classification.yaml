@@ -3,6 +3,7 @@ name: G2PClassification
 # Dataset info
 train_dataset: ???
 validation_dataset: ???
+test_dataset: null
 do_testing: False
 pretrained_model: null # .nemo
 
@@ -42,7 +43,6 @@ model:
     dataset:
       #_target_: "nemo.collections.tts.data.datalayers.T5G2PDataset"
       manifest: ${validation_dataset}
-      context_len: 5
     dataloader_params:
       drop_last: false
       shuffle: false
@@ -52,8 +52,7 @@ model:
   test_ds:
     dataset:
       #_target_: "nemo.collections.tts.data.datalayers.T5G2PDataset"
-      manifest: null
-      context_len: 5
+      manifest: ${test_dataset}
     dataloader_params:
       drop_last: false
       shuffle: false
