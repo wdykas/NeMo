@@ -10,10 +10,6 @@ from nemo.utils import logging
 
 
 class CTCG2PBPEDataset(Dataset):
-    """
-    Creates a dataset to train a T5G2P model.
-    """
-
     def __init__(
         self,
         manifest_filepath: str,
@@ -23,9 +19,25 @@ class CTCG2PBPEDataset(Dataset):
         labels: List[str] = None,
         max_source_len: int = 512,
         max_target_len: int = 512,
+        phoneme_field: str = "text",
+        grapheme_field: str = "text_graphemes",
         with_labels: bool = True,
     ):
-        # TODO: docstring
+        """
+        Creates a dataset to train a CTC-based G2P models.
+
+        Args:
+            manifest_filepath: str,
+            tokenizer_graphemes: PreTrainedTokenizerBase,
+            tokenizer_phonemes: PreTrainedTokenizerBase,
+            do_lower: bool = True,
+            labels: List[str] = None,
+            max_source_len: int = 512,
+            max_target_len: int = 512,
+            phoneme_field: str = "text",
+            grapheme_field: str = "text_graphemes",
+            with_labels:
+        """
         super().__init__()
 
         if not os.path.exists(manifest_filepath):
@@ -49,42 +61,26 @@ class CTCG2PBPEDataset(Dataset):
             for i, line in enumerate(f_in):
                 item = json.loads(line)
 
-                # if len(item["text"]) > max_source_len:
-                #     num_filtered += 1
-                #     continue
-                # if len(item["pred_text"]) > max_target_len:
-                #     num_filtered += 1
-                #     continue
-
                 if do_lower:
-                    item["text_graphemes"] = item["text_graphemes"].lower()
+                    item[grapheme_field] = item[grapheme_field].lower()
 
                 if isinstance(self.tokenizer_graphemes, PreTrainedTokenizerBase):
-                    grapheme_tokens = self.tokenizer_graphemes(item["text_graphemes"])
+                    grapheme_tokens = self.tokenizer_graphemes(item[grapheme_field])
                     grapheme_tokens_len = len(grapheme_tokens['input_ids'])
                 else:
-                    grapheme_tokens = self.tokenizer_graphemes.text_to_ids(item["text_graphemes"])
+                    grapheme_tokens = self.tokenizer_graphemes.text_to_ids(item[grapheme_field])
                     grapheme_tokens_len = len(grapheme_tokens)
 
                 if with_labels:
-                    target_tokens = self.tokenizer_phonemes.text_to_ids(item["text"])
+                    target_tokens = self.tokenizer_phonemes.text_to_ids(item[phoneme_field])
                     target_len = len(target_tokens)
 
                     if target_len > grapheme_tokens_len:
                         removed_ctc_max += 1
-                        # print(f"CTC: target: {target_len} -- input: {grapheme_tokens_len} -- {item['text_graphemes']} -- {item['text']}")
-                        # if target_len - grapheme_tokens_len > 4:
-                        #     import pdb; pdb.set_trace()
-                        #     print()
-
-                        # seq_lengths.append(len(item["text_graphemes"]))
-                        # sentences.append(item["text_graphemes"])
                         continue
 
                     if grapheme_tokens_len > max_source_len:
                         removed_source_max += 1
-                        # seq_lengths.append(len(item["text_graphemes"]))
-                        # sentences.append(item["text_graphemes"])
                         continue
 
                     self.data.append(
@@ -122,35 +118,7 @@ class CTCG2PBPEDataset(Dataset):
 
     def _collate_fn(self, batch):
         """
-        from nemo.collections.common.tokenizers import TokenizerSpec
-        if isinstance(self.tokenizer, TokenizerSpec):
-            input_ids, attention_mask = self.__get_input_ids(graphemes_batch, pad_token=0, return_mask=True)
-            labels = self.__get_input_ids(graphemes_batch, pad_token=-100, return_mask=False)
-            input_ids = torch.tensor(input_ids)
-            attention_mask = torch.tensor(attention_mask)
-            labels = torch.tensor(labels)
-        else:
-            # Encode inputs (graphemes)
-            input_encoding = self.tokenizer(
-                graphemes_batch, padding='longest', max_length=self.max_source_len, truncation=True, return_tensors='pt',
-            )
-            input_ids, attention_mask = input_encoding.input_ids, input_encoding.attention_mask
 
-            # Encode targets (phonemes)
-            target_encoding = self.tokenizer(
-                phonemes_batch, padding='longest', max_length=self.max_target_len, truncation=True,
-            )
-            labels = target_encoding.input_ids
-
-            # Need to replace padding tokens w/ -100 for loss to ignore them
-            labels = [
-                [(label if label != self.tokenizer.pad_token_id else -100) for label in labels_example]
-                for labels_example in labels
-            ]
-            labels = torch.tensor(labels)
-
-        :param batch:
-        :return:
         """
         graphemes_batch = [entry["graphemes"] for entry in batch]
 

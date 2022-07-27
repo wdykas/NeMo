@@ -4,10 +4,9 @@ import re
 from glob import glob
 
 from data_preparation_utils import check_data, get_wordid_to_nemo_cmu, is_valid, post_process, setup_tokenizer
+from nemo_text_processing.g2p.data.data_utils import correct_wikihomograph_data, read_wikihomograph_file
 from nemo_text_processing.text_normalization.normalize import Normalizer
 from tqdm import tqdm
-
-from nemo.collections.tts.torch.g2p_utils.data_utils import correct_wikihomograph_data, read_wikihomograph_file
 
 
 def pre_process(text):

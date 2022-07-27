@@ -1,19 +1,21 @@
 name: G2PCTC
 
 # Dataset info
-train_dataset: ???
-validation_dataset: ???
+train_manifest: ???
+validation_manifest: ???
+test_manifest: null
 do_training: True
 do_testing: False
 pretrained_model: null # path to .nemo file or model name from list_available_models()
 
 model:
-  model_name: conformer_bpe # choose from {byt5, conformer_bpe}
+  model_name: conformer_bpe
   max_source_len: 512
   max_target_len: 512
 
   tokenizer_grapheme:
-#    _target_: nemo.collections.common.tokenizers.char_tokenizer.CharTokenizer
+    dataset:
+      _target_: nemo.collections.common.tokenizers.char_tokenizer.CharTokenizer
     unk_token: "҂" # in the data, T5 unk_token is still <unk>
     vocab_file: null # will be filled during training
     do_lower: true # whether to lower case graphemes
@@ -66,32 +68,38 @@ model:
 
   train_ds:
     dataset:
-      _target_: "nemo.collections.tts.torch.data.CTCG2PDataset"
-    manifest_filepath: ${train_dataset}
+      _target_: "nemo_text_processing.g2p.data.ctc_g2p.CTCG2PBPEDataset"
+      manifest_filepath: ${train_manifest}
+      phoneme_field: "text" # name of the field in manifest_filepath for ground truth phonemes
+      grapheme_field: "text_graphemes" # name of the field in manifest_filepath for input grapheme text
     dataloader_params:
       drop_last: false
       shuffle: true
-      batch_size: 32 #32
+      batch_size: 32
       num_workers: 4
 
   validation_ds:
     dataset:
-      _target_: "nemo.collections.tts.torch.data.CTCG2PDataset"
-    manifest_filepath: ${validation_dataset}
+      _target_: "nemo_text_processing.g2p.data.ctc_g2p.CTCG2PBPEDataset"
+      manifest_filepath: ${validation_manifest}
+      phoneme_field: "text" # name of the field in manifest_filepath for ground truth phonemes
+      grapheme_field: "text_graphemes" # name of the field in manifest_filepath for input grapheme text
     dataloader_params:
       drop_last: false
       shuffle: false
-      batch_size: 32 #64
+      batch_size: 32
       num_workers: 4
 
   test_ds:
     dataset:
-      #_target_: "nemo.collections.tts.data.datalayers.T5G2PDataset"
-    manifest_filepath: null
+      _target_: "nemo_text_processing.g2p.data.ctc_g2p.CTCG2PBPEDataset"
+      manifest_filepath: ${test_manifest}
+      phoneme_field: "text" # name of the field in manifest_filepath for ground truth phonemes
+      grapheme_field: "text_graphemes" # name of the field in manifest_filepath for input grapheme text
     dataloader_params:
       drop_last: false
       shuffle: false
-      batch_size: 32 #64
+      batch_size: 32
       num_workers: 0
 
   optim:
@@ -122,7 +130,6 @@ trainer:
   accumulate_grad_batches: 1
   enable_checkpointing: False  # Provided by exp_manager
   logger: False  # Provided by exp_manager
-#  flush_logs_every_n_steps: 1000
   log_every_n_steps: 200
   check_val_every_n_epoch: 1
 

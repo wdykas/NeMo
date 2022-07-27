@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import os
-from typing import Dict, List, Optional, Union
+from typing import List, Optional, Union
 
 import torch
 from omegaconf import DictConfig, OmegaConf
@@ -32,7 +32,6 @@ from nemo.collections.nlp.models.nlp_model import NLPModel
 from nemo.collections.nlp.modules.common import TokenClassifier
 from nemo.collections.nlp.parts.utils_funcs import get_classification_report, plot_confusion_matrix, tensor2list
 from nemo.core.classes.common import PretrainedModelInfo, typecheck
-from nemo.core.neural_types import NeuralType
 from nemo.utils import logging
 
 __all__ = ['TokenClassificationModel']

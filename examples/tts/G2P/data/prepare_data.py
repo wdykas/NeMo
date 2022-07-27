@@ -4,7 +4,8 @@ import os
 from glob import glob
 from typing import List
 
-from data_preparation_utils import get_wordid_to_nemo_cmu, is_valid, post_process, remove_punctuation, setup_tokenizer
+from data_preparation_utils import get_wordid_to_nemo_cmu, is_valid, post_process, setup_tokenizer
+from nemo_text_processing.g2p.data.data_utils import remove_punctuation
 from tqdm import tqdm
 
 

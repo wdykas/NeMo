@@ -1,10 +1,8 @@
 import json
-import os
 import string
 
+from nemo_text_processing.g2p.data.data_utils import get_wordid_to_nemo, read_wordids
 from tqdm import tqdm
-
-from nemo.collections.tts.torch.g2p_utils.data_utils import get_wordid_to_nemo, read_wordids
 
 punct = string.punctuation
 
@@ -19,7 +17,7 @@ def is_valid(text, start_idx, end_idx):
 
 def convert_to_wiki_format(manifests, verbose=False):
     wordid_map = "/home/ebakhturina/g2p_scripts/WikipediaHomographData-master/data/wordids.tsv"
-    wiki_homograph_dict, target_ipa, target_ipa_label_to_id = read_wordids(wordid_map)
+    wiki_homograph_dict, wordid_to_idx = read_wordids(wordid_map)
 
     heteronyms = wiki_homograph_dict.keys()
     wordid_to_nemo = get_wordid_to_nemo()

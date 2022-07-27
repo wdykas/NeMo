@@ -1,24 +1,25 @@
 name: T5G2P
 
 # Dataset info
-train_dataset: ???
-validation_dataset: ???
+train_manifest: ???
+validation_manifest: ???
+test_manifest: null
 do_training: True
 do_testing: False
 pretrained_model: null # path to .nemo file or model name from list_available_models()
 
 model:
-  model_name: "t5-small"
+  model_name: "google/byt5-small"
   max_source_len: 150
   max_target_len: 512
   do_lower: false
 
   train_ds:
     dataset:
-      #_target_: "nemo.collections.tts.data.datalayers.T5G2PDataset"
-    manifest_filepath: ${train_dataset}
-    phoneme_field: "text" # name of the field in manifest_filepath for ground truth phonemes
-    grapheme_field: "text_graphemes" # name of the field in manifest_filepath for input grapheme text
+      _target_: "nemo_text_processing.g2p.data.t5_g2p.T5G2PDataset"
+      manifest_filepath: ${train_manifest}
+      phoneme_field: "text" # name of the field in manifest_filepath for ground truth phonemes
+      grapheme_field: "text_graphemes" # name of the field in manifest_filepath for input grapheme text
     dataloader_params:
       drop_last: false
       shuffle: true
@@ -27,10 +28,10 @@ model:
 
   validation_ds:
     dataset: null
-      #_target_: "nemo.collections.tts.data.datalayers.T5G2PDataset"
-    manifest_filepath: ${validation_dataset}
-    phoneme_field: "text" # name of the field in manifest_filepath for ground truth phonemes
-    grapheme_field: "text_graphemes" # name of the field in manifest_filepath for input grapheme text
+      _target_: "nemo_text_processing.g2p.data.t5_g2p.T5G2PDataset"
+      manifest_filepath: ${validation_manifest}
+      phoneme_field: "text" # name of the field in manifest_filepath for ground truth phonemes
+      grapheme_field: "text_graphemes" # name of the field in manifest_filepath for input grapheme text
     dataloader_params:
       drop_last: false
       shuffle: false
@@ -39,10 +40,10 @@ model:
 
   test_ds:
     dataset: null
-    #_target_: "nemo.collections.tts.data.datalayers.T5G2PDataset"
-    manifest_filepath: ${test_dataset}
-    phoneme_field: "text" # name of the field in manifest_filepath for ground truth phonemes
-    grapheme_field: "text_graphemes" # name of the field in manifest_filepath for input grapheme text
+      _target_: "nemo_text_processing.g2p.data.t5_g2p.T5G2PDataset"
+      manifest_filepath: ${test_manifest}
+      phoneme_field: "text" # name of the field in manifest_filepath for ground truth phonemes
+      grapheme_field: "text_graphemes" # name of the field in manifest_filepath for input grapheme text
     dataloader_params:
       drop_last: false
       shuffle: false

@@ -64,6 +64,7 @@ class T5G2PDataset(Dataset):
         num_filtered = 0
 
         # Load grapheme/phoneme sequence pairs into self.data
+        # TODO replace this with tokenization
         with open(manifest_filepath, 'r') as f_in:
             logging.info(f"Loading dataset from: {manifest_filepath}")
             for line in f_in:

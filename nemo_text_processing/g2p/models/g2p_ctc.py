@@ -27,7 +27,6 @@ from tqdm import tqdm
 from transformers import AutoConfig, AutoModel, AutoTokenizer
 
 from nemo.collections.common.tokenizers.char_tokenizer import CharTokenizer
-from nemo.collections.tts.torch.data import CTCG2PBPEDataset
 from nemo.core.classes.common import PretrainedModelInfo, typecheck
 from nemo.core.classes.modelPT import ModelPT
 from nemo.core.neural_types import LabelsType, LossType, MaskType, NeuralType, TokenIndex
@@ -72,9 +71,6 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
     #     return {"loss": NeuralType((), LossType())}
 
     def __init__(self, cfg: DictConfig, trainer: Trainer = None):
-        if not ASR_AVAILABLE:
-            raise ValueError(f"NeMo ASR collection is required.")
-
         self.world_size = 1
         if trainer is not None:
             self.world_size = trainer.num_nodes * trainer.num_gpus
@@ -124,9 +120,7 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
         self._per = WERBPE(decoding=self.decoding, use_cer=True, log_prediction=False, dist_sync_on_step=True,)
 
     def setup_grapheme_tokenizer(self, cfg):
-        """ Initialized grapheme tokenizer"""
-
-        # TODO: save to model artifacts
+        """ Initialized grapheme tokenizer """
 
         if self.mode == "byt5":
             # Load appropriate tokenizer from HuggingFace
@@ -155,50 +149,10 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
                 f.write('"\\""\n')  # add " to the vocab
 
             self.register_artifact("tokenizer_grapheme.vocab_file", vocab_file)
-            grapheme_tokenizer = CharTokenizer(vocab_file=vocab_file)
+            grapheme_tokenizer = instantiate(cfg.tokenizer_grapheme.dataset, vocab_file=vocab_file)
             self.max_source_len = cfg.get("max_source_len", 512)
             self.max_target_len = cfg.get("max_target_len", 512)
-            # grapheme_tokenizer = self.setup_old_conformer_tokenizer()
-
         return grapheme_tokenizer
-
-    def setup_old_conformer_tokenizer(self):
-        # set up grapheme tokenizer
-        chars = [
-            " ",
-            "a",
-            "b",
-            "c",
-            "d",
-            "e",
-            "f",
-            "g",
-            "h",
-            "i",
-            "j",
-            "k",
-            "l",
-            "m",
-            "n",
-            "o",
-            "p",
-            "q",
-            "r",
-            "s",
-            "t",
-            "u",
-            "v",
-            "w",
-            "x",
-            "y",
-            "z",
-            "'",
-        ]
-        vocab_file = "/tmp/char_vocab.txt"
-        with open(vocab_file, "w") as f:
-            [f.write(f'"{ch}"\n') for ch in chars]
-
-        return CharTokenizer(vocab_file=vocab_file)
 
     def _setup_encoder(self):
         if self.mode == "byt5":
@@ -232,11 +186,6 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
             # swap seq_len and hid_dim dimensions to get [B, hid_dim, seq_len]
             encoded_input = encoded_input.transpose(1, 2)
         else:
-            # import pdb;
-            # pdb.set_trace()
-            # bert = AutoModel.from_pretrained("bert-base-cased")
-            # bert_tokenizer = AutoTokenizer.from_pretrained("bert-base-cased")
-
             input_embedding = self.embedding(input_ids)
             input_embedding = input_embedding.transpose(1, 2)
             encoded_input, encoded_len = self.encoder(audio_signal=input_embedding, length=input_len)
@@ -318,6 +267,9 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
         per_denom = torch.stack([x[f"{split}_per_denom"] for x in outputs]).sum()
         per = per_num / per_denom
 
+        import pdb
+
+        pdb.set_trace()
         if split == "test":
             dataloader_name = self._test_names[dataloader_idx].upper()
         else:
@@ -349,7 +301,7 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
         Returns:
             A pytorch DataLoader.
         """
-        dataset = CTCG2PBPEDataset(
+        dataset = instantiate(
             manifest_filepath=manifest_filepath,
             tokenizer_graphemes=self.tokenizer_grapheme,
             tokenizer_phonemes=self.tokenizer,
@@ -371,12 +323,11 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
     @torch.no_grad()
     def _infer(self, manifest_filepath: str, batch_size: int, num_workers: int = 0) -> List[int]:
         """
-        Get prediction for the queries
+        TODO
         Args:
-            queries: text sequences
-            batch_size: batch size to use during inference.
+
         Returns:
-        all_preds: model predictions
+            all_preds: model predictions
         """
         # store predictions for all queries in a single list
         all_preds = []
@@ -464,11 +415,14 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
         if "dataloader_params" not in cfg or not isinstance(cfg.dataloader_params, DictConfig):
             raise ValueError(f"No dataloader_params for {name}")
 
-        if not os.path.exists(cfg.manifest_filepath):
-            raise ValueError(f"{cfg.manifest_filepath} not found")
+        if not os.path.exists(cfg.dataset.manifest_filepath):
+            raise ValueError(f"{cfg.dataset.manifest_filepath} not found")
 
-        dataset = CTCG2PBPEDataset(
-            manifest_filepath=cfg.manifest_filepath,
+        dataset = instantiate(
+            cfg.dataset,
+            manifest_filepath=cfg.dataset.manifest_filepath,
+            phoneme_field=cfg.dataset.phoneme_field,
+            grapheme_field=cfg.dataset.grapheme_field,
             tokenizer_graphemes=self.tokenizer_grapheme,
             do_lower=self._cfg.tokenizer_grapheme.do_lower,
             tokenizer_phonemes=self.tokenizer,
@@ -481,7 +435,7 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
         return torch.utils.data.DataLoader(dataset, collate_fn=dataset.collate_fn, **cfg.dataloader_params)
 
     def setup_training_data(self, cfg):
-        if not cfg or cfg.manifest_filepath is None:
+        if not cfg or cfg.dataset.manifest_filepath is None:
             logging.info(
                 f"Dataloader config or file_path for the train is missing, so no data loader for train is created!"
             )
@@ -490,28 +444,28 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
         self._train_dl = self._setup_dataloader_from_config(cfg, name="train")
 
     def setup_multiple_validation_data(self, val_data_config: Union[DictConfig, Dict] = None):
-        if not val_data_config or val_data_config.manifest_filepath is None:
+        if not val_data_config or val_data_config.dataset.manifest_filepath is None:
             self._validation_dl = None
             return
         return super().setup_multiple_validation_data(val_data_config)
 
     def setup_multiple_test_data(self, test_data_config: Union[DictConfig, Dict] = None):
-        if not test_data_config or test_data_config.manifest_filepath is None:
+        if not test_data_config or test_data_config.dataset.manifest_filepath is None:
             self._test_dl = None
             return
         return super().setup_multiple_test_data(test_data_config)
 
     def setup_validation_data(self, cfg: Optional[DictConfig]):
-        if not cfg or cfg.manifest_filepath is None:
+        if not cfg or cfg.dataset.manifest_filepath is None:
             logging.info(
                 f"Dataloader config or file_path for the validation is missing, so no data loader for validation is created!"
             )
             self._validation_dl = None
             return
-        self._validation_dl = self._setup_dataloader_from_config(cfg, name="validation")
+        self._validation_dl = self._setup_dataloader_from_config(cfg, name="val")
 
     def setup_test_data(self, cfg: Optional[DictConfig]):
-        if not cfg or cfg.manifest_filepath is None:
+        if not cfg or cfg.dataset.manifest_filepath is None:
             logging.info(
                 f"Dataloader config or file_path for the test is missing, so no data loader for test is created!"
             )

@@ -1,19 +1,15 @@
 import json
 import os
-import sys  # fmt: off
 
 import pytorch_lightning as pl
 import torch
-from data_preparation_utils import remove_punctuation
-from nemo_text_processing.g2p.models.g2p_classification import G2PClassificationModel
+from nemo_text_processing.g2p.data.data_utils import get_wordid_to_nemo, remove_punctuation
+from nemo_text_processing.g2p.data.heteronym_classification_data import read_wordids
+from nemo_text_processing.g2p.models.heteronym_classification import HeteronymClassificationModel
 
 from nemo.collections.asr.metrics.wer import word_error_rate
 from nemo.collections.tts.torch.en_utils import english_word_tokenize
-from nemo.collections.tts.torch.g2p_classification_data import read_wordids
-from nemo.collections.tts.torch.g2p_utils.data_utils import get_wordid_to_nemo
 from nemo.utils import logging
-
-sys.path.append("/home/ebakhturina/NeMo/examples/tts/G2P/data")  # fmt: off
 
 
 def correct_heteronyms(pretrained_heteronyms_model, manifest_with_preds, batch_size: int = 32, num_workers: int = 0):
@@ -30,9 +26,11 @@ def correct_heteronyms(pretrained_heteronyms_model, manifest_with_preds, batch_s
     trainer = pl.Trainer(devices=device, accelerator=accelerator, logger=False, enable_checkpointing=False)
 
     if os.path.exists(pretrained_heteronyms_model):
-        heteronyms_model = G2PClassificationModel.restore_from(pretrained_heteronyms_model, map_location=map_location)
-    elif pretrained_heteronyms_model in G2PClassificationModel.get_available_model_names():
-        heteronyms_model = G2PClassificationModel.from_pretrained(
+        heteronyms_model = HeteronymClassificationModel.restore_from(
+            pretrained_heteronyms_model, map_location=map_location
+        )
+    elif pretrained_heteronyms_model in HeteronymClassificationModel.get_available_model_names():
+        heteronyms_model = HeteronymClassificationModel.from_pretrained(
             pretrained_heteronyms_model, map_location=map_location
         )
     else:

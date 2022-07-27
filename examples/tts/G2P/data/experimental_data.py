@@ -4,14 +4,8 @@ import string
 from glob import glob
 from typing import List, Optional
 
-from data_preparation_utils import (
-    IPAG2PProcessor,
-    check_data,
-    is_valid,
-    post_process,
-    remove_punctuation,
-    setup_tokenizer,
-)
+from data_preparation_utils import IPAG2PProcessor, check_data, is_valid, post_process, setup_tokenizer
+from nemo_text_processing.g2p.data.data_utils import remove_punctuation
 from prepare_wiki_data import prepare_wikihomograph_data
 from tqdm import tqdm
 

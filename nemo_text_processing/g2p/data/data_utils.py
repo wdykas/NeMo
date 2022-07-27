@@ -15,6 +15,8 @@
 
 import csv
 import os
+import re
+import string
 from collections import defaultdict
 from glob import glob
 from typing import List
@@ -131,9 +133,18 @@ def read_wikihomograph_file(file: str) -> (List[str], List[List[int]], List[str]
 
 
 def read_wordids(wordid_map):
+    """
+    Reads wordid file from WikiHomograph dataset,
+    https://github.com/google-research-datasets/WikipediaHomographData/blob/master/data/wordids.tsv
+
+    Args:
+        wordid_map: path to wordids.tsv
+    Returns:
+        wiki_homograph_dict: a dictionary of graphemes with corresponding word_id - ipa_form pairs
+        wordid_to_idx: word id to label id mapping
+    """
     wiki_homograph_dict = {}
-    target_ipa = []
-    target_ipa_label_to_id = {}
+    wordid_to_idx = {}
 
     with open(wordid_map, "r", encoding="utf-8") as f:
         tsv_file = csv.reader(f, delimiter="\t")
@@ -145,12 +156,11 @@ def read_wordids(wordid_map):
             grapheme = line[0]
             word_id = line[1]
             ipa_form = line[3]
-            target_ipa_label_to_id[word_id] = len(target_ipa)
-            target_ipa.append(ipa_form)
+            wordid_to_idx[word_id] = len(wordid_to_idx)
             if grapheme not in wiki_homograph_dict:
                 wiki_homograph_dict[grapheme] = {}
             wiki_homograph_dict[grapheme][word_id] = ipa_form
-    return wiki_homograph_dict, target_ipa, target_ipa_label_to_id
+    return wiki_homograph_dict, wordid_to_idx
 
 
 def get_wordid_to_nemo():
@@ -162,3 +172,15 @@ def get_wordid_to_nemo():
             line = line.strip().split("\t")
             wordid_to_nemo_cmu[line[0]] = line[1]
     return wordid_to_nemo_cmu
+
+
+def remove_punctuation(text: str, exclude=None):
+    all_punct_marks = string.punctuation
+
+    if exclude is not None:
+        for p in exclude:
+            all_punct_marks = all_punct_marks.replace(p, "")
+    text = re.sub("[" + all_punct_marks + "]", " ", text)
+
+    text = re.sub(r" +", " ", text)
+    return text.strip()

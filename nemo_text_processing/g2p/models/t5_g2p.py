@@ -13,17 +13,16 @@
 # limitations under the License.
 
 import json
-import re
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Union
 
 import torch
-from nemo_text_processing.g2p.data.t5_g2p import T5G2PDataset
+from hydra.utils import instantiate
 from nemo_text_processing.g2p.models.g2p_model import G2PModel
 from omegaconf import DictConfig, OmegaConf
 from pytorch_lightning import Trainer
 from tqdm import tqdm
-from transformers import AutoModel, AutoTokenizer, T5ForConditionalGeneration, T5Tokenizer
+from transformers import AutoTokenizer, T5ForConditionalGeneration
 
 from nemo.collections.asr.metrics.wer import word_error_rate
 from nemo.core.classes.common import PretrainedModelInfo, typecheck
@@ -214,7 +213,8 @@ class T5G2PModel(G2PModel):  # TODO: Check parent class
         if "dataloader_params" not in cfg or not isinstance(cfg.dataloader_params, DictConfig):
             raise ValueError(f"No dataloader_params for {name}")
 
-        dataset = T5G2PDataset(
+        dataset = instantiate(
+            cfg.dataset,
             manifest_filepath=cfg.manifest_filepath,
             tokenizer=self._tokenizer,
             max_source_len=self.max_source_len,

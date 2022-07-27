@@ -3,9 +3,8 @@ import json
 import os
 
 from examples.tts.G2P.heteronyms_correction_with_classification import clean
+from nemo_text_processing.g2p.data.data_utils import get_wordid_to_nemo
 from tqdm import tqdm
-
-from nemo.collections.tts.torch.g2p_utils.data_utils import get_wordid_to_nemo
 
 parser = argparse.ArgumentParser(description="Calculate accuracy of heteronyms predictions")
 parser.add_argument("--manifest", type=str, help="Path to manifest files with model predictions")

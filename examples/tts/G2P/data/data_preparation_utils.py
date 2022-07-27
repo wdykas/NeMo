@@ -150,18 +150,6 @@ def post_process(text):
     return text
 
 
-def remove_punctuation(text: str, exclude=None):
-    all_punct_marks = string.punctuation
-
-    if exclude is not None:
-        for p in exclude:
-            all_punct_marks = all_punct_marks.replace(p, "")
-    text = re.sub("[" + all_punct_marks + "]", " ", text)
-
-    text = re.sub(r" +", " ", text)
-    return text.strip()
-
-
 def is_valid(text, unk_token="҂", verbose=False):
     allowed_symbols = unk_token + string.ascii_letters + " " + string.punctuation
     invalid_symbols = set(text).difference(set(allowed_symbols))

@@ -29,21 +29,32 @@ from nemo.utils.exp_manager import exp_manager
 This script supports training of G2PModels 
 (for T5G2PModel use t5_g2p.yaml, for CTCG2PModel use either g2p_conformer.yaml or g2p_t5_ctc.yaml)
 
-# Training the model and evaluation at the end of training:
+# Training T5G2PModel and evaluation at the end of training:
     python examples/text_processing/g2p/g2p_train_and_evaluate.py \
-        # (Optional: --config-path=<path to dir of configs> --config-name=<name of config without .yaml>) \
-        model.train_ds.manifest_filepath="<path to manifest file>" \
-        model.validation_ds.manifest_filepath="<path to manifest file>" \
-        model.test_ds.manifest_filepath="<path to manifest file>" \
+        # (Optional: --config-path=<Path to dir of configs> --config-name=<name of config without .yaml>) \
+        model.train_ds.manifest_filepath="<Path to manifest file>" \
+        model.validation_ds.manifest_filepath="<Path to manifest file>" \
+        model.test_ds.manifest_filepath="<Path to manifest file>" \
+        trainer.devices=1 \
+        do_training=True \
+        do_testing=True
+        
+# Training Conformer-G2P Model and evaluation at the end of training:
+    python examples/text_processing/g2p/g2p_train_and_evaluate.py \
+        # (Optional: --config-path=<Path to dir of configs> --config-name=<name of config without .yaml>) \
+        model.train_ds.manifest_filepath="<Path to manifest file>" \
+        model.validation_ds.manifest_filepath="<Path to manifest file>" \
+        model.test_ds.manifest_filepath="<Path to manifest file>" \
+        model.tokenizer.dir=<Path to pretrained tokenizer> \
         trainer.devices=1 \
         do_training=True \
         do_testing=True
         
 # Run evaluation of the pretrained model:
     python examples/text_processing/g2p/g2p_train_and_evaluate.py \
-        # (Optional: --config-path=<path to dir of configs> --config-name=<name of config without .yaml>) \
-        pretrained_model="<paht to .nemo file or pretrained model name from list_available_models()>" \
-        model.test_ds.manifest_filepath="<path to manifest file>" \
+        # (Optional: --config-path=<Path to dir of configs> --config-name=<name of config without .yaml>) \
+        pretrained_model="<Path to .nemo file or pretrained model name from list_available_models()>" \
+        model.test_ds.manifest_filepath="<Path to manifest file>" \
         trainer.devices=1 \
         do_training=False \
         do_testing=True

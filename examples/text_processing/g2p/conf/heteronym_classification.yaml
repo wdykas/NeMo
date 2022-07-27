@@ -1,25 +1,29 @@
-name: G2PClassification
+name: HeteronymClassification
 
 # Dataset info
 train_dataset: ???
 validation_dataset: ???
 test_dataset: null
+do_training: True
 do_testing: False
-pretrained_model: null # .nemo
+pretrained_model: null # path to .nemo file or model name from list_available_models()
 
 model:
-  max_sequence_len: 512
+  wordids: ??? # path to wordids in WikiHomograph dataset format
+  target_ipa_label_to_id: null # will be filled during training
+  max_seq_length: 256 # the maximum length BERT supports is 512
 
-  encoder:
-    pretrained: null # pretrained g2p model with encoder
-    transformer: bert-base-cased #google/byt5-small
-    dropout: null
+  language_model:
+    pretrained_model_name: bert-base-uncased # currently supports BERT or Distill BERT
+    lm_checkpoint: null
+    config_file: null # json file, precedence over config
+    config: null
 
-  tokenizer: ${model.encoder.transformer}
-
-#  classifier_head:
-#    num_output_layers: 2
-#    fc_dropout: 0.1
+  tokenizer:
+    tokenizer_name: ${model.language_model.pretrained_model_name} # or sentencepiece
+    vocab_file: null # path to vocab file
+    tokenizer_model: null # only used if tokenizer is sentencepiece
+    special_tokens: null
 
   head:
     num_fc_layers: 2
@@ -29,10 +33,9 @@ model:
 
   train_ds:
     dataset:
-      _target_: "nemo.collections.tts.torch.data.T5G2PDataset"
+      _target_: "nemo_text_processing.g2p.data.heteronym_classification_data.HeteronymClassificationDataset"
       manifest: ${train_dataset}
-      wordids: "/home/ebakhturina/g2p_scripts/WikipediaHomographData-master/data/wordids.tsv"
-      context_len: 5
+      grapheme_field: "text_graphemes" # name of the field in manifest for input grapheme text
     dataloader_params:
       drop_last: false
       shuffle: true
@@ -41,8 +44,9 @@ model:
 
   validation_ds:
     dataset:
-      #_target_: "nemo.collections.tts.data.datalayers.T5G2PDataset"
+      _target_: "nemo_text_processing.g2p.data.heteronym_classification_data.HeteronymClassificationDataset"
       manifest: ${validation_dataset}
+      grapheme_field: "text_graphemes" # name of the field in manifest for input grapheme text
     dataloader_params:
       drop_last: false
       shuffle: false
@@ -51,8 +55,9 @@ model:
 
   test_ds:
     dataset:
-      #_target_: "nemo.collections.tts.data.datalayers.T5G2PDataset"
+      _target_: "nemo_text_processing.g2p.data.heteronym_classification_data.HeteronymClassificationDataset"
       manifest: ${test_dataset}
+      grapheme_field: "text_graphemes" # name of the field in manifest for input grapheme text
     dataloader_params:
       drop_last: false
       shuffle: false
@@ -95,8 +100,3 @@ exp_manager:
     monitor: "val_loss"
     mode: "min"
     save_best_model: true
-  create_wandb_logger: true
-  wandb_logger_kwargs:
-    project: g2p_classification
-    name: "token_cl_with_mask"
-

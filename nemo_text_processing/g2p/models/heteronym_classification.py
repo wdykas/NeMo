@@ -12,60 +12,49 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
+
 from typing import Optional
 
 import torch
+from hydra.utils import instantiate
+from nemo_text_processing.g2p.data.data_utils import read_wordids
+from nemo_text_processing.g2p.data.heteronym_classification_data import HeteronymClassificationDataset
 from omegaconf import DictConfig
 from pytorch_lightning import Trainer
 from tqdm import tqdm
-from transformers import AutoModel, AutoTokenizer
 
 from nemo.collections.common.losses import CrossEntropyLoss
 from nemo.collections.nlp.metrics.classification_report import ClassificationReport
 from nemo.collections.nlp.modules.common import TokenClassifier
 from nemo.collections.nlp.parts.utils_funcs import tensor2list
-from nemo.collections.tts.torch.g2p_classification_data import G2PClassificationDataset, G2PClassificationInferDataset
-from nemo.core.classes import ModelPT
 from nemo.core.classes.common import PretrainedModelInfo
 from nemo.utils import logging
 
-__all__ = ['G2PClassificationModel']
+try:
+    from nemo.collections.nlp.models.nlp_model import NLPModel
+
+    NLP_AVAILABLE = True
+except (ModuleNotFoundError, ImportError):
+    NLP_AVAILABLE = False
+
+__all__ = ['HeteronymClassificationModel']
 
 
-class G2PClassificationModel(ModelPT):
+class HeteronymClassificationModel(NLPModel):
     """
-    Transformer-based (duplex) tagger model for TN/ITN.
+    This is a classification model that selects the best heteronym option out of possible dictionary entries.
+    Supports only heteronyms, no OOV.
     """
-
-    # @proper  lf
 
     def __init__(self, cfg: DictConfig, trainer: Trainer = None):
-        # import pdb; pdb.set_trace()
-        self.tokenizer = AutoTokenizer.from_pretrained(cfg.tokenizer, add_prefix_space=True)
-        self.max_sequence_len = cfg.get('max_sequence_len', self.tokenizer.model_max_length)
+        self.max_seq_length = cfg.max_seq_length
+        self.wordids = cfg.wordids
+        self.register_artifact("cfg.wordids", self.wordids)
+        self.wiki_homograph_dict, self.wordid_to_idx = read_wordids(cfg.wordids)
 
-        # TODO fix this
-        self.wordids = "/home/ebakhturina/g2p_scripts/WikipediaHomographData-master/data/wordids.tsv"
         super().__init__(cfg=cfg, trainer=trainer)
-        if cfg.encoder.pretrained is None:
-            self.encoder = AutoModel.from_pretrained(cfg.encoder.transformer)  # .encoder
-        else:
-            self.encoder = self.restore_from(cfg.encoder.pretrained).encoder
 
-        # read wordids.tsv to get the number of classes and label_to_id mapping
-        self.target_ipa_label_to_id = {}
-        with open(self.wordids, "r") as f_in:
-            for i, line in enumerate(f_in):
-                if i == 0:
-                    continue
-                line = line.replace('"', "").strip().split("\t")
-                word_id = line[1].strip()
-                self.target_ipa_label_to_id[word_id] = len(self.target_ipa_label_to_id)
-
-        num_classes = len(self.target_ipa_label_to_id)
-
-        self.hidden_size = self.encoder.config.hidden_size
+        num_classes = len(self.wordid_to_idx)
         self.classifier = TokenClassifier(
             hidden_size=self.hidden_size,
             num_classes=num_classes,
@@ -81,7 +70,7 @@ class G2PClassificationModel(ModelPT):
 
         # setup to track metrics
         self.classification_report = ClassificationReport(
-            num_classes=num_classes, mode='macro', dist_sync_on_step=True, label_ids=self.target_ipa_label_to_id
+            num_classes=num_classes, mode='micro', dist_sync_on_step=True, label_ids=self.wordid_to_idx
         )
 
         # Language
@@ -89,7 +78,9 @@ class G2PClassificationModel(ModelPT):
 
     # @typecheck()
     def forward(self, input_ids, attention_mask, target_and_negatives_mask):
-        hidden_states = self.encoder(input_ids=input_ids, attention_mask=attention_mask)[0]
+        hidden_states = self.bert_model(input_ids=input_ids, attention_mask=attention_mask)
+        if isinstance(hidden_states, tuple):
+            hidden_states = hidden_states[0]
         logits = self.classifier(hidden_states=hidden_states)
 
         # apply mask to mask out irrelevant options (elementwise)
@@ -102,7 +93,8 @@ class G2PClassificationModel(ModelPT):
         Lightning calls this inside the training loop with the data from the training dataloader
         passed in as `batch`.
         """
-        input_ids, attention_mask, target_and_negatives_mask, targets = batch
+        input_ids, attention_mask, target_and_negatives_mask, subword_mask, targets = batch
+
         logits = self.forward(
             input_ids=input_ids, attention_mask=attention_mask, target_and_negatives_mask=target_and_negatives_mask
         )
@@ -120,15 +112,14 @@ class G2PClassificationModel(ModelPT):
         Lightning calls this inside the validation loop with the data from the validation dataloader
         passed in as `batch`.
         """
-        input_ids, attention_mask, target_and_negatives_mask, targets = batch
+        input_ids, attention_mask, target_and_negatives_mask, subword_mask, targets = batch
         logits = self.forward(
             input_ids=input_ids, attention_mask=attention_mask, target_and_negatives_mask=target_and_negatives_mask
         )
         val_loss = self.loss(logits=logits, labels=targets)
         self.log(f"{split}_loss", val_loss)
 
-        tag_preds = torch.argmax(logits, axis=-1)
-        tag_preds = tag_preds[targets != -100]
+        tag_preds = torch.argmax(logits, axis=-1)[subword_mask > 0]
         targets = targets[targets != -100]
 
         tp, fn, fp, _ = self.classification_report(tag_preds, targets)
@@ -136,8 +127,9 @@ class G2PClassificationModel(ModelPT):
 
     def validation_epoch_end(self, outputs, split="val"):
         """
-        Called at the end of validation to aggregate outputs.
-        :param outputs: list of individual outputs of each validation step.
+        Args:
+            outputs: list of individual outputs of each test step.
+            split: dataset split name: "val" or "test"
         """
         avg_loss = torch.stack([x[f'{split}_loss'] for x in outputs]).mean()
 
@@ -152,31 +144,33 @@ class G2PClassificationModel(ModelPT):
                 if not x.endswith("          0") and "100.00     100.00     100.00" not in x
             ]
         )
-        logging.info(f'{split}_report: {report}')
-        self.log(f'{split}_loss', avg_loss, prog_bar=True)
-        self.log(f'{split}_precision', precision)
-        self.log(f'{split}_f1', f1)
-        self.log(f'{split}_recall', recall)
+        logging.info(f"{split}_report: {report}")
+        logging.info(f"{split}_ACCURACY: {f1:.2f}%")
+        self.log(f"{split}_loss", avg_loss, prog_bar=True)
+        self.log(f"{split}_precision", precision)
+        self.log(f"{split}_f1", f1)
+        self.log(f"{split}_recall", recall)
 
         self.classification_report.reset()
 
     def test_step(self, batch, batch_idx):
         """
-        Lightning calls this inside the test loop with the data from the test dataloader
-        passed in as `batch`.
+        Lightning calls this inside the test loop with the data from the test dataloader passed in as `batch`.
         """
         return self.validation_step(batch, batch_idx, "test")
 
     def test_epoch_end(self, outputs):
         """
         Called at the end of test to aggregate outputs.
-        :param outputs: list of individual outputs of each test step.
+
+        Args:
+            outputs: list of individual outputs of each test step.
         """
         return self.validation_epoch_end(outputs, "test")
 
     # Functions for inference
     @torch.no_grad()
-    def disambiguate(self, sentences, start_end_indices, homographs, batch_size: int, num_workers: int = 0):
+    def disambiguate(self, manifest, grapheme_field, batch_size: int, num_workers: int = 0):
         # store predictions for all queries in a single list
         all_preds = []
         mode = self.training
@@ -186,23 +180,27 @@ class G2PClassificationModel(ModelPT):
             self.eval()
             self.to(device)
             infer_datalayer = self._setup_infer_dataloader(
-                sentences, start_end_indices, homographs, batch_size=batch_size, num_workers=num_workers
+                manifest, grapheme_field, batch_size=batch_size, num_workers=num_workers
             )
 
             for batch in tqdm(infer_datalayer):
-                input_ids, attention_mask, target_and_negatives_mask, pred_mask = batch
+                input_ids, attention_mask, target_and_negatives_mask, subword_mask = batch
                 logits = self.forward(
                     input_ids=input_ids.to(device),
                     attention_mask=attention_mask.to(device),
                     target_and_negatives_mask=target_and_negatives_mask.to(device),
                 )
 
-                preds = torch.argmax(logits, axis=-1)
-                preds = tensor2list(preds[pred_mask != 0])
+                preds = torch.argmax(logits, axis=-1)[subword_mask > 0]
+                preds = tensor2list(preds)
                 all_preds.extend(preds)
         finally:
             # set mode back to its original value
             self.train(mode=mode)
+
+        # convert indices to wordids
+        idx_to_wordid = {v: k for k, v in self.wordid_to_idx.items()}
+        all_preds = [idx_to_wordid[p] for p in all_preds]
         return all_preds
 
     # Functions for processing data
@@ -239,35 +237,30 @@ class G2PClassificationModel(ModelPT):
         if "dataloader_params" not in cfg or not isinstance(cfg.dataloader_params, DictConfig):
             raise ValueError(f"No dataloader_params for {data_split}")
 
-        if data_split == "train":
-            self.wordids = cfg.dataset.wordids
-
-        if self.wordids is None or not os.path.exists(self.wordids):
-            raise ValueError(f"Wordids failed to setup or doesn't exist - {data_split}")
-
-        dataset = G2PClassificationDataset(
+        dataset = instantiate(
+            cfg.dataset,
             manifest=cfg.dataset.manifest,
+            grapheme_field=cfg.dataset.grapheme_field,
             tokenizer=self.tokenizer,
-            wordid_map=self.wordids,
-            context_len=cfg.dataset.context_len,
-            max_seq_len=self.max_sequence_len,
+            wordid_to_idx=self.wordid_to_idx,
+            wiki_homograph_dict=self.wiki_homograph_dict,
+            max_seq_len=self.max_seq_length,
             with_labels=True,
         )
 
         return torch.utils.data.DataLoader(dataset, collate_fn=dataset.collate_fn, **cfg.dataloader_params)
 
     def _setup_infer_dataloader(
-        self, sentences, start_end_indices, homographs, batch_size: int, num_workers: int
+        self, manifest, grapheme_field, batch_size: int, num_workers: int
     ) -> 'torch.utils.data.DataLoader':
-        # TODO: fix context_len - remove hardcoding
-        dataset = G2PClassificationInferDataset(
-            sentences=sentences,
-            start_end=start_end_indices,
-            homographs=homographs,
+
+        dataset = HeteronymClassificationDataset(
+            manifest=manifest,
+            grapheme_field=grapheme_field,
             tokenizer=self.tokenizer,
-            wordid_map=self.wordids,
-            context_len=5,
-            max_seq_len=self.max_sequence_len,
+            wordid_to_idx=self.wordid_to_idx,
+            wiki_homograph_dict=self.wiki_homograph_dict,
+            max_seq_len=self.tokenizer.tokenizer.model_max_length,
             with_labels=False,
         )
 
