@@ -660,6 +660,40 @@ class MegatronGPTPromptLearningModel(MegatronBaseModel, TextGeneration):
         # Save the best nemo model
         self.save_to(save_path=self.cfg.nemo_path)
         logging.info(f"The final model was saved to {self.cfg.nemo_path}")
+        
+    # def loss_func(self, loss_mask, output_tensor):
+    #     # Cross entropy loss term
+    #     losses = output_tensor.float()
+    #     loss_mask = loss_mask.view(-1).float()
+    #     cross_entropy_loss = torch.sum(losses.view(-1) * loss_mask) / loss_mask.sum()  # sequence level nll
+    
+    #     # Assuming you're only training one task at a time for now
+    #     taskname = self.new_tasks[0]
+        
+    #     # Get virtual token embeddings from the prompt table or prompt encoder
+    #     if self.virtual_prompt_source == VirtualPromptSource.PROMPT_TABLE:
+    #         taskname_id = self.task_templates[taskname]["task_id_num"]
+    #         virtual_token_embeds = self.prompt_table(taskname_id)
+    #         virtual_token_embeds = torch.stack(virtual_token_embeds)
+
+    #     elif self.virtual_prompt_source == VirtualPromptSource.PROMPT_ENCODER:
+    #         taskname_id = self.tokenizer.text_to_ids(taskname)
+    #         taskname_embeddings = self.word_embeddings(taskname_id)
+    #         virtual_token_embeds = self.prompt_encoder(taskname_embeddings=taskname_embeddings)
+        
+    #     # Regularization term, minimize similarity between virtual prompt vectors
+    #     vector_dot_products = torch.matmul(virtual_token_embeds, torch.transpose(virtual_token_embeds, 0, 1))
+    #     norm = torch.linalg.norm(virtual_token_embeds, dim=0).unsqueeze(0)
+    #     norm_matrix = torch.matmul(norm, torch.transpose(norm, 0, 1))
+    #     angle_cosines = torch.div(vector_dot_products, norm_matrix)
+    #     reg_term = (torch.sum(torch.abs(angle_cosines)) - self.task_templates[taskname]["total_virtual_tokens"]) / 2
+        
+    #     # Combine losses
+    #     alpha = 0.50
+    #     beta = 0.50
+    #     loss = (alpha * cross_entropy_loss) + (beta * reg_term)
+        
+    #     return loss
 
     def setup(self, stage=None):
         if (
