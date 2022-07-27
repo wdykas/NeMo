@@ -27,7 +27,7 @@ from nemo.collections.tts.losses.aligner_loss import BinLoss, ForwardSumLoss
 from nemo.collections.tts.losses.fastpitchloss import DurationLoss, MelLoss, PitchLoss
 from nemo.collections.tts.models.base import SpectrogramGenerator
 from nemo.collections.tts.modules.fastpitch import FastPitchModule
-from nemo.collections.tts.torch.tts_data_types import SpeakerID
+from nemo.collections.tts.torch.tts_data_types import SpeakerID, EmotionID
 from nemo.core.classes import Exportable
 from nemo.core.classes.common import PretrainedModelInfo, typecheck
 from nemo.core.neural_types.elements import (
@@ -147,6 +147,7 @@ class FastPitchModel(SpectrogramGenerator, Exportable):
             pitch_predictor,
             self.aligner,
             cfg.n_speakers,
+            cfg.n_emotions,
             cfg.symbols_embedding_dim,
             cfg.pitch_embedding_kernel_size,
             cfg.n_mel_channels,
@@ -260,6 +261,7 @@ class FastPitchModel(SpectrogramGenerator, Exportable):
             "durs": NeuralType(('B', 'T_text'), TokenDurationType()),
             "pitch": NeuralType(('B', 'T_audio'), RegressionValuesType()),
             "speaker": NeuralType(('B'), Index(), optional=True),
+            "emotion": NeuralType(('B'), Index(), optional=True),
             "pace": NeuralType(optional=True),
             "spec": NeuralType(('B', 'D', 'T_spec'), MelSpectrogramType(), optional=True),
             "attn_prior": NeuralType(('B', 'T_spec', 'T_text'), ProbsType(), optional=True),
@@ -274,6 +276,7 @@ class FastPitchModel(SpectrogramGenerator, Exportable):
         durs=None,
         pitch=None,
         speaker=None,
+        emotion=None,
         pace=1.0,
         spec=None,
         attn_prior=None,
@@ -285,6 +288,7 @@ class FastPitchModel(SpectrogramGenerator, Exportable):
             durs=durs,
             pitch=pitch,
             speaker=speaker,
+            emotion=emotion,
             pace=pace,
             spec=spec,
             attn_prior=attn_prior,
@@ -294,21 +298,25 @@ class FastPitchModel(SpectrogramGenerator, Exportable):
 
     @typecheck(output_types={"spect": NeuralType(('B', 'D', 'T_spec'), MelSpectrogramType())})
     def generate_spectrogram(
-        self, tokens: 'torch.tensor', speaker: Optional[int] = None, pace: float = 1.0
+        self, tokens: 'torch.tensor', speaker: Optional[int] = None, emotion: Optional[int] = None, pace: float = 1.0
     ) -> torch.tensor:
         if self.training:
             logging.warning("generate_spectrogram() is meant to be called in eval mode.")
         if isinstance(speaker, int):
             speaker = torch.tensor([speaker]).to(self.device)
-        spect, *_ = self(text=tokens, durs=None, pitch=None, speaker=speaker, pace=pace)
+        if isinstance(emotion, int):
+            emotion = torch.tensor([emotion]).to(self.device)
+        spect, *_ = self(text=tokens, durs=None, pitch=None, speaker=speaker, emotion=emotion, pace=pace)
         return spect
-
+    
     def training_step(self, batch, batch_idx):
-        attn_prior, durs, speaker = None, None, None
+        attn_prior, durs, speaker, emotion = None, None, None, None
         if self.learn_alignment:
             if self.ds_class_name == "TTSDataset":
                 if SpeakerID in self._train_dl.dataset.sup_data_types_set:
                     audio, audio_lens, text, text_lens, attn_prior, pitch, _, speaker = batch
+                elif EmotionID in self._train_dl.dataset.sup_data_types_set:
+                    audio, audio_lens, text, text_lens, attn_prior, pitch, _, emotion_id = batch
                 else:
                     audio, audio_lens, text, text_lens, attn_prior, pitch, _ = batch
             else:
@@ -323,6 +331,7 @@ class FastPitchModel(SpectrogramGenerator, Exportable):
             durs=durs,
             pitch=pitch,
             speaker=speaker,
+            emotion=emotion,
             pace=1.0,
             spec=mels if self.learn_alignment else None,
             attn_prior=attn_prior,

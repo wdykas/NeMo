@@ -45,6 +45,7 @@ from nemo.collections.tts.torch.tts_data_types import (
     P_voiced,
     Pitch,
     SpeakerID,
+    EmotionID,
     TTSDataType,
     Voiced_mask,
     WithLens,
@@ -89,7 +90,7 @@ class TTSDataset(Dataset):
         **kwargs,
     ):
         """Dataset which can be used for training spectrogram generators and end-to-end TTS models.
-        It loads main data types (audio, text) and specified supplementary data types (log mel, durations, align prior matrix, pitch, energy, speaker id).
+        It loads main data types (audio, text) and specified supplementary data types (log mel, durations, align prior matrix, pitch, energy, speaker id, emotion id).
         Some supplementary data types will be computed on the fly and saved in the sup_data_path if they did not exist before.
         Saved folder can be changed for some supplementary data types (see keyword args section).
         Arguments for supplementary data should be also specified in this class, and they will be used from kwargs (see keyword args section).
@@ -193,6 +194,7 @@ class TTSDataset(Dataset):
                         "mel_filepath": item["mel_filepath"] if "mel_filepath" in item else None,
                         "duration": item["duration"] if "duration" in item else None,
                         "speaker_id": item["speaker"] if "speaker" in item else None,
+                        "emotion_id": item["emotion_id"] if "emotion_id" in item else None,
                         "is_phoneme": item["is_phoneme"] if "is_phoneme" in item else None,
                     }
 
@@ -412,6 +414,9 @@ class TTSDataset(Dataset):
 
     def add_speaker_id(self, **kwargs):
         pass
+    
+    def add_emotion_id(self, **kwargs):
+        pass
 
     def get_spec(self, audio):
         with torch.cuda.amp.autocast(enabled=False):
@@ -546,6 +551,11 @@ class TTSDataset(Dataset):
         speaker_id = None
         if SpeakerID in self.sup_data_types_set:
             speaker_id = torch.tensor(sample["speaker_id"]).long()
+        
+        # Load emotion id if needed
+        emotion_id = None
+        if EmotionID in self.sup_data_types_set:
+            emotion_id = torch.tensor(sample["emotion_id"]).long()
 
         return (
             audio,
@@ -561,6 +571,7 @@ class TTSDataset(Dataset):
             energy,
             energy_length,
             speaker_id,
+            emotion_id,
             voiced_mask,
             p_voiced,
         )
@@ -616,7 +627,7 @@ class TTSDataset(Dataset):
             if AlignPriorMatrix in self.sup_data_types_set
             else []
         )
-        audios, tokens, log_mels, durations_list, pitches, energies, speaker_ids, voiced_masks, p_voiceds = (
+        audios, tokens, log_mels, durations_list, pitches, energies, speaker_ids, emotion_ids, voiced_masks, p_voiceds = (
             [],
             [],
             [],
@@ -643,6 +654,7 @@ class TTSDataset(Dataset):
                 energy,
                 energy_length,
                 speaker_id,
+                emotion_id,
                 voiced_mask,
                 p_voiced,
             ) = sample_tuple
@@ -678,6 +690,9 @@ class TTSDataset(Dataset):
 
             if SpeakerID in self.sup_data_types_set:
                 speaker_ids.append(speaker_id)
+            
+            if EmotionID in self.sup_data_types_set:
+                emotion_ids.append(emotion_id)
 
         data_dict = {
             "audio": torch.stack(audios),
@@ -693,6 +708,7 @@ class TTSDataset(Dataset):
             "energy": torch.stack(energies) if Energy in self.sup_data_types_set else None,
             "energy_lens": torch.stack(energies_lengths) if Energy in self.sup_data_types_set else None,
             "speaker_id": torch.stack(speaker_ids) if SpeakerID in self.sup_data_types_set else None,
+            "emotion_id": torch.stack(emotion_ids) if EmotionID in self.sup_data_types_set else None,
             "voiced_mask": torch.stack(voiced_masks) if Voiced_mask in self.sup_data_types_set else None,
             "p_voiced": torch.stack(p_voiceds) if P_voiced in self.sup_data_types_set else None,
         }

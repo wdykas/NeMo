@@ -54,6 +54,8 @@ class Energy(TTSDataType, WithLens):
 class SpeakerID(TTSDataType):
     name = "speaker_id"
 
+class EmotionID(TTSDataType):
+    name = "emotion_id"
 
 class Voiced_mask(TTSDataType):
     name = "voiced_mask"
@@ -75,6 +77,7 @@ VALID_SUPPLEMENTARY_DATA_TYPES = [
     Pitch,
     Energy,
     SpeakerID,
+    EmotionID,
     LMTokens,
     Voiced_mask,
     P_voiced,
