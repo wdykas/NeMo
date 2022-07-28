@@ -316,13 +316,13 @@ class FastPitchModel(SpectrogramGenerator, Exportable):
                 if SpeakerID in self._train_dl.dataset.sup_data_types_set:
                     audio, audio_lens, text, text_lens, attn_prior, pitch, _, speaker = batch
                 elif EmotionID in self._train_dl.dataset.sup_data_types_set:
-                    audio, audio_lens, text, text_lens, attn_prior, pitch, _, emotion_id = batch
+                    audio, audio_lens, text, text_lens, attn_prior, pitch, _, emotion = batch
                 else:
                     audio, audio_lens, text, text_lens, attn_prior, pitch, _ = batch
             else:
                 raise ValueError(f"Unknown vocab class: {self.vocab.__class__.__name__}")
         else:
-            audio, audio_lens, text, text_lens, durs, pitch, speaker = batch
+            audio, audio_lens, text, text_lens, durs, pitch, speaker, emotion = batch
 
         mels, spec_len = self.preprocessor(input_signal=audio, length=audio_lens)
 
@@ -388,17 +388,19 @@ class FastPitchModel(SpectrogramGenerator, Exportable):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        attn_prior, durs, speaker = None, None, None
+        attn_prior, durs, speaker, emotion = None, None, None, None
         if self.learn_alignment:
             if self.ds_class_name == "TTSDataset":
                 if SpeakerID in self._train_dl.dataset.sup_data_types_set:
                     audio, audio_lens, text, text_lens, attn_prior, pitch, _, speaker = batch
+                elif EmotionID in self._train_dl.dataset.sup_data_types_set:
+                    audio, audio_lens, text, text_lens, attn_prior, pitch, _, emotion = batch
                 else:
                     audio, audio_lens, text, text_lens, attn_prior, pitch, _ = batch
             else:
                 raise ValueError(f"Unknown vocab class: {self.vocab.__class__.__name__}")
         else:
-            audio, audio_lens, text, text_lens, durs, pitch, speaker = batch
+            audio, audio_lens, text, text_lens, durs, pitch, speaker, emotion = batch
 
         mels, mel_lens = self.preprocessor(input_signal=audio, length=audio_lens)
 
@@ -408,6 +410,7 @@ class FastPitchModel(SpectrogramGenerator, Exportable):
             durs=durs,
             pitch=pitch,
             speaker=speaker,
+            emotion=emotion,
             pace=1.0,
             spec=mels if self.learn_alignment else None,
             attn_prior=attn_prior,
@@ -531,6 +534,7 @@ class FastPitchModel(SpectrogramGenerator, Exportable):
             "pace": NeuralType(('B', 'T_text'), optional=True),
             "volume": NeuralType(('B', 'T_text')),
             "speaker": NeuralType(('B'), Index()),
+            "emotion": NeuralType(('B'), Index()),
         }
         self._output_types = {
             "spect": NeuralType(('B', 'D', 'T_spec'), MelSpectrogramType()),
@@ -550,6 +554,8 @@ class FastPitchModel(SpectrogramGenerator, Exportable):
         disabled_inputs = set()
         if self.fastpitch.speaker_emb is None:
             disabled_inputs.add("speaker")
+        if self.fastpitch.emotion_emb is None:
+            disabled_inputs.add("emotion")
         return disabled_inputs
 
     @property
@@ -582,7 +588,12 @@ class FastPitchModel(SpectrogramGenerator, Exportable):
                 0, self.fastpitch.speaker_emb.num_embeddings, (max_batch,), device=par.device, dtype=torch.int64
             )
 
+        if self.fastpitch.emotion_emb is not None:
+            inputs['emotion'] = torch.randint(
+                0, self.fastpitch.emotion_emb.num_embeddings, (max_batch,), device=par.device, dtype=torch.int64
+            )
+
         return (inputs,)
 
-    def forward_for_export(self, text, pitch, pace, volume, speaker=None):
-        return self.fastpitch.infer(text=text, pitch=pitch, pace=pace, volume=volume, speaker=speaker)
+    def forward_for_export(self, text, pitch, pace, volume, speaker=None, emotion=None):
+        return self.fastpitch.infer(text=text, pitch=pitch, pace=pace, volume=volume, speaker=speaker, emotion=emotion)

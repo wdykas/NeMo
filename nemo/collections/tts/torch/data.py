@@ -604,6 +604,7 @@ class TTSDataset(Dataset):
             energies,
             energies_lengths,
             _,
+            _,
             voiced_masks,
             p_voiceds,
         ) = zip(*batch)
@@ -628,6 +629,7 @@ class TTSDataset(Dataset):
             else []
         )
         audios, tokens, log_mels, durations_list, pitches, energies, speaker_ids, emotion_ids, voiced_masks, p_voiceds = (
+            [],
             [],
             [],
             [],

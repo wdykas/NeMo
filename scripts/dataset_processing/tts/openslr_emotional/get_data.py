@@ -43,7 +43,7 @@ URL = "https://www.openslr.org/resources/110/"
 ZIPPED_FOLDER = "thorsten-emotional_v02.tgz"
 EXTRACTED_FOLDER = "thorsten-emotional_v02"
 METADATA_FILE = "thorsten-emotional-metadata.csv"
-EMOTIONS = {"neutral":0, "amused":1, "angry":2, "disgusted":3, "drunk":4, "sleepy":5, "surprised":6, "whisper":7}
+EMOTIONS = {"neutral":8, "amused":1, "angry":2, "disgusted":3, "drunk":4, "sleepy":5, "surprised":6, "whisper":7}
 
 
 def __process_transcript(file_path: str):

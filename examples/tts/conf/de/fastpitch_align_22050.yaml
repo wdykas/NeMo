@@ -15,8 +15,8 @@ pitch_fmax: 2093.004638671875
 
 # Stats (per frame), train (these values depend on pitch_fmin and pitch_fmax)
 # For example, on Thorsten Muller (German Neutral-TTS dataset): http://www.openslr.org/95/
-pitch_mean: 132.524658203125
-pitch_std: 37.389366149902344
+pitch_mean: 132.55270385742188
+pitch_std: 37.61381912231445
 
 # Default values for dataset with sample_rate=22050
 sample_rate: 22050
@@ -35,7 +35,7 @@ model:
   bin_loss_warmup_epochs: 100
 
   n_speakers: 1
-  n_emotions: 1
+  n_emotions: 9
   max_token_duration: 75
   symbols_embedding_dim: 384
   pitch_embedding_kernel_size: 3

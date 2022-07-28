@@ -137,6 +137,7 @@ class FastPitchModule(NeuralModule):
         pitch_predictor: NeuralModule,
         aligner: NeuralModule,
         n_speakers: int,
+        n_emotions: int,
         symbols_embedding_dim: int,
         pitch_embedding_kernel_size: int,
         n_mel_channels: int = 80,
@@ -157,6 +158,11 @@ class FastPitchModule(NeuralModule):
             self.speaker_emb = torch.nn.Embedding(n_speakers, symbols_embedding_dim)
         else:
             self.speaker_emb = None
+        
+        if n_emotions > 1:
+            self.emotion_emb = torch.nn.Embedding(n_emotions, symbols_embedding_dim)
+        else:
+            self.emotion_emb = None
 
         self.max_token_duration = max_token_duration
         self.min_token_duration = 0
@@ -181,6 +187,7 @@ class FastPitchModule(NeuralModule):
             "durs": NeuralType(('B', 'T_text'), TokenDurationType()),
             "pitch": NeuralType(('B', 'T_audio'), RegressionValuesType()),
             "speaker": NeuralType(('B'), Index(), optional=True),
+            "emotion": NeuralType(('B'), Index(), optional=True),
             "pace": NeuralType(optional=True),
             "spec": NeuralType(('B', 'D', 'T_spec'), MelSpectrogramType(), optional=True),
             "attn_prior": NeuralType(('B', 'T_spec', 'T_text'), ProbsType(), optional=True),
@@ -211,6 +218,7 @@ class FastPitchModule(NeuralModule):
         durs=None,
         pitch=None,
         speaker=None,
+        emotion=None,
         pace=1.0,
         spec=None,
         attn_prior=None,
@@ -227,9 +235,18 @@ class FastPitchModule(NeuralModule):
             spk_emb = 0
         else:
             spk_emb = self.speaker_emb(speaker).unsqueeze(1)
+        
+        # Calculate emotion embedding
+        if self.emotion_emb is None or emotion is None:
+            emo_emb = 0
+        else:
+            emo_emb = self.emotion_emb(emotion).unsqueeze(1)
+
+        # TODO: figure out how to combine
+        # combined_emb = emo_emb + spk_emb
 
         # Input FFT
-        enc_out, enc_mask = self.encoder(input=text, conditioning=spk_emb)
+        enc_out, enc_mask = self.encoder(input=text, conditioning=emo_emb)
 
         log_durs_predicted = self.duration_predictor(enc_out, enc_mask)
         durs_predicted = torch.clamp(torch.exp(log_durs_predicted) - 1, 0, self.max_token_duration)
@@ -277,15 +294,21 @@ class FastPitchModule(NeuralModule):
             pitch,
         )
 
-    def infer(self, *, text, pitch=None, speaker=None, pace=1.0, volume=None):
+    def infer(self, *, text, pitch=None, speaker=None, emotion=None, pace=1.0, volume=None):
         # Calculate speaker embedding
         if self.speaker_emb is None or speaker is None:
             spk_emb = 0
         else:
             spk_emb = self.speaker_emb(speaker).unsqueeze(1)
 
+        # Calculate emotion embedding
+        if self.emotion_emb is None or emotion is None:
+            emo_emb = 0
+        else:
+            emo_emb = self.emotion_emb(emotion).unsqueeze(1)
+
         # Input FFT
-        enc_out, enc_mask = self.encoder(input=text, conditioning=spk_emb)
+        enc_out, enc_mask = self.encoder(input=text, conditioning=emo_emb)
 
         # Predict duration and pitch
         log_durs_predicted = self.duration_predictor(enc_out, enc_mask)

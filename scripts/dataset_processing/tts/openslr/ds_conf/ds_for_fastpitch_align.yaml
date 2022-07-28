@@ -2,7 +2,7 @@ name: "ds_for_fastpitch_align"
 
 manifest_filepath: "train_manifest.json"
 sup_data_path: "sup_data"
-sup_data_types: [ "align_prior_matrix", "pitch" ]
+sup_data_types: [ "align_prior_matrix", "pitch", "emotion_id"]
 whitelist_path: "nemo_text_processing/text_normalization/de/data/whitelist.tsv"
 
 dataset:
@@ -42,3 +42,6 @@ dataset:
     apostrophe: true
     pad_with_space: true
     phonemes: true
+
+dataloader_params:
+  num_workers: 12
