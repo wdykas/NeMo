@@ -20,8 +20,8 @@ do
 
 #  # eval with --CLEAN
 #  output_heteronyms="CTC_${JOB_ID}.json"
-#  python ctc_g2p_inference.py pretrained_model=$file manifest_filepath=/mnt/sdb_4/g2p/data_ipa/evaluation_sets_v${VERSION}/CMU_TEST_MULTI/cmu_test.json batch_size=$BATCH_SIZE > "/tmp/cmu_clean.txt"
-#  python ctc_g2p_inference.py pretrained_model=$file manifest_filepath=/mnt/sdb_4/g2p/data_ipa/evaluation_sets_v${VERSION}/eval_wikihomograph.json output_file=$output_heteronyms batch_size=$BATCH_SIZE $PER_WORD > "/tmp/wiki_clean.txt"
+#  python g2p_inference.py pretrained_model=$file manifest_filepath=/mnt/sdb_4/g2p/data_ipa/evaluation_sets_v${VERSION}/CMU_TEST_MULTI/cmu_test.json batch_size=$BATCH_SIZE > "/tmp/cmu_clean.txt"
+#  python g2p_inference.py pretrained_model=$file manifest_filepath=/mnt/sdb_4/g2p/data_ipa/evaluation_sets_v${VERSION}/eval_wikihomograph.json output_file=$output_heteronyms batch_size=$BATCH_SIZE $PER_WORD > "/tmp/wiki_clean.txt"
 #  python evaluate_heteronyms.py --manifest=$output_heteronyms > "/tmp/wiki_heteronyms_clean.txt"
 #  tail -n 5 "/tmp/cmu_clean.txt" "/tmp/wiki_clean.txt" "/tmp/wiki_heteronyms_clean.txt" > ${LOG_CLEAN}
 

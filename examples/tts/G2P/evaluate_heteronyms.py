@@ -2,7 +2,7 @@ import argparse
 import json
 import os
 
-from examples.tts.G2P.heteronyms_correction_with_classification import clean
+from examples.text_processing.g2p.utils import clean
 from nemo_text_processing.g2p.data.data_utils import get_wordid_to_nemo
 from tqdm import tqdm
 

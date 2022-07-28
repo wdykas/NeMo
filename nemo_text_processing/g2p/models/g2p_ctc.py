@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Optional, Union
 
 import torch
 from hydra.utils import instantiate
+from nemo_text_processing.g2p.data.ctc_g2p import CTCG2PBPEDataset
 from omegaconf import DictConfig, ListConfig, OmegaConf, open_dict
 from pytorch_lightning import Trainer
 from torch import nn
@@ -283,44 +284,39 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
     def multi_test_epoch_end(self, outputs, dataloader_idx=0):
         self.multi_validation_epoch_end(outputs, dataloader_idx, split="test")
 
-    def _setup_infer_dataloader(
-        self, manifest_filepath: str, batch_size: int, num_workers: int
-    ) -> 'torch.utils.data.DataLoader':
+    def _setup_infer_dataloader(self, cfg: DictConfig) -> 'torch.utils.data.DataLoader':
         """
         Setup function for a infer data loader.
-
-        Args:
-            queries: text
-            batch_size: batch size to use during inference
-
         Returns:
             A pytorch DataLoader.
         """
-        dataset = instantiate(
-            manifest_filepath=manifest_filepath,
+        dataset = CTCG2PBPEDataset(
+            manifest_filepath=cfg.manifest_filepath,
+            grapheme_field=cfg.grapheme_field,
             tokenizer_graphemes=self.tokenizer_grapheme,
             tokenizer_phonemes=self.tokenizer,
             do_lower=self._cfg.tokenizer_grapheme.do_lower,
             labels=self.vocabulary,
             max_source_len=self._cfg.max_source_len,
-            is_training=False,
+            with_labels=False,
         )
 
         return torch.utils.data.DataLoader(
             dataset,
             collate_fn=dataset.collate_fn,
-            batch_size=batch_size,
+            batch_size=cfg.batch_size,
             shuffle=False,
-            num_workers=num_workers,
+            num_workers=cfg.num_workers,
             drop_last=False,
         )
 
     @torch.no_grad()
-    def _infer(self, manifest_filepath: str, batch_size: int, num_workers: int = 0) -> List[int]:
+    def _infer(self, config: DictConfig,) -> List[int]:
         """
-        TODO
-        Args:
+        Runs model inference.
 
+        Args:
+            Config: configuration file to set up DataLoader
         Returns:
             all_preds: model predictions
         """
@@ -332,9 +328,8 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
             # Switch model to evaluation mode
             self.eval()
             self.to(device)
-            infer_datalayer = self._setup_infer_dataloader(
-                manifest_filepath, batch_size=batch_size, num_workers=num_workers
-            )
+
+            infer_datalayer = self._setup_infer_dataloader(config)
 
             for batch in infer_datalayer:
                 input_ids, attention_mask, input_len = batch
@@ -358,55 +353,8 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
             self.train(mode=mode)
         return all_preds
 
-    # Functions for inference
-    @torch.no_grad()
-    def convert_graphemes_to_phonemes(
-        self,
-        manifest_filepath: str,
-        output_manifest_filepath: str,
-        batch_size: int = 32,
-        num_workers: int = 0,
-        target_field: Optional[str] = None,
-        verbose: Optional[bool] = True,
-    ) -> List[str]:
-        """
-        Main function for Inference
-        Args:
-            TODO
-
-        Returns: TODO
-        """
-        all_preds = self._infer(manifest_filepath, batch_size=batch_size, num_workers=num_workers)
-        all_targets = []
-        with open(manifest_filepath, "r") as f_in:
-            with open(output_manifest_filepath, 'w', encoding="utf-8") as f_out:
-                for i, line in tqdm(enumerate(f_in), disable=not verbose):
-                    line = json.loads(line)
-
-                    if target_field is not None:
-                        if target_field not in line:
-                            if i == 0:
-                                logging.error(
-                                    f"{target_field} not found in {manifest_filepath}. Skipping PER calculation"
-                                )
-                        else:
-                            line["graphemes"] = line["text"]
-                            line["text"] = line[target_field]
-                            line["PER"] = word_error_rate(hypotheses=[all_preds[i]], references=[line[target_field]])
-                            all_targets.append(line[target_field])
-
-                    line["pred_text"] = all_preds[i]
-                    f_out.write(json.dumps(line, ensure_ascii=False) + "\n")
-
-        if target_field is not None:
-            per = word_error_rate(hypotheses=all_preds, references=all_targets)
-            logging.info(f"Overall PER --- {round(per * 100, 2)}%")
-
-        logging.debug(f"Predictions saved to {output_manifest_filepath}.")
-        return all_preds
-
     # ===== Dataset Setup Functions ===== #
-    def _setup_dataloader_from_config(self, cfg, name):
+    def _setup_dataloader_from_config(self, cfg: DictConfig, name: str):
         if "dataloader_params" not in cfg or not isinstance(cfg.dataloader_params, DictConfig):
             raise ValueError(f"No dataloader_params for {name}")
 
@@ -423,13 +371,12 @@ class CTCG2PModel(ModelPT, ASRBPEMixin):
             tokenizer_phonemes=self.tokenizer,
             labels=self.vocabulary,
             max_source_len=self.max_source_len,
-            max_target_len=self.max_target_len,
-            is_training=True,
+            with_labels=True,
         )
 
         return torch.utils.data.DataLoader(dataset, collate_fn=dataset.collate_fn, **cfg.dataloader_params)
 
-    def setup_training_data(self, cfg):
+    def setup_training_data(self, cfg: DictConfig):
         if not cfg or cfg.manifest_filepath is None:
             logging.info(
                 f"Dataloader config or file_path for the train is missing, so no data loader for train is created!"

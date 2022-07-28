@@ -35,7 +35,7 @@ class HeteronymClassificationDataset(Dataset):
         wordid_to_idx: Dict[str, int],
         max_seq_len: int = 512,
         grapheme_field: str = "text_graphemes",
-        is_training: bool = True,
+        with_labels: bool = True,
     ):
         """
         Creates dataset to use to run training and inference on G2PClassificationModel.
@@ -51,7 +51,7 @@ class HeteronymClassificationDataset(Dataset):
             wordid_to_idx: mapping from word id to index
             max_seq_len: maximum input sequence length
             grapheme_field: name of the field in the .json manifest with grapheme input
-            is_training: indicates whether labels are provided in the manifest. False for inference, True for training
+            with_labels: indicates whether labels are provided in the manifest. False for inference, True for training
         """
         super().__init__()
 
@@ -62,7 +62,7 @@ class HeteronymClassificationDataset(Dataset):
         self.max_seq_len = max_seq_len
         self.data = []
         self.pad_token = 0
-        self.is_training = is_training
+        self.with_labels = with_labels
         self.wiki_homograph_dict = wiki_homograph_dict
         self.wordid_to_idx = wordid_to_idx
 
@@ -96,7 +96,7 @@ class HeteronymClassificationDataset(Dataset):
 
         for sentence, start_end_index, homograph, word_id in zip(sentences, start_end_indices, homographs, word_ids):
             start, end = start_end_index
-            if self.is_training:
+            if self.with_labels:
                 target_and_negatives, subword_mask, target = self._prepare_sample(
                     sentence, start, end, homograph, word_id
                 )
@@ -141,7 +141,7 @@ class HeteronymClassificationDataset(Dataset):
         target_and_negatives = [self.wordid_to_idx[wordid_] for wordid_ in grapheme_ipa_forms]
         output = [target_and_negatives, subword_mask]
 
-        if self.is_training:
+        if self.with_labels:
             if word_id is None:
                 raise ValueError(f"word_id must be provided when self.with_labels==True, i.e., training mode")
 
@@ -198,7 +198,7 @@ class HeteronymClassificationDataset(Dataset):
         subword_mask = torch.tensor(subword_mask)
         output = [input_ids, attention_mask, target_and_negatives_mask, subword_mask]
 
-        if self.is_training:
+        if self.with_labels:
             # Encode targets
             targets = [entry["target"] for entry in batch]
             targets_len = [len(entry) for entry in targets]

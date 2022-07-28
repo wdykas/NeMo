@@ -3,16 +3,17 @@ import os
 
 import pytorch_lightning as pl
 import torch
-from nemo_text_processing.g2p.data.data_utils import get_wordid_to_nemo, remove_punctuation
-from nemo_text_processing.g2p.data.heteronym_classification_data import read_wordids
+from nemo_text_processing.g2p.data.data_utils import get_wordid_to_nemo
 from nemo_text_processing.g2p.models.heteronym_classification import HeteronymClassificationModel
+from utils import get_metrics
 
-from nemo.collections.asr.metrics.wer import word_error_rate
 from nemo.collections.tts.torch.en_utils import english_word_tokenize
 from nemo.utils import logging
 
 
-def correct_heteronyms(pretrained_heteronyms_model, manifest_with_preds, batch_size: int = 32, num_workers: int = 0):
+def correct_heteronyms(
+    pretrained_heteronyms_model, manifest_with_preds, grapheme_field, batch_size: int = 32, num_workers: int = 0,
+):
     # disambiguate heteronyms using IPA-classification model
 
     # setup GPU
@@ -39,21 +40,14 @@ def correct_heteronyms(pretrained_heteronyms_model, manifest_with_preds, batch_s
     heteronyms_model.set_trainer(trainer)
     heteronyms_model = heteronyms_model.eval()
 
-    # load heteronyms list
-    heteronyms_path = "/home/ebakhturina/NeMo/scripts/tts_dataset_files/heteronyms-052722"
-    heteronyms = []
-    with open(heteronyms_path, encoding="utf-8", mode="r") as f:
-        for line in f:
-            heteronyms.append(line.strip())
+    idx_to_wordid = {v: k for k, v in heteronyms_model.wordid_to_idx.items()}
+    homograph_dict = heteronyms_model.homograph_dict
+    heteronyms = homograph_dict.keys()
 
-    target_ipa_id_to_label = {v: k for k, v in heteronyms_model.target_ipa_label_to_id.items()}
-    # TODO: remove hardcoding, save to .nemo
-    wiki_homograph_dict, target_ipa, target_ipa_label_to_id = read_wordids(
-        "/home/ebakhturina/g2p_scripts/WikipediaHomographData-master/data/wordids.tsv"
-    )
     grapheme_unk_token = "҂"
     ipa_unk_token = "҂"
     (
+        output_manifest_with_unk,
         sentences,
         sentence_id_to_meta_info,
         start_end_indices_graphemes,
@@ -62,22 +56,22 @@ def correct_heteronyms(pretrained_heteronyms_model, manifest_with_preds, batch_s
     ) = add_unk_token_to_manifest(
         manifest_with_preds,
         heteronyms,
-        wiki_homograph_dict,
+        homograph_dict,
         grapheme_unk_token=grapheme_unk_token,
         ipa_unk_token=ipa_unk_token,
+        grapheme_field=grapheme_field,
     )
 
     with torch.no_grad():
         heteronyms_preds = heteronyms_model.disambiguate(
-            sentences=sentences,
-            start_end_indices=start_end_indices_graphemes,
-            homographs=homographs,
+            manifest=output_manifest_with_unk,
+            grapheme_field="text_graphemes",
             batch_size=batch_size,
             num_workers=num_workers,
         )
 
     manifest_corrected_heteronyms = _correct_heteronym_predictions(
-        manifest_with_preds, sentence_id_to_meta_info, target_ipa_id_to_label, heteronyms_preds
+        manifest_with_preds, sentence_id_to_meta_info, idx_to_wordid, heteronyms_preds
     )
     get_metrics(manifest_corrected_heteronyms)
 
@@ -115,8 +109,10 @@ def _get_ipa_parts(words_per_segment, cur_ipa):
     return current_ipa
 
 
-def add_unk_token_to_manifest(manifest, heteronyms, wiki_homograph_dict, grapheme_unk_token, ipa_unk_token):
-    """ Replace heteronyms in graphemes ("text_grapheme") and their ipa prediction () with UNKNOWN token"""
+def add_unk_token_to_manifest(
+    manifest, heteronyms, wiki_homograph_dict, grapheme_unk_token, ipa_unk_token, grapheme_field
+):
+    """ Replace heteronyms in graphemes (grapheme_field) and their ipa prediction () with UNKNOWN token"""
     sentences = []
     # here we're going to store sentence id (in the originla manifest file) and homograph start indices present
     # in this sentences. These values willbe later use to replace unknown tokens with classification model predictions.
@@ -129,8 +125,8 @@ def add_unk_token_to_manifest(manifest, heteronyms, wiki_homograph_dict, graphem
         for sent_id, line in enumerate(f_in):
             line = json.loads(line)
             ipa = line["pred_text"].split()
-            graphemes = line["text_graphemes"]
-            line["text_graphemes_original"] = line["text_graphemes"]
+            graphemes = line[grapheme_field]
+            line["text_graphemes_original"] = line[grapheme_field]
             line["pred_text_default"] = line["pred_text"]
 
             if len(graphemes.split()) != len(ipa):
@@ -161,9 +157,7 @@ def add_unk_token_to_manifest(manifest, heteronyms, wiki_homograph_dict, graphem
 
                             # collect data for G2P classification
                             # start and end indices for heteronyms in grapheme form
-                            start_idx_grapheme = line["text_graphemes"].index(
-                                word, len(" ".join(graphemes.split()[:i]))
-                            )
+                            start_idx_grapheme = line[grapheme_field].index(word, len(" ".join(graphemes.split()[:i])))
                             end_idx_grapheme = start_idx_grapheme + len(word)
                             start_end_indices_graphemes.append([start_idx_grapheme, end_idx_grapheme])
 
@@ -194,93 +188,26 @@ def add_unk_token_to_manifest(manifest, heteronyms, wiki_homograph_dict, graphem
                 cur_grapheme_unk_token = []
 
             if heteronym_present:
-                line["text_graphemes"] = graphemes_with_unk.strip()
+                line[grapheme_field] = graphemes_with_unk.strip()
 
     logging.info(f"Skipped {len_mismatch_skip} due to length mismatch")
+
+    output_manifest_with_unk = "/tmp/manifest_with_unk_token.json"
+    import pdb
+
+    pdb.set_trace()
+    with open(output_manifest_with_unk, "w", encoding="utf-8") as f_out:
+        for sent, homograph, ipa, start_end in zip(sentences, homographs, heteronyms_ipa, start_end_indices_graphemes):
+            entry = {grapheme_field: sent, "start_end": [start_end[0], start_end[1]], "homograph_span": homograph}
+            f_out.write(json.dumps(entry, ensure_ascii=False) + "\n")
     return (
+        output_manifest_with_unk,
         sentences,
         sentence_id_to_meta_info,
         start_end_indices_graphemes,
         homographs,
         heteronyms_ipa,
     )
-
-
-def clean(text, do_lower=True):
-    exclude_punct = "'ˈˌ-'"
-    if do_lower:
-        text = text.lower()
-    # text = (
-    #     text.replace("long-term", "longterm")
-    #     .replace(" x-ray ", " xray ")
-    #     .replace("t-shirts", "tshirts")
-    #     .replace("twenty-five", "twentyfive")
-    #     .replace("spider-man", "spiderman")
-    #     .replace("full-time", "fulltime")
-    #     .replace("three-year", "threeyear")
-    #     .replace("one-year", "oneyear")
-    #     .replace("five-year", "fiveyear")
-    #     .replace("two-dimensional", "twodimensional")
-    #     .replace("three-dimensional", "threedimensional")
-    #     .replace("computer-generated", "computergenerated")
-    #     .replace("long-range", "longrange")
-    #     .replace("non-zero", "nonzero")
-    #     .replace("air-conditioning", "airconditioning")
-    #     .replace("pre-season", "preseason")
-    #     .replace("build-up", "buildup")
-    #     .replace("one-off", "oneoff")
-    #     .replace("brother-in-law", "brotherinlaw")
-    #     .replace("on-screen", "onscreen")
-    #     .replace("non-verbal", "nonverbal")
-    #     .replace("all-out", "allout")
-    # )
-    text = remove_punctuation(text, exclude=exclude_punct)
-    text = text.replace("҂", "").replace("  ", " ").replace("  ", " ").strip()
-    return text
-
-
-def get_metrics(manifest: str):
-    all_preds = []
-    all_references = []
-    all_graphemes = {}
-    with open(manifest, "r") as f:
-        for i, line in enumerate(f):
-            line = json.loads(line)
-            all_preds.append(line["pred_text"])
-            all_references.append(line["text"])
-
-            if line["text_graphemes"] not in all_graphemes:
-                all_graphemes[line["text_graphemes"]] = []
-            all_graphemes[line["text_graphemes"]].append(i)
-
-    # collect all examples with multiple phoneme options and same grapheme form, choose the one with min PER
-    all_graphemes = {k: v for k, v in all_graphemes.items() if len(v) > 1}
-    lines_to_drop = []
-    for phon_amb_indices in all_graphemes.values():
-        refs, preds = [], []
-        for phon_amb_indices_ in phon_amb_indices:
-            refs.append(all_references[phon_amb_indices_])
-            preds.append(all_preds[phon_amb_indices_])
-        pers = []
-        for ref_, pred_ in zip(refs, preds):
-            pers.append(word_error_rate(hypotheses=[pred_], references=[ref_], use_cer=True))
-
-        min_idx = pers.index(min(pers))
-
-        phon_amb_indices.pop(min_idx)
-        lines_to_drop.extend(phon_amb_indices)
-
-    # drop duplicated examples, only keep with min PER
-    all_preds = [x for i, x in enumerate(all_preds) if i not in lines_to_drop]
-    all_references = [x for i, x in enumerate(all_references) if i not in lines_to_drop]
-
-    wer = word_error_rate(hypotheses=all_preds, references=all_references)
-    per = word_error_rate(hypotheses=all_preds, references=all_references, use_cer=True)
-
-    print("=" * 40)
-    print(f"{manifest}: PER: {per * 100:.2f}%, WER: {wer * 100:.2f}%, lines: {len(all_references)}")
-    print("=" * 40)
-    return wer, per
 
 
 def _correct_heteronym_predictions(manifest, sentence_id_to_meta_info, target_ipa_id_to_label, heteronyms_preds):

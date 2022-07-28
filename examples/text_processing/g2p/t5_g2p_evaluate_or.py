@@ -20,12 +20,11 @@ import sys
 from argparse import ArgumentParser
 
 import torch
-from examples.tts.G2P.heteronyms_correction_with_classification import clean, correct_heteronyms, get_metrics
+from examples.text_processing.g2p.heteronyms_correction_with_classification import correct_heteronyms
+from examples.text_processing.g2p.utils import clean
 from nemo_text_processing.g2p.models.t5_g2p import T5G2PModel
 from omegaconf import OmegaConf
-
-sys.path.append("/home/ebakhturina/NeMo/examples/tts/G2P")
-
+from utils import get_metrics
 
 try:
     from torch.cuda.amp import autocast

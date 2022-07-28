@@ -37,6 +37,7 @@ class T5G2PDataset(Dataset):
         do_lower: bool = False,
         grapheme_field: str = "text_graphemes",
         phoneme_field: str = "text",
+        with_labels: bool = True,
     ):
         """
         Dataset to train T5-based G2P generative model.
@@ -49,6 +50,7 @@ class T5G2PDataset(Dataset):
             do_lower: a flag that indicates whether to lower case input grapheme sequence
             phoneme_field: name of the field in manifest_filepath for ground truth phonemes
             grapheme_field: name of the field in manifest_filepath for input grapheme text
+            with_labels: set to True for training and False for inference
         """
         super().__init__()
 
@@ -59,32 +61,43 @@ class T5G2PDataset(Dataset):
         self.max_source_len = max_source_len
         self.max_target_len = max_target_len
         self.do_lower = do_lower
+        self.with_labels = with_labels
         self.data = []
 
         num_filtered = 0
 
         # Load grapheme/phoneme sequence pairs into self.data
-        # TODO replace this with tokenization
         with open(manifest_filepath, 'r') as f_in:
             logging.info(f"Loading dataset from: {manifest_filepath}")
             for line in f_in:
                 item = json.loads(line)
-
-                if len(item[grapheme_field]) > max_source_len:
-                    num_filtered += 1
-                    logging.debug(f"dropping {len(item[grapheme_field])} longer max_source_len")
-                    continue
-                if len(item[phoneme_field]) > max_target_len:
-                    num_filtered += 1
-                    logging.debug(f"dropping {len(item[phoneme_field])} longer max_target_len")
-                    continue
-
                 graphemes = item[grapheme_field]
                 if do_lower:
                     graphemes = graphemes.lower()
-                self.data.append({"graphemes": graphemes, "phonemes": item[phoneme_field]})
 
-        logging.info(f"Filtered {num_filtered} entries.")
+                if with_labels:
+                    graphemes_len = len(self.tokenizer.tokenize(graphemes))
+                    if graphemes_len > max_source_len:
+                        num_filtered += 1
+                        logging.debug(f"dropping {graphemes_len} longer max_source_len")
+                        continue
+
+                    target_len = len(self.tokenizer.tokenize(item[phoneme_field]))
+                    if max_target_len > 0 and target_len > max_target_len:
+                        num_filtered += 1
+                        logging.debug(f"dropping {target_len} longer max_target_len")
+                        continue
+                    self.data.append({"graphemes": graphemes, "phonemes": item[phoneme_field]})
+                else:
+                    # truncate input graphemes for inference if the length exceeds max_source_len
+                    graphemes_tokenized = self.tokenizer(graphemes)["input_ids"]
+                    if len(graphemes_tokenized) > max_source_len:
+                        # -1 for special token at the end, <\s>
+                        graphemes_tokenized_truncated = graphemes_tokenized[: max_source_len - 1]
+                        graphemes = self.tokenizer.batch_decode([graphemes_tokenized_truncated])[0]
+                    self.data.append({"graphemes": graphemes})
+
+        logging.info(f"Filtered {num_filtered} too long entries from {manifest_filepath}.")
 
     def __len__(self):
         return len(self.data)
@@ -94,23 +107,29 @@ class T5G2PDataset(Dataset):
 
     def _collate_fn(self, batch):
         graphemes_batch = [entry["graphemes"] for entry in batch]
-        phonemes_batch = [entry["phonemes"] for entry in batch]
+
         # Encode inputs (graphemes)
         input_encoding = self.tokenizer(
             graphemes_batch, padding='longest', max_length=self.max_source_len, truncation=True, return_tensors='pt',
         )
         input_ids, attention_mask = input_encoding.input_ids, input_encoding.attention_mask
-        # Encode targets (phonemes)
-        target_encoding = self.tokenizer(
-            phonemes_batch, padding='longest', max_length=self.max_target_len, truncation=True,
-        )
-        labels = target_encoding.input_ids
+        output = (input_ids, attention_mask)
 
-        # Need to replace padding tokens w/ -100 for loss to ignore them
-        labels = [
-            [(label if label != self.tokenizer.pad_token_id else -100) for label in labels_example]
-            for labels_example in labels
-        ]
-        labels = torch.tensor(labels)
+        # labels are available during training and evaluation but not inference
+        if self.with_labels:
+            # Encode targets (phonemes)
+            phonemes_batch = [entry["phonemes"] for entry in batch]
+            target_encoding = self.tokenizer(
+                phonemes_batch, padding='longest', max_length=self.max_target_len, truncation=True,
+            )
+            labels = target_encoding.input_ids
 
-        return (input_ids, attention_mask, labels)  # grapheme IDs, attention mask, phoneme IDs
+            # Need to replace padding tokens w/ -100 for loss to ignore them
+            labels = [
+                [(label if label != self.tokenizer.pad_token_id else -100) for label in labels_example]
+                for labels_example in labels
+            ]
+            labels = torch.tensor(labels)
+            output = (input_ids, attention_mask, labels)  # grapheme IDs, attention mask, phoneme IDs
+
+        return output

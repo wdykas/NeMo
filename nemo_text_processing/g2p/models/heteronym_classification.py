@@ -50,7 +50,7 @@ class HeteronymClassificationModel(NLPModel):
         self.max_seq_length = cfg.max_seq_length
         self.wordids = cfg.wordids
         self.register_artifact("cfg.wordids", self.wordids)
-        self.wiki_homograph_dict, self.wordid_to_idx = read_wordids(cfg.wordids)
+        self.homograph_dict, self.wordid_to_idx = read_wordids(cfg.wordids)
 
         super().__init__(cfg=cfg, trainer=trainer)
 
@@ -243,7 +243,7 @@ class HeteronymClassificationModel(NLPModel):
             grapheme_field=cfg.dataset.grapheme_field,
             tokenizer=self.tokenizer,
             wordid_to_idx=self.wordid_to_idx,
-            wiki_homograph_dict=self.wiki_homograph_dict,
+            wiki_homograph_dict=self.homograph_dict,
             max_seq_len=self.max_seq_length,
             with_labels=True,
         )
@@ -259,9 +259,9 @@ class HeteronymClassificationModel(NLPModel):
             grapheme_field=grapheme_field,
             tokenizer=self.tokenizer,
             wordid_to_idx=self.wordid_to_idx,
-            wiki_homograph_dict=self.wiki_homograph_dict,
+            wiki_homograph_dict=self.homograph_dict,
             max_seq_len=self.tokenizer.tokenizer.model_max_length,
-            is_training=False,
+            with_labels=False,
         )
 
         return torch.utils.data.DataLoader(

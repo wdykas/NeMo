@@ -3,7 +3,6 @@ name: G2PCTC
 # Dataset info
 train_manifest: ???
 validation_manifest: ???
-test_manifest: null
 do_training: True
 do_testing: False
 pretrained_model: null # path to .nemo file or model name from list_available_models()
@@ -11,7 +10,6 @@ pretrained_model: null # path to .nemo file or model name from list_available_mo
 model:
   model_name: conformer_bpe
   max_source_len: 512
-  max_target_len: 512
 
   tokenizer_grapheme:
     dataset:
@@ -91,7 +89,7 @@ model:
       num_workers: 4
 
   test_ds:
-    manifest_filepath: ${test_manifest}
+    manifest_filepath: null
     dataset:
       _target_: "nemo_text_processing.g2p.data.ctc_g2p.CTCG2PBPEDataset"
       phoneme_field: "text" # name of the field in manifest_filepath for ground truth phonemes

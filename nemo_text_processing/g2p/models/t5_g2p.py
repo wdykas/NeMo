@@ -18,6 +18,7 @@ from typing import Any, Dict, List, Optional, Union
 
 import torch
 from hydra.utils import instantiate
+from nemo_text_processing.g2p.data.t5_g2p import T5G2PDataset
 from nemo_text_processing.g2p.models.g2p_model import G2PModel
 from omegaconf import DictConfig, OmegaConf
 from pytorch_lightning import Trainer
@@ -99,51 +100,62 @@ class T5G2PModel(G2PModel):  # TODO: Check parent class
     def training_epoch_end(self, outputs):
         return super().training_epoch_end(outputs)
 
+    def _setup_infer_dataloader(self, cfg) -> 'torch.utils.data.DataLoader':
+        """
+        Setup function for a infer data loader.
+        Returns:
+            A pytorch DataLoader.
+        """
+        dataset = T5G2PDataset(
+            manifest_filepath=cfg.manifest_filepath,
+            tokenizer=self._tokenizer,
+            max_source_len=128,  # self._tokenizer.model_max_length,
+            max_target_len=-1,
+            do_lower=self.do_lower,
+            grapheme_field=cfg.get("grapheme_field", "text_graphemes"),
+            with_labels=False,
+        )
+
+        return torch.utils.data.DataLoader(
+            dataset,
+            collate_fn=dataset.collate_fn,
+            batch_size=cfg.batch_size,
+            shuffle=False,
+            num_workers=cfg.num_workers,
+            drop_last=False,
+        )
+
     # Functions for inference
     @torch.no_grad()
-    def convert_graphemes_to_phonemes(
-        self,
-        manifest_filepath: str,
-        output_manifest_filepath: str,
-        batch_size: int = 32,
-        num_workers: int = 0,
-        target_field: Optional[str] = None,
-        verbose: Optional[bool] = True,
-    ) -> List[str]:
+    def _infer(self, config: DictConfig,) -> List[int]:
         """
-        Main function for Inference
+        Runs model inference.
+
         Args:
-            TODO
-
-        Returns: TODO
+            Config: configuration file to set up DataLoader
+        Returns:
+            all_preds: model predictions
         """
-        all_preds = self._infer(manifest_filepath, batch_size=batch_size, num_workers=num_workers)
-        all_targets = []
-        with open(manifest_filepath, "r") as f_in:
-            with open(output_manifest_filepath, 'w', encoding="utf-8") as f_out:
-                for i, line in tqdm(enumerate(f_in), disable=not verbose):
-                    line = json.loads(line)
+        # store predictions for all queries in a single list
+        all_preds = []
+        mode = self.training
+        try:
+            device = 'cuda' if torch.cuda.is_available() else 'cpu'
+            # Switch model to evaluation mode
+            self.eval()
+            self.to(device)
 
-                    if target_field is not None:
-                        if target_field not in line:
-                            if i == 0:
-                                logging.error(
-                                    f"{target_field} not found in {manifest_filepath}. Skipping PER calculation"
-                                )
-                        else:
-                            line["graphemes"] = line["text"]
-                            line["text"] = line[target_field]
-                            line["PER"] = word_error_rate(hypotheses=[all_preds[i]], references=[line[target_field]])
-                            all_targets.append(line[target_field])
-
-                    line["pred_text"] = all_preds[i]
-                    f_out.write(json.dumps(line, ensure_ascii=False) + "\n")
-
-        if target_field is not None:
-            per = word_error_rate(hypotheses=all_preds, references=all_targets)
-            logging.info(f"Overall PER --- {round(per * 100, 2)}%")
-
-        logging.debug(f"Predictions saved to {output_manifest_filepath}.")
+            infer_datalayer = self._setup_infer_dataloader(DictConfig(config))
+            for batch in infer_datalayer:
+                input_ids, _ = batch
+                generated_str, _, _ = self._generate_predictions(
+                    input_ids=input_ids.to(device), model_max_target_len=None
+                )
+                all_preds.extend(generated_str)
+                del batch
+        finally:
+            # set mode back to its original value
+            self.train(mode=mode)
         return all_preds
 
     # ===== Validation Functions ===== #
@@ -195,7 +207,7 @@ class T5G2PModel(G2PModel):  # TODO: Check parent class
         self.multi_validation_epoch_end(outputs, dataloader_idx, split="test")
 
     @torch.no_grad()
-    def _generate_predictions(self, input_ids: torch.Tensor, model_max_target_len: int = 512):
+    def _generate_predictions(self, input_ids: torch.Tensor, model_max_target_len: int = None):
         """
         Generates predictions and converts IDs to text.
         """
@@ -222,6 +234,7 @@ class T5G2PModel(G2PModel):  # TODO: Check parent class
             do_lower=self.do_lower,
             grapheme_field=cfg.get("grapheme_field", "text_graphemes"),
             phoneme_field=cfg.get("phoneme_field", "text"),
+            with_labels=True,
         )
 
         return torch.utils.data.DataLoader(dataset, collate_fn=dataset.collate_fn, **cfg.dataloader_params)

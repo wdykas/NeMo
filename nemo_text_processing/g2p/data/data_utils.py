@@ -140,10 +140,10 @@ def read_wordids(wordid_map):
     Args:
         wordid_map: path to wordids.tsv
     Returns:
-        wiki_homograph_dict: a dictionary of graphemes with corresponding word_id - ipa_form pairs
+        homograph_dict: a dictionary of graphemes with corresponding word_id - ipa_form pairs
         wordid_to_idx: word id to label id mapping
     """
-    wiki_homograph_dict = {}
+    homograph_dict = {}
     wordid_to_idx = {}
 
     with open(wordid_map, "r", encoding="utf-8") as f:
@@ -157,10 +157,10 @@ def read_wordids(wordid_map):
             word_id = line[1]
             ipa_form = line[3]
             wordid_to_idx[word_id] = len(wordid_to_idx)
-            if grapheme not in wiki_homograph_dict:
-                wiki_homograph_dict[grapheme] = {}
-            wiki_homograph_dict[grapheme][word_id] = ipa_form
-    return wiki_homograph_dict, wordid_to_idx
+            if grapheme not in homograph_dict:
+                homograph_dict[grapheme] = {}
+            homograph_dict[grapheme][word_id] = ipa_form
+    return homograph_dict, wordid_to_idx
 
 
 def get_wordid_to_nemo():

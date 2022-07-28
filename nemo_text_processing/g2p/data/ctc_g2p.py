@@ -18,10 +18,9 @@ class CTCG2PBPEDataset(Dataset):
         do_lower: bool = True,
         labels: List[str] = None,
         max_source_len: int = 512,
-        max_target_len: int = 512,
         phoneme_field: str = "text",
         grapheme_field: str = "text_graphemes",
-        is_training: bool = True,
+        with_labels: bool = True,
     ):
         """
         Creates a dataset to train a CTC-based G2P models.
@@ -33,10 +32,9 @@ class CTCG2PBPEDataset(Dataset):
             do_lower: set to True to lower case input graphemes
             labels: output labels (tokenizer_phonemes vocabulary)
             max_source_len: max length of the grapheme input sequence (examples exceeding len will be dropped)
-            max_target_len: max length of the phoneme sequence (examples exceeding len will be dropped)
             phoneme_field: name of the field in manifest_filepath for ground truth phonemes
             grapheme_field: name of the field in manifest_filepath for input grapheme text
-            is_training: set to True for training and False for inference
+            with_labels: set to True for training and False for inference
         """
         super().__init__()
 
@@ -47,12 +45,11 @@ class CTCG2PBPEDataset(Dataset):
         self.tokenizer_graphemes = tokenizer_graphemes
         self.tokenizer_phonemes = tokenizer_phonemes
         self.max_source_len = max_source_len
-        self.max_target_len = max_target_len
         self.labels = labels
         self.labels_tkn2id = {l: i for i, l in enumerate(labels)}
         self.data = []
         self.pad_token = 0
-        self.is_training = is_training
+        self.with_labels = with_labels
 
         removed_ctc_max = 0
         removed_source_max = 0
@@ -71,7 +68,7 @@ class CTCG2PBPEDataset(Dataset):
                     grapheme_tokens = self.tokenizer_graphemes.text_to_ids(item[grapheme_field])
                     grapheme_tokens_len = len(grapheme_tokens)
 
-                if is_training:
+                if with_labels:
                     target_tokens = self.tokenizer_phonemes.text_to_ids(item[phoneme_field])
                     target_len = len(target_tokens)
 
@@ -100,7 +97,7 @@ class CTCG2PBPEDataset(Dataset):
                     )
 
         logging.info(
-            f"REMOVED based on CTC max: {removed_ctc_max} examples, based on MAX_SOURCE_LEN: {removed_source_max} examples from {manifest_filepath}"
+            f"Removed {removed_ctc_max} examples on CTC constraint, {removed_source_max} examples based on max_source_len from {manifest_filepath}"
         )
 
     def __len__(self):
@@ -142,7 +139,7 @@ class CTCG2PBPEDataset(Dataset):
             input_len = torch.tensor(input_len)
 
         # inference
-        if not self.is_training:
+        if not self.with_labels:
             output = (input_ids, attention_mask, input_len)
         # Encode targets (phonemes)
         else:

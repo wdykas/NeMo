@@ -34,7 +34,7 @@ This script runs inference with HeteronymClassificationModel
 If the input manifest contains target "word_id", evaluation will be also performed.
 
 python heteronym_classification_inference.py \
-    manifest= \
+    manifest="<Path to .json manifest>" \
     pretrained_model="<Path to .nemo file or pretrained model name from list_available_models()>" \
     output_file="<Path to .json manifest to save prediction>"
 """
@@ -100,7 +100,7 @@ def main(cfg):
         raise ValueError(f"{cfg.manifest} is not found")
 
     with torch.no_grad():
-        preds = model.disambiguate(
+        preds = model.disambimaguate(
             manifest=cfg.manifest,
             grapheme_field=cfg.grapheme_field,
             batch_size=cfg.batch_size,
