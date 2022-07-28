@@ -16,8 +16,11 @@ fi
 read -r -d '' command << EOF
 set -x -e
 tmux new-session -d -s "work" 'bash'
-ls /workspace/NeMo/examples/nlp/ngc_commands/ >> logs.txt
-tmux new-window -n run -t work: 'bash /workspace/NeMo/examples/nlp/ngc_commands/${script_name} ${WANDB_API_KEY} ${exp_name} ${gpus}'
+ls /workspace/NeMo/examples/nlp/token_classification/ngc_commands/ >> logs.txt
+tmux new-window -n run -t work: 'bash /workspace/NeMo/examples/nlp/token_classification/ngc_commands/${script_name} \
+  ${WANDB_API_KEY} \
+  ${exp_name} \
+  ${gpus}'
 sleep 1000000
 set +x +e
 EOF
