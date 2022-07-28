@@ -53,7 +53,7 @@ echo "*******STARTING********" \
 && cd /code/ \
 && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 python \
   /code/examples/nlp/token_classification/punctuation_capitalization_train_evaluate.py \
-	--config-path=/code/examples/nlp/token_classification/conf/wiki \
+	--config-path=/code/examples/nlp/token_classification/conf \
 	--config-name=commercial_bs320k_steps400k \
 	model.train_ds.ds_item="/data/train_bert_tarred_10000" \
 	model.train_ds.tar_metadata_file="metadata.punctuation_capitalization.tokens10000.max_seq_length512.-home-apeganov-pretrained_tokenizers-bert_large_uncased.json" \
