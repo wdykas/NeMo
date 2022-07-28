@@ -1043,7 +1043,8 @@ class BertPunctuationCapitalizationDataset(Dataset):
         else:
             cache_dir = Path(cache_dir).expanduser()
         vocab_size = getattr(self.tokenizer, "vocab_size", 0)
-        features_pkl = cache_dir / "cached.{}.{}.max_seq_length{}.vocab{}.{}.punctuation_capitalization.pkl".format(
+        features_pkl = cache_dir / "cached.{}.{}.{}.max_seq_length{}.vocab{}.{}.punctuation_capitalization.pkl".format(
+            text_file.parent.name,
             text_file.stem,
             self.tokenizer.name,
             max_seq_length,
