@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH -A ent_aiapps_asr
 #SBATCH -p batch_dgx2h_m2                 # luna / backfill / interactive
-#SBATCH -N 2                    # number of nodes
+#SBATCH -N 4                    # number of nodes
 #SBATCH -t 8:00:00              # wall time  (4 for luna, 8 for backfill, 2 for interactive)
 #SBATCH --exclusive
 #SBATCH --mem=0
@@ -84,10 +84,10 @@ echo "*******STARTING********" \
 /data/un_sentences_test] \
 	model.test_ds.tokens_in_batch=4092 \
 	model.language_model.pretrained_model_name="bert-base-uncased" \
-	+trainer.num_nodes=${SLURM_JOB_NUM_NODES} \
+	trainer.num_nodes=${SLURM_JOB_NUM_NODES} \
 	trainer.devices=${SLURM_NTASKS_PER_NODE} \
 	trainer.max_steps=${MAX_STEPS} \
-	+trainer.val_check_interval=${VAL_CHECK_INTERVAL} \
+	trainer.val_check_interval=${VAL_CHECK_INTERVAL} \
 	exp_manager.create_wandb_logger=true \
 	exp_manager.wandb_logger_kwargs.name=${EXPNAME} \
 	exp_manager.wandb_logger_kwargs.project=${PROJECT} \

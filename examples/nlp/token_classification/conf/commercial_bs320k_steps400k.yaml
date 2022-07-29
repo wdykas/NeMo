@@ -43,6 +43,9 @@ exp_manager:
     name: debug_commercial_training
     project: commercial_P_and_C
   create_checkpoint_callback: true  # Whether you want exp_manager to create a model checkpoint callback
+  checkpoint_callback_params:
+    monitor: val_punct_f1
+    mode: max
 
 model:
   class_labels:
