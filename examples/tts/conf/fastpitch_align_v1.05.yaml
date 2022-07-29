@@ -39,7 +39,7 @@ model:
   learn_alignment: true
   bin_loss_warmup_epochs: 100
 
-  n_speakers: 9000
+  n_speakers: 9050
   max_token_duration: 75
   symbols_embedding_dim: 384
   pitch_embedding_kernel_size: 3
@@ -161,7 +161,7 @@ model:
 
   preprocessor:
     _target_: nemo.collections.asr.modules.AudioToMelSpectrogramPreprocessor
-    normalize: "per_feature"
+    normalize: null
     features: ${model.n_mel_channels}
     lowfreq: ${model.lowfreq}
     highfreq: ${model.highfreq}

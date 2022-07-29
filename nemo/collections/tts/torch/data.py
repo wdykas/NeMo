@@ -182,13 +182,15 @@ class TTSDataset(Dataset):
                         "speaker_id": item["speaker"] if "speaker" in item else None,
                     }
 
-                    if "normalized_text" not in item:
+                    if "normalized_text" not in item and "tts_text_normalized" not in item:
                         text = item["text"]
                         if self.text_normalizer is not None:
                             text = self.text_normalizer_call(text, **self.text_normalizer_call_kwargs)
                         file_info["normalized_text"] = text
-                    else:
+                    elif "normalized_text" in item:
                         file_info["normalized_text"] = item["normalized_text"]
+                    else:
+                        file_info["normalized_text"] = item["tts_text_normalized"]
 
                     if self.cache_text:
                         file_info["text_tokens"] = self.text_tokenizer(file_info["normalized_text"])
