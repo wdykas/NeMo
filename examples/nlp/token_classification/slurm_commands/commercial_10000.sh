@@ -6,7 +6,7 @@
 #SBATCH --exclusive
 #SBATCH --mem=0
 #SBATCH --gpus-per-node=16
-#SBATCH -J "ent_aiapps_asr:punctuation_capitalization_commercial_checkpoint_steps400k_tokens320k"  # job name (<< CHANGE ! >>)
+#SBATCH -J "ent_aiapps_asr:punctuation_capitalization_commercial_checkpoint_steps400k_tokens640k"  # job name (<< CHANGE ! >>)
 #SBATCH --mail-type=FAIL        # only send email on failure
 #SBATCH --overcommit
 #SBATCH --ntasks-per-node=16     # n tasks per machine (one task per gpu) <required>
@@ -25,7 +25,7 @@ LOG_EVERY_N_STEPS=100
 
 # Logging
 PROJECT="commercial_P_and_C"
-EXPNAME="steps400k_tokens320k"
+EXPNAME="steps400k_tokens640k"
 
 # Mounts
 SLURM_ACCOUNT='ent_aiapps'
