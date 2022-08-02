@@ -107,7 +107,7 @@ class MegatronTransformerDecoderModule(MegatronModule):
             apply_query_key_layer_scaling=apply_query_key_layer_scaling,
             kv_channels=kv_channels,
             ffn_hidden_size=ffn_hidden_size,
-            self_attn_mask_type=self.model_attn_mask_type,
+            self_attn_mask_type=AttnMaskType.padding, # Although this is set to padding, we provide an explicitly constructed causaal mask that also properly accounts for <pad> tokens.
             pre_process=self.pre_process,
             post_process=self.post_process,
             precision=precision,
