@@ -55,8 +55,8 @@ echo "*******STARTING********" \
   /code/examples/nlp/token_classification/punctuation_capitalization_train_evaluate.py \
 	--config-path=/code/examples/nlp/token_classification/conf \
 	--config-name=commercial_bs320k_steps400k \
-	model.train_ds.ds_item="/data/train_bert_tarred_10000" \
-	model.train_ds.tar_metadata_file="metadata.punctuation_capitalization.tokens10000.max_seq_length512.-home-apeganov-pretrained_tokenizers-bert_large_uncased.json" \
+	model.train_ds.ds_item="/data/train_bert_tarred_20000" \
+	model.train_ds.tar_metadata_file="metadata.punctuation_capitalization.tokens20000.max_seq_length512.-home-apeganov-pretrained_tokenizers-bert_large_uncased.json" \
 	model.validation_ds.ds_item=[/data/europarl_segments_dev,\
 /data/europarl_sentences_dev,\
 /data/google_segments_dev,\

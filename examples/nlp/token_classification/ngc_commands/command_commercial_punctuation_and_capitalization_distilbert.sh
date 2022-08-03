@@ -48,6 +48,5 @@ python punctuation_capitalization_train_evaluate.py --config-path=conf \
 /data/un_segments_test,\
 /data/un_sentences_test] \
     model.test_ds.n_jobs=null \
-    +model.test_ds.cache_dir=/raid/test_ds_cache \
-set +x
+    +model.test_ds.cache_dir=/raid/test_ds_cache
 set +x
