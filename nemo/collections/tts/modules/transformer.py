@@ -247,13 +247,15 @@ class FFTransformerDecoder(NeuralModule):
 
         self.pos_emb = PositionalEmbedding(self.d_model)
         self.drop = nn.Dropout(dropemb)
+        if use_cat_speaker:
+            self.speaker_linear = nn.Linear(d_model * 2, d_model) 
         self.layers = nn.ModuleList()
 
         for i in range(n_layer):
             self.layers.append(
                 TransformerLayer(
                     n_head, 
-                    d_model * 2 if i == 0 and use_cat_speaker else d_model, 
+                    d_model, 
                     d_head, d_inner, kernel_size, dropout, dropatt=dropatt, pre_lnorm=pre_lnorm, 
                     use_cln_speaker=use_cln_speaker, use_pmt_speaker=use_pmt_speaker,
                 )
@@ -292,6 +294,7 @@ class FFTransformerDecoder(NeuralModule):
             
         if self.use_cat_speaker:
             inp = torch.cat([inp, conditioning.repeat(1, inp.shape[1], 1)], axis=-1)
+            inp = self.speaker_linear(inp)
             
         out = self.drop(inp)
 

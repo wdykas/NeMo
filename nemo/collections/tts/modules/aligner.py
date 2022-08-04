@@ -35,7 +35,7 @@ class AlignmentEncoder(torch.nn.Module):
         self.log_softmax = torch.nn.LogSoftmax(dim=3)
 
         self.key_proj = nn.Sequential(
-            ConvNorm(n_text_channels, n_text_channels * 2, kernel_size=3, bias=True, w_init_gain='relu'),
+            ConvNorm(n_text_channels * 2 if use_cat_speaker else n_text_channels, n_text_channels * 2, kernel_size=3, bias=True, w_init_gain='relu'),
             torch.nn.ReLU(),
             ConvNorm(n_text_channels * 2, n_att_channels, kernel_size=1, bias=True),
         )
