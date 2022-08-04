@@ -27,6 +27,7 @@ class AlignmentEncoder(torch.nn.Module):
 
     def __init__(
         self, n_mel_channels=80, n_text_channels=512, n_att_channels=80, temperature=0.0005,
+        use_add_speaker=False, use_cat_speaker=False,
     ):
         super().__init__()
         self.temperature = temperature
@@ -46,7 +47,9 @@ class AlignmentEncoder(torch.nn.Module):
             torch.nn.ReLU(),
             ConvNorm(n_mel_channels, n_att_channels, kernel_size=1, bias=True),
         )
-
+        self.use_add_speaker = use_add_speaker
+        self.use_cat_speaker = use_cat_speaker
+        
     def get_dist(self, keys, queries, mask=None):
         """Calculation of distance matrix.
 
@@ -115,7 +118,7 @@ class AlignmentEncoder(torch.nn.Module):
 
         return torch.tensor(mean_dist_by_durations, dtype=dist.dtype, device=dist.device)
 
-    def forward(self, queries, keys, mask=None, attn_prior=None):
+    def forward(self, queries, keys, mask=None, attn_prior=None, conditioning=None):
         """Forward pass of the aligner encoder.
 
         Args:
@@ -123,10 +126,17 @@ class AlignmentEncoder(torch.nn.Module):
             keys (torch.tensor): B x C2 x T2 tensor (text data).
             mask (torch.tensor): B x T2 x 1 tensor, binary mask for variable length entries (True = mask element, False = leave unchanged).
             attn_prior (torch.tensor): prior for attention matrix.
+            conditioning (torch.tensor): B x T2 x 1 speaker embedding
         Output:
             attn (torch.tensor): B x 1 x T1 x T2 attention mask. Final dim T2 should sum to 1.
             attn_logprob (torch.tensor): B x 1 x T1 x T2 log-prob attention mask.
         """
+        if self.use_add_speaker:
+            keys = keys + conditioning.transpose(1,2)
+        
+        if self.use_cat_speaker:
+            keys = torch.cat([keys, conditioning.transpose(1,2).repeat(1, 1, keys.shape[2])], dim=1) 
+            
         keys_enc = self.key_proj(keys)  # B x n_attn_dims x T2
         queries_enc = self.query_proj(queries)  # B x n_attn_dims x T1
 
