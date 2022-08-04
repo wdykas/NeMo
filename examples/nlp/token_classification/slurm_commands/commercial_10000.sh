@@ -100,7 +100,8 @@ echo "*******STARTING********" \
 	exp_manager.checkpoint_callback_params.mode=max \
 	+exp_manager.checkpoint_callback_params.always_save_nemo=True \
 	model.optim.lr=1e-4 \
-	model.optim.sched.warmup_ratio=0.03
+	model.optim.sched.warmup_ratio=0.03 \
+        ~trainer.max_epochs
 EOF
 
 srun -o $OUTFILE -e $ERRFILE --container-image="$CONTAINER" $MOUNTS bash -c "${cmd}"
