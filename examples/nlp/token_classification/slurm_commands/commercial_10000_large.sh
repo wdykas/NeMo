@@ -6,7 +6,7 @@
 #SBATCH --exclusive
 #SBATCH --mem=0
 #SBATCH --gpus-per-node=16
-#SBATCH -J "ent_aiapps_asr:punctuation_capitalization_commercial_checkpoint_steps400k_tokens640k"  # job name (<< CHANGE ! >>)
+#SBATCH -J "ent_aiapps_asr:punctuation_capitalization_commercial_checkpoint_steps400k_tokens640k_large"  # job name (<< CHANGE ! >>)
 #SBATCH --mail-type=FAIL        # only send email on failure
 #SBATCH --overcommit
 #SBATCH --ntasks-per-node=16     # n tasks per machine (one task per gpu) <required>
@@ -25,7 +25,7 @@ LOG_EVERY_N_STEPS=100
 
 # Logging
 PROJECT="commercial_P_and_C"
-EXPNAME="steps400k_tokens640k"
+EXPNAME="steps400k_tokens640k_large"
 
 # Mounts
 SLURM_ACCOUNT='ent_aiapps'
@@ -55,8 +55,8 @@ echo "*******STARTING********" \
   /code/examples/nlp/token_classification/punctuation_capitalization_train_evaluate.py \
 	--config-path=/code/examples/nlp/token_classification/conf \
 	--config-name=commercial_bs320k_steps400k \
-	model.train_ds.ds_item="/data/train_bert_tarred_20000" \
-	model.train_ds.tar_metadata_file="metadata.punctuation_capitalization.tokens20000.max_seq_length512.-home-apeganov-pretrained_tokenizers-bert_large_uncased.json" \
+	model.train_ds.ds_item="/data/train_bert_tarred_10000" \
+	model.train_ds.tar_metadata_file="metadata.punctuation_capitalization.tokens10000.max_seq_length512.-home-apeganov-pretrained_tokenizers-bert_large_uncased.json" \
 	model.validation_ds.ds_item=[/data/europarl_segments_dev,\
 /data/europarl_sentences_dev,\
 /data/google_segments_dev,\
@@ -69,7 +69,7 @@ echo "*******STARTING********" \
 /data/tatoeba_sentences_dev,\
 /data/un_segments_dev,\
 /data/un_sentences_dev] \
-	model.validation_ds.tokens_in_batch=4092 \
+	model.validation_ds.tokens_in_batch=10000 \
 	model.test_ds.ds_item=[/data/europarl_segments_test,\
 /data/europarl_sentences_test,\
 /data/google_segments_test,\
@@ -82,7 +82,7 @@ echo "*******STARTING********" \
 /data/tatoeba_sentences_test,\
 /data/un_segments_test,\
 /data/un_sentences_test] \
-	model.test_ds.tokens_in_batch=4092 \
+	model.test_ds.tokens_in_batch=10000 \
 	model.language_model.pretrained_model_name="bert-large-uncased" \
 	trainer.num_nodes=${SLURM_JOB_NUM_NODES} \
 	trainer.devices=${SLURM_NTASKS_PER_NODE} \

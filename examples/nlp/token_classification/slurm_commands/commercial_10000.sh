@@ -69,7 +69,7 @@ echo "*******STARTING********" \
 /data/tatoeba_sentences_dev,\
 /data/un_segments_dev,\
 /data/un_sentences_dev] \
-	model.validation_ds.tokens_in_batch=4092 \
+	model.validation_ds.tokens_in_batch=20000 \
 	model.test_ds.ds_item=[/data/europarl_segments_test,\
 /data/europarl_sentences_test,\
 /data/google_segments_test,\
@@ -82,7 +82,7 @@ echo "*******STARTING********" \
 /data/tatoeba_sentences_test,\
 /data/un_segments_test,\
 /data/un_sentences_test] \
-	model.test_ds.tokens_in_batch=4092 \
+	model.test_ds.tokens_in_batch=20000 \
 	model.language_model.pretrained_model_name="bert-base-uncased" \
 	trainer.num_nodes=${SLURM_JOB_NUM_NODES} \
 	trainer.devices=${SLURM_NTASKS_PER_NODE} \
