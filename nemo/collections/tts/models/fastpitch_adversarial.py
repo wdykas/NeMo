@@ -13,11 +13,13 @@
 # limitations under the License.
 import contextlib
 from dataclasses import dataclass
-from typing import Optional
+from itertools import chain
+from typing import Any, Dict, Optional
 
+import numpy as np
 import torch
 from hydra.utils import instantiate
-from omegaconf import DictConfig, OmegaConf, open_dict
+from omegaconf import MISSING, DictConfig, OmegaConf
 from pytorch_lightning import Trainer
 from pytorch_lightning.loggers import LoggerCollection, TensorBoardLogger, WandbLogger
 import wandb
@@ -42,36 +44,11 @@ from nemo.core.neural_types.elements import (
     TokenLogDurationType,
 )
 from nemo.core.neural_types.neural_type import NeuralType
+from nemo.core.optim.lr_scheduler import NoamAnnealing
 from nemo.utils import logging, model_utils
 
 
-@dataclass
-class G2PConfig:
-    _target_: str = "nemo.collections.tts.torch.g2ps.EnglishG2p"
-    phoneme_dict: str = "scripts/tts_dataset_files/cmudict-0.7b_nv22.01"
-    heteronyms: str = "scripts/tts_dataset_files/heteronyms-030921"
-    phoneme_probability: float = 0.5
-
-
-@dataclass
-class TextTokenizer:
-    _target_: str = "nemo.collections.tts.torch.tts_tokenizers.EnglishPhonemesTokenizer"
-    punct: bool = True
-    stresses: bool = True
-    chars: bool = True
-    apostrophe: bool = True
-    pad_with_space: bool = True
-    add_blank_at: bool = True
-    g2p: G2PConfig = G2PConfig()
-
-
-@dataclass
-class TextTokenizerConfig:
-    text_tokenizer: TextTokenizer = TextTokenizer()
-
-
-class FastPitchModel(SpectrogramGenerator, Exportable):
-    """FastPitch model (https://arxiv.org/abs/2006.06873) that is used to generate mel spectrogram from text."""
+class FastPitchAdversarialModel(SpectrogramGenerator, Exportable):
 
     def __init__(self, cfg: DictConfig, trainer: Trainer = None):
         # Convert to Hydra 1.0 compatible DictConfig
@@ -140,6 +117,8 @@ class FastPitchModel(SpectrogramGenerator, Exportable):
         output_fft = instantiate(self._cfg.output_fft)
         duration_predictor = instantiate(self._cfg.duration_predictor)
         pitch_predictor = instantiate(self._cfg.pitch_predictor)
+        self.discriminator = instantiate(self._cfg.discriminator)
+        self.splice_length = self._cfg.splice_length
 
         self.fastpitch = FastPitchModule(
             input_fft,
@@ -255,6 +234,31 @@ class FastPitchModel(SpectrogramGenerator, Exportable):
         x = torch.tensor(tokens).unsqueeze_(0).long().to(self.device)
         return x
 
+    def configure_optimizers(self):
+        gen_params = chain(
+            self.fastpitch.parameters()
+        )
+        disc_params = chain(self.discriminator.parameters())
+        opt1 = torch.optim.AdamW(disc_params, lr=self._cfg.optim.lr)
+        opt2 = torch.optim.AdamW(gen_params, lr=self._cfg.optim.lr)
+        num_procs = self._trainer.num_devices * self._trainer.num_nodes
+        num_samples = len(self._train_dl.dataset)
+        batch_size = self._train_dl.batch_size
+        iter_per_epoch = np.ceil(num_samples / (num_procs * batch_size))
+        max_steps = iter_per_epoch * self._trainer.max_epochs
+        logging.info(f"MAX STEPS: {max_steps}")
+        sch1 = NoamAnnealing(opt1, d_model=1, warmup_steps=1000, max_steps=max_steps, last_epoch=-1)
+        sch1_dict = {
+            'scheduler': sch1,
+            'interval': 'step',
+        }
+        sch2 = NoamAnnealing(opt2, d_model=1, warmup_steps=1000, max_steps=max_steps, last_epoch=-1)
+        sch2_dict = {
+            'scheduler': sch2,
+            'interval': 'step',
+        }
+        return [opt1, opt2], [sch1_dict, sch2_dict]
+
     @typecheck(
         input_types={
             "text": NeuralType(('B', 'T_text'), TokenIndex()),
@@ -304,7 +308,20 @@ class FastPitchModel(SpectrogramGenerator, Exportable):
         spect, *_ = self(text=tokens, durs=None, pitch=None, speaker=speaker, pace=pace)
         return spect
 
-    def training_step(self, batch, batch_idx):
+    def adversarial_loss(self, pred, labels: int):
+        if isinstance(pred, list):
+            pred = torch.vstack(pred)
+        if labels == 1:
+            label_tensor = torch.ones(pred.size(0), 1)
+        elif labels == 0:
+            label_tensor = torch.zeros(pred.size(0), 1)
+        else:
+            raise ValueError("labels can take value either 0 or 1 but got {}".format(labels))
+        label_tensor = label_tensor.type_as(pred)
+        return torch.nn.functional.binary_cross_entropy(pred, label_tensor)
+
+
+    def training_step(self, batch, batch_idx, optimizer_idx):
         attn_prior, durs, speaker = None, None, None
         if self.learn_alignment:
             if self.ds_class_name == "TTSDataset":
@@ -319,43 +336,98 @@ class FastPitchModel(SpectrogramGenerator, Exportable):
 
         mels, spec_len = self.preprocessor(input_signal=audio, length=audio_lens)
 
-        mels_pred, _, _, log_durs_pred, pitch_pred, attn_soft, attn_logprob, attn_hard, attn_hard_dur, pitch = self(
-            text=text,
-            durs=durs,
-            pitch=pitch,
-            speaker=speaker,
-            pace=1.0,
-            spec=mels if self.learn_alignment else None,
-            attn_prior=attn_prior,
-            mel_lens=spec_len,
-            input_lens=text_lens,
-        )
-        if durs is None:
-            durs = attn_hard_dur
+        # train discriminator
+        if optimizer_idx == 0:
+            with torch.no_grad():
+                mels_pred, _, _, log_durs_pred, pitch_pred, attn_soft, attn_logprob, attn_hard, attn_hard_dur, pitch = self(
+                    text=text,
+                    durs=durs,
+                    pitch=pitch,
+                    speaker=speaker,
+                    pace=1.0,
+                    spec=mels if self.learn_alignment else None,
+                    attn_prior=attn_prior,
+                    mel_lens=spec_len,
+                    input_lens=text_lens,
+                )
 
-        mel_loss = self.mel_loss(spect_predicted=mels_pred, spect_tgt=mels)
-        dur_loss = self.duration_loss(log_durs_predicted=log_durs_pred, durs_tgt=durs, len=text_lens)
-        loss = mel_loss + dur_loss
-        if self.learn_alignment:
-            ctc_loss = self.forward_sum_loss(attn_logprob=attn_logprob, in_lens=text_lens, out_lens=spec_len)
-            bin_loss_weight = min(self.current_epoch / self.bin_loss_warmup_epochs, 1.0) * 1.0
-            bin_loss = self.bin_loss(hard_attention=attn_hard, soft_attention=attn_soft) * bin_loss_weight
-            loss += ctc_loss + bin_loss
+            preds = []
+            for m in mels_pred:
+                start = np.random.randint(low=0, high=int(m.size(1) - self.splice_length))
+                preds.append(m[:, start : start + self.splice_length])
+            preds = torch.stack(preds)
+            gt_mels = []
+            for m in mels:
+                start = np.random.randint(low=0, high=int(m.size(1) - self.splice_length))
+                gt_mels.append(m[:, start : start + self.splice_length])
+            gt_mels = torch.stack(gt_mels)
 
-        pitch_loss = self.pitch_loss(pitch_predicted=pitch_pred, pitch_tgt=pitch, len=text_lens)
-        loss += pitch_loss
+            real_score = self.discriminator(spect=gt_mels)
+            gen_score = self.discriminator(spect=preds.detach())
 
-        self.log("t_loss", loss)
-        self.log("t_mel_loss", mel_loss)
-        self.log("t_dur_loss", dur_loss)
-        self.log("t_pitch_loss", pitch_loss)
-        if self.learn_alignment:
-            self.log("t_ctc_loss", ctc_loss)
-            self.log("t_bin_loss", bin_loss)
+            loss_real = self.adversarial_loss(
+                pred=real_score, labels=1
+            )
+            loss_gen = self.adversarial_loss(
+                pred=gen_score, labels=0
+            )
+            loss_disc = loss_gen + loss_real
 
-        # Log images to tensorboard
-        if self.log_train_images:
-            if isinstance(self.logger, TensorBoardLogger):
+            self.log("loss_discriminator", loss_disc, prog_bar=True)
+            self.log("loss_discriminator_real", loss_real)
+            self.log("loss_discriminator_generated", loss_gen)
+            return loss_disc
+
+        # train generator
+        elif optimizer_idx == 1:
+            mels_pred, _, _, log_durs_pred, pitch_pred, attn_soft, attn_logprob, attn_hard, attn_hard_dur, pitch = self(
+                text=text,
+                durs=durs,
+                pitch=pitch,
+                speaker=speaker,
+                pace=1.0,
+                spec=mels if self.learn_alignment else None,
+                attn_prior=attn_prior,
+                mel_lens=spec_len,
+                input_lens=text_lens,
+            )
+
+            preds = []
+            for m in mels_pred:
+                start = np.random.randint(low=0, high=int(m.size(1) - self.splice_length))
+                preds.append(m[:, start : start + self.splice_length])
+            preds = torch.stack(preds)
+
+            gen_score = self.discriminator(spect=preds)
+            if durs is None:
+                durs = attn_hard_dur
+
+            mel_loss = self.mel_loss(spect_predicted=mels_pred, spect_tgt=mels)
+            dur_loss = self.duration_loss(log_durs_predicted=log_durs_pred, durs_tgt=durs, len=text_lens)
+            gen_loss = self.adversarial_loss(
+                pred=gen_score, labels=1
+            )
+            loss = mel_loss + dur_loss + gen_loss
+            if self.learn_alignment:
+                ctc_loss = self.forward_sum_loss(attn_logprob=attn_logprob, in_lens=text_lens, out_lens=spec_len)
+                bin_loss_weight = min(self.current_epoch / self.bin_loss_warmup_epochs, 1.0) * 1.0
+                bin_loss = self.bin_loss(hard_attention=attn_hard, soft_attention=attn_soft) * bin_loss_weight
+                loss += ctc_loss + bin_loss
+
+            pitch_loss = self.pitch_loss(pitch_predicted=pitch_pred, pitch_tgt=pitch, len=text_lens)
+            loss += pitch_loss
+
+            self.log("t_loss", loss)
+            self.log("t_mel_loss", mel_loss)
+            self.log("t_dur_loss", dur_loss)
+            self.log("t_pitch_loss", pitch_loss)
+            self.log("t_loss_generator", gen_loss)
+            if self.learn_alignment:
+                self.log("t_ctc_loss", ctc_loss)
+                self.log("t_bin_loss", bin_loss)
+
+            # Log images to tensorboard
+            if self.log_train_images and isinstance(self.logger, TensorBoardLogger):
                 self.log_train_images = False
 
                 self.tb_logger.add_image(
@@ -382,7 +454,6 @@ class FastPitchModel(SpectrogramGenerator, Exportable):
                 specs = []
                 alignments = []
 
-
                 specs += [
                     wandb.Image(
                         plot_spectrogram_to_numpy(mels_pred[0].data.cpu().float().numpy()), 
@@ -393,7 +464,7 @@ class FastPitchModel(SpectrogramGenerator, Exportable):
                         caption=f"train_mel_target",
                     ),
                 ]
-                
+
                 if self.learn_alignment:
                     attn = attn_hard[0].data.cpu().float().numpy().squeeze()
                     soft_attn = attn_soft[0].data.cpu().float().numpy().squeeze()
@@ -407,9 +478,8 @@ class FastPitchModel(SpectrogramGenerator, Exportable):
                         ),
                     ]
                 self.logger.experiment.log({"specs": specs, "alignments": alignments})
-
-
-        return loss
+                
+            return loss
 
     def validation_step(self, batch, batch_idx):
         attn_prior, durs, speaker = None, None, None
@@ -438,19 +508,31 @@ class FastPitchModel(SpectrogramGenerator, Exportable):
             mel_lens=mel_lens,
             input_lens=text_lens,
         )
+
+        preds = []
+        for m in mels_pred:
+            start = np.random.randint(low=0, high=int(m.size(1) - self.splice_length))
+            preds.append(m[:, start : start + self.splice_length])
+        preds = torch.stack(preds)
+
+        gen_score = self.discriminator(spect=preds)
         if durs is None:
             durs = attn_hard_dur
 
         mel_loss = self.mel_loss(spect_predicted=mels_pred, spect_tgt=mels)
         dur_loss = self.duration_loss(log_durs_predicted=log_durs_pred, durs_tgt=durs, len=text_lens)
         pitch_loss = self.pitch_loss(pitch_predicted=pitch_pred, pitch_tgt=pitch, len=text_lens)
-        loss = mel_loss + dur_loss + pitch_loss
+        gen_loss = self.adversarial_loss(
+                pred=gen_score, labels=1
+            )
+        loss = mel_loss + dur_loss + pitch_loss + gen_loss
 
         return {
             "val_loss": loss,
             "mel_loss": mel_loss,
             "dur_loss": dur_loss,
             "pitch_loss": pitch_loss,
+            "loss_generator": gen_loss,
             "mel_target": mels if batch_idx == 0 else None,
             "mel_pred": mels_pred if batch_idx == 0 else None,
         }
@@ -460,13 +542,15 @@ class FastPitchModel(SpectrogramGenerator, Exportable):
         val_loss = collect("val_loss")
         mel_loss = collect("mel_loss")
         dur_loss = collect("dur_loss")
+        gen_loss = collect("loss_generator")
         pitch_loss = collect("pitch_loss")
         self.log("v_loss", val_loss)
         self.log("v_mel_loss", mel_loss)
         self.log("v_dur_loss", dur_loss)
+        self.log("v_loss_generator", gen_loss)
         self.log("v_pitch_loss", pitch_loss)
 
-        _, _, _, _, spec_target, spec_predict = outputs[0].values()
+        _, _, _, _, _, spec_target, spec_predict = outputs[0].values()
 
         if isinstance(self.logger, TensorBoardLogger):
             self.tb_logger.add_image(
@@ -481,7 +565,7 @@ class FastPitchModel(SpectrogramGenerator, Exportable):
             )
             self.log_train_images = True
         elif isinstance(self.logger, WandbLogger):
-            fastpitch_log_to_wandb_func(self.logger.experiment, outputs[0].values(), self.global_step, tag="val", )
+            fastpitch_log_to_wandb_func(self.logger.experiment, outputs[0].values(), self.global_step, tag="val", griffin_lim_power=2)
             self.log_train_images = True
 
     def __setup_dataloader_from_config(self, cfg, shuffle_should_be: bool = True, name: str = "train"):
@@ -547,37 +631,20 @@ class FastPitchModel(SpectrogramGenerator, Exportable):
 
         return list_of_models
 
-    # Methods for model exportability
-    def _prepare_for_export(self, **kwargs):
-        super()._prepare_for_export(**kwargs)
+    def convert_text_to_waveform(self, *, tokens):
+        """
+        Accepts tokens returned from self.parse() and returns a list of tensors. Note: The tensors in the list can have
+        different lengths.
+        """
+        self.eval()
+        audio, _, log_dur_pred, _ = self(text=tokens, splice=False)
+        audio = audio.squeeze(1)
+        durations = torch.sum(torch.clamp(torch.exp(log_dur_pred) - 1, 0, self.max_token_duration), 1).to(torch.int)
+        audio_list = []
+        for i, sample in enumerate(audio):
+            audio_list.append(sample[: durations[i] * self.hop_size])
 
-        # Define input_types and output_types as required by export()
-        self._input_types = {
-            "text": NeuralType(('B', 'T_text'), TokenIndex()),
-            "pitch": NeuralType(('B', 'T_text'), RegressionValuesType()),
-            "pace": NeuralType(('B', 'T_text'), optional=True),
-            "volume": NeuralType(('B', 'T_text')),
-            "speaker": NeuralType(('B'), Index()),
-        }
-        self._output_types = {
-            "spect": NeuralType(('B', 'D', 'T_spec'), MelSpectrogramType()),
-            "num_frames": NeuralType(('B'), TokenDurationType()),
-            "durs_predicted": NeuralType(('B', 'T_text'), TokenDurationType()),
-            "log_durs_predicted": NeuralType(('B', 'T_text'), TokenLogDurationType()),
-            "pitch_predicted": NeuralType(('B', 'T_text'), RegressionValuesType()),
-            "volume_aligned": NeuralType(('B', 'T_spec'), RegressionValuesType()),
-        }
-
-    def _export_teardown(self):
-        self._input_types = self._output_types = None
-
-    @property
-    def disabled_deployment_input_names(self):
-        """Implement this method to return a set of input names disabled for export"""
-        disabled_inputs = set()
-        if self.fastpitch.speaker_emb is None:
-            disabled_inputs.add("speaker")
-        return disabled_inputs
+        return audio_list
 
     @property
     def input_types(self):
@@ -586,30 +653,3 @@ class FastPitchModel(SpectrogramGenerator, Exportable):
     @property
     def output_types(self):
         return self._output_types
-
-    def input_example(self, max_batch=1, max_dim=256):
-        """
-        Generates input examples for tracing etc.
-        Returns:
-            A tuple of input examples.
-        """
-        par = next(self.fastpitch.parameters())
-        sz = (max_batch, max_dim)
-        inp = torch.randint(
-            0, self.fastpitch.encoder.word_emb.num_embeddings, sz, device=par.device, dtype=torch.int64
-        )
-        pitch = torch.randn(sz, device=par.device, dtype=torch.float32) * 0.5
-        pace = torch.clamp((torch.randn(sz, device=par.device, dtype=torch.float32) + 1) * 0.1, min=0.01)
-        volume = torch.clamp((torch.randn(sz, device=par.device, dtype=torch.float32) + 1) * 0.1, min=0.01)
-
-        inputs = {'text': inp, 'pitch': pitch, 'pace': pace, 'volume': volume}
-
-        if self.fastpitch.speaker_emb is not None:
-            inputs['speaker'] = torch.randint(
-                0, self.fastpitch.speaker_emb.num_embeddings, (max_batch,), device=par.device, dtype=torch.int64
-            )
-
-        return (inputs,)
-
-    def forward_for_export(self, text, pitch, pace, volume, speaker=None):
-        return self.fastpitch.infer(text=text, pitch=pitch, pace=pace, volume=volume, speaker=speaker)

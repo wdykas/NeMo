@@ -43,6 +43,8 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import torch
+from torch.nn import Conv2d
+from torch.nn.utils import weight_norm
 
 from nemo.collections.tts.helpers.helpers import binarize_attention_parallel, regulate_len
 from nemo.core.classes import NeuralModule, typecheck
@@ -57,8 +59,11 @@ from nemo.core.neural_types.elements import (
     TokenDurationType,
     TokenIndex,
     TokenLogDurationType,
+    VoidType,
 )
 from nemo.core.neural_types.neural_type import NeuralType
+
+LRELU_SLOPE = 0.1
 
 
 def average_pitch(pitch, durs):
@@ -127,6 +132,68 @@ class TemporalPredictor(NeuralModule):
         out = self.fc(out) * enc_mask
         return out.squeeze(-1)
 
+class DiscriminatorS(torch.nn.Module):
+    def __init__(self, use_spectral_norm=False, debug=False):
+        super().__init__()
+        norm_f = weight_norm if use_spectral_norm == False else torch.nn.utils.spectral_norm
+        conv_ch = [4, 8, 16, 32] if not debug else [16, 32, 32, 64]
+        self.convs = torch.nn.ModuleList(
+            [
+                norm_f(Conv2d(1, conv_ch[0], 15, 1, padding=7)),
+                norm_f(Conv2d(conv_ch[0], conv_ch[0], 41, 2, groups=4, padding=20)),
+                norm_f(Conv2d(conv_ch[0], conv_ch[1], 41, 2, groups=4, padding=20)),
+                norm_f(Conv2d(conv_ch[1], conv_ch[2], 41, 4, groups=8, padding=20)),
+                norm_f(Conv2d(conv_ch[2], conv_ch[3], 41, 4, groups=16, padding=20)),
+                norm_f(Conv2d(conv_ch[3], conv_ch[3], 41, 1, groups=16, padding=20)),
+                norm_f(Conv2d(conv_ch[3], conv_ch[3], 5, 1, padding=2)),
+            ]
+        )
+        self.conv_post = norm_f(Conv2d(conv_ch[3], 1, 3, 1, padding=1))
+        self.fc = torch.nn.Linear(16, 1)
+        self.sigmoid = torch.nn.Sigmoid()
+
+    def forward(self, x):
+        for l in self.convs:
+            x = l(x)
+            x = torch.nn.functional.leaky_relu(x, LRELU_SLOPE)
+        x = self.conv_post(x)
+        x = torch.flatten(x, 1, -1)
+        x = self.sigmoid(self.fc(x))
+
+        return x
+
+
+class MultipleRandomWindowDisciminator(NeuralModule):
+    def __init__(self):
+        super().__init__()
+        self.discriminators = torch.nn.ModuleList(
+            [
+                DiscriminatorS(use_spectral_norm=True),
+                DiscriminatorS(),
+                DiscriminatorS(),
+            ]
+        )
+
+    @property
+    def input_types(self):
+        return {
+            "spect": NeuralType(('B', 'D', 'T_spec'), MelSpectrogramType()),
+        }
+
+    @property
+    def output_types(self):
+        return {
+            "scores": [NeuralType(('B', 'D'), VoidType())],
+        }
+
+    @typecheck()
+    def forward(self, spect):
+        y_d_rs = []
+        for i, d in enumerate(self.discriminators):
+            y_d_r = d(x=spect.unsqueeze(dim=1))
+            y_d_rs.append(y_d_r)
+
+        return y_d_rs
 
 class FastPitchModule(NeuralModule):
     def __init__(
