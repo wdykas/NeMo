@@ -92,20 +92,7 @@ class MegatronNMTModel(MegatronLMEncoderDecoderModel):
     def setup(self, stage=None):
         # NOTE: super().__init__ will try and setup train/val/test datasets, but we sidestep this using a if self._train_ds is not None condition
         # We then set things up for real only once setup() of this class is called.
-        resume_checkpoint_path = self.trainer._checkpoint_connector.resume_from_checkpoint_fit_path
-        if resume_checkpoint_path:
-            try:
-                init_consumed_samples = int(
-                    float(re.findall(r"consumed_samples\=([0-9]+.[0-9]+)", resume_checkpoint_path)[0])
-                )
-            except (ValueError, TypeError):
-                logging.warning(
-                    "Cannot parse the checkpoint file to get the consumed samples. This is expected if you are not using memmap datasets."
-                )
-                init_consumed_samples = 0
-        else:
-            init_consumed_samples = 0
-        self.init_consumed_samples = init_consumed_samples
+        self._get_init_consumed_samples()
         if stage == 'predict':
             return
 
@@ -201,6 +188,14 @@ class MegatronNMTModel(MegatronLMEncoderDecoderModel):
             and self._cfg.train_ds.get("sampler", "distributed") == 'distributed'
         ):
             batch = self._process_global_batch_without_megatron_batch_sampler(batch, tokenizer=self.encoder_tokenizer)
+
+        num_valid_tokens_enc = (batch['text_enc'] != self.encoder_tokenizer.pad_id).sum()
+        num_valid_tokens_dec = (batch['text_dec'] != self.decoder_tokenizer.pad_id).sum()
+        num_valid_tokens = num_valid_tokens_enc + num_valid_tokens_dec
+        torch.distributed.all_reduce(num_valid_tokens, group=parallel_state.get_data_parallel_group())
+
+        self.log('valid_tokens_processed', num_valid_tokens.item(), rank_zero_only=True)
+
         if self._cfg.train_ds.dataset_type in ['tarred', 'text']:
             app_state = AppState()
             _reconfigure_microbatch_calculator(
@@ -326,13 +321,6 @@ class MegatronNMTModel(MegatronLMEncoderDecoderModel):
             return
         if isinstance(outputs[0], dict):
             outputs = [outputs]
-
-        self.log(
-            'consumed_samples',
-            self.compute_consumed_samples(self.trainer.global_step - self.init_global_step),
-            rank_zero_only=True,
-        )
-        self.log('global_step', self.trainer.global_step, prog_bar=True, rank_zero_only=True)
 
         loss_list = []
         bleu_score_list = []

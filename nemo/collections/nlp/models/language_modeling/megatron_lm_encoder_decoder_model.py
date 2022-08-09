@@ -779,8 +779,8 @@ class MegatronLMEncoderDecoderModel(MegatronBaseModel):
         return torch.utils.data.DataLoader(
             dataset, batch_sampler=batch_sampler, num_workers=self._cfg.data.num_workers, pin_memory=True,
         )
-
-    def setup(self, stage=None):
+    
+    def _get_init_consumed_samples(self):
         resume_checkpoint_path = self.trainer._checkpoint_connector.resume_from_checkpoint_fit_path
         if resume_checkpoint_path:
             try:
@@ -794,6 +794,8 @@ class MegatronLMEncoderDecoderModel(MegatronBaseModel):
             init_consumed_samples = 0
         self.init_consumed_samples = init_consumed_samples
 
+    def setup(self, stage=None):
+        self._get_init_consumed_samples()
         """A PTL method to setup the training, validation and test datasets."""
         if stage == 'predict':
             return
