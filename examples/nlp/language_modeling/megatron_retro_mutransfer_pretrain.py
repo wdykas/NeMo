@@ -112,7 +112,7 @@ def main(cfg) -> None:
         ):
             if hasattr(layer, 'norm_factor') and hasattr(layer, 'hidden_size_per_attention_head'):
                 layer.norm_factor = (
-                    layer.hidden_size_per_attention_head / cfg.mode.norm_init
+                    layer.hidden_size_per_attention_head / cfg.model.norm_init
                 )  # divide 8 to make it consist with ADLR setting
         else:
             if hasattr(layer, 'norm_factor') or hasattr(layer, 'hidden_size_per_attention_head'):
