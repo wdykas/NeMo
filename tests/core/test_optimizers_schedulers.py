@@ -326,7 +326,7 @@ class TestOptimizersSchedulers:
         for k, v in reduce_on_plateau_parameters.items():
             found_v = getattr(scheduler_setup['scheduler'], k)
             assert found_v == v, (
-                f"Wrong value `{repr(found_v)}` for `ReduceLROnPlateau` parameter `{k}`. Expected `{repr(v)}"
+                f"Wrong value `{repr(found_v)}` for `ReduceLROnPlateau` parameter `{k}`. Expected `{repr(v)}`."
             )
         dict_config = omegaconf.OmegaConf.create(basic_sched_config)
         scheduler_setup = optim.lr_scheduler.prepare_lr_scheduler(opt, dict_config)
@@ -334,7 +334,7 @@ class TestOptimizersSchedulers:
         for k, v in reduce_on_plateau_parameters.items():
             found_v = getattr(scheduler_setup['scheduler'], k)
             assert found_v == v, (
-                f"Wrong value `{repr(found_v)}` for `ReduceLROnPlateau` parameter `{k}`. Expected `{repr(v)}"
+                f"Wrong value `{repr(found_v)}` for `ReduceLROnPlateau` parameter `{k}`. Expected `{repr(v)}`."
             )
 
     @pytest.mark.unit
