@@ -47,7 +47,7 @@ model:
   train_ds:
     augmentor:
       rir_noise_speaker:
-        prob: 0
+        prob: 1.0
     manifest_filepath: ???
     synthetic_generation: true
     sample_rate: ${model.sample_rate}
@@ -70,7 +70,7 @@ model:
   validation_ds:
     augmentor:
       rir_noise_speaker:
-        prob: 0
+        prob: 1.0
     synthetic_generation: false
     manifest_filepath: ???
     sample_rate: ${model.sample_rate}
@@ -83,7 +83,7 @@ model:
   test_ds:
     augmentor:
       rir_noise_speaker:
-        prob: 0
+        prob: 1.0
     synthetic_generation: false
     manifest_filepath: null
     sample_rate: ${model.sample_rate}

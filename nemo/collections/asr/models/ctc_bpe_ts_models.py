@@ -54,7 +54,6 @@ class TSEncDecCTCModelBPE(EncDecCTCModelBPE):
         self, *args, **kwargs,
     ):
         super().__init__(*args, **kwargs)
-        
         self.speaker_beam = EncDecCTCModelBPE.from_config_dict(self._cfg.speaker_beam)
         if self._cfg.speaker_embeddings.model_path:
             self.speaker_model = EncDecSpeakerLabelModel.from_pretrained(self._cfg.speaker_embeddings.model_path)
@@ -305,6 +304,7 @@ class TSEncDecCTCModelBPE(EncDecCTCModelBPE):
             'sample_rate': self.preprocessor._sample_rate,
             'batch_size': batch_size,
             'shuffle': False,
+            'augmentor': config.get('augmentor', None),
             'num_workers': config.get('num_workers', min(batch_size, os.cpu_count() - 1)),
             'pin_memory': True,
         }

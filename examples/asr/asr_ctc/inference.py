@@ -35,6 +35,7 @@ import json
 
 input_manifest = sys.argv[1]
 new_manifest_path = sys.argv[2]
+ckpt = sys.argv[3]
 bs = 1
 data = []
 with open(input_manifest, 'r') as fp:
@@ -42,7 +43,7 @@ with open(input_manifest, 'r') as fp:
         data.append(json.loads(line.strip()))
 
 
-model = nemo_asr.models.TSEncDecCTCModelBPE.restore_from('/home/yangzhang/code/NeMo/examples/asr/asr_ctc/ngc_ckpt/2976166/Conformer-CTC-BPE/2022-06-05_04-17-00/checkpoints/Conformer-CTC-BPE.nemo')
+model = nemo_asr.models.TSEncDecCTCModelBPE.restore_from(ckpt)
     # model = nemo_asr.models.EncDecCTCModelBPE.restore_from('/home/yangzhang/code/NeMo/examples/asr/asr_ctc/ngc_ckpt/2820728/Conformer-CTC-BPE/2022-04-21_20-26-13/checkpoints/Conformer-CTC-BPE.nemo')
 predictions=[]
 

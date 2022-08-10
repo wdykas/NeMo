@@ -105,6 +105,7 @@ def main(cfg):
 
 
     if hasattr(cfg.model, 'test_ds') and cfg.model.test_ds.manifest_filepath is not None:
+        trainer = pl.Trainer(devices=1, accelerator='gpu')
         asr_model.setup_multiple_test_data(test_data_config=cfg.model.test_ds)
         if asr_model.prepare_test(trainer):
             trainer.test(asr_model)
