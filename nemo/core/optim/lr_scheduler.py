@@ -747,6 +747,9 @@ def prepare_lr_scheduler(
     add_max_args_flag = True
     interval = 'step'
     if scheduler_config is not None:
+        if 'name' in scheduler_config and scheduler_config['name'] == 'ReduceLROnPlateau':
+            add_max_args_flag = False
+            interval = 'epoch'
         if 'args' in scheduler_config:
             scheduler_args = scheduler_config.pop('args')
         else:
@@ -755,9 +758,6 @@ def prepare_lr_scheduler(
             # Remove extra parameters from scheduler_args nest
             # Assume all other parameters are to be passed into scheduler constructor
 
-            if 'name' in scheduler_args and scheduler_args['name'] == 'ReduceLROnPlateau':
-                add_max_args_flag = False
-                interval = 'epoch'
 
             scheduler_args.pop('name', None)
             scheduler_args.pop('t_max_epochs', None)
@@ -898,7 +898,7 @@ def prepare_lr_scheduler(
     if add_max_args_flag and scheduler_config.get('name', '') != "ExponentialLR":
         scheduler_args['max_steps'] = max_steps
 
-    if scheduler_config.get('name', '') == "CyclicLR":
+    if scheduler_config.get('name', '') in ["CyclicLR", "ReduceLROnPlateau"]:
         del scheduler_args['max_steps']
 
     # Get the scheduler class from the config

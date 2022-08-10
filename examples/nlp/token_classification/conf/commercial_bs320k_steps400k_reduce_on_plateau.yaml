@@ -198,7 +198,7 @@ model:
       # pytorch lightning args
       monitor: val_punct_f1
       reduce_on_plateau: true
-      args:
+      params:
         mode: max
         factor: 0.5
         patience: 1
