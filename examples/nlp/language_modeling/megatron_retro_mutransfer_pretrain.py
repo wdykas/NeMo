@@ -91,7 +91,7 @@ def main(cfg) -> None:
 
     for name, tensor in model.named_parameters():
         if name.endswith('.dense_4h_to_h.weight') or name.endswith('.dense.weight'):
-            std = cfg.model.init_method_std / math.sqrt(2.0 * 12.0)
+            std = cfg.model.init_method_std / math.sqrt(2.0 * cfg.model.out_init)
             normal_(tensor, 0, std)
         elif name.endswith('layernorm.weight'):
             if tensor.std() != 0 and tensor.mean() != 1:
@@ -112,7 +112,7 @@ def main(cfg) -> None:
         ):
             if hasattr(layer, 'norm_factor') and hasattr(layer, 'hidden_size_per_attention_head'):
                 layer.norm_factor = (
-                    layer.hidden_size_per_attention_head / 8.0
+                    layer.hidden_size_per_attention_head / cfg.mode.norm_init
                 )  # divide 8 to make it consist with ADLR setting
         else:
             if hasattr(layer, 'norm_factor') or hasattr(layer, 'hidden_size_per_attention_head'):
