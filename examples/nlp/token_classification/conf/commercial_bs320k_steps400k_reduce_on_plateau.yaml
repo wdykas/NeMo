@@ -194,15 +194,16 @@ model:
     sched:
       name: ReduceLROnPlateau
       # Scheduler params
-      mode: max
-      factor: 0.5
-      patience: 1
-      threshold_mode: rel
-      min_lr: 1e-6
 
       # pytorch lightning args
       monitor: val_punct_f1
       reduce_on_plateau: true
+      args:
+        mode: max
+        factor: 0.5
+        patience: 1
+        threshold_mode: rel
+        min_lr: 1e-6
 
 hydra:
   run:
