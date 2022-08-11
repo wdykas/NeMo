@@ -308,7 +308,8 @@ def tacotron2_log_to_tb_func(
 @rank_zero_only
 def fastpitch_log_to_wandb_func(
     swriter,
-    tensors,
+    spec_target,
+    spec_predict,
     step,
     tag="train",
     log_images=True,
@@ -320,7 +321,6 @@ def fastpitch_log_to_wandb_func(
     n_mels=80,
     fmax=8000,
 ):
-    _, _, _, _, spec_target, spec_predict = tensors
     if not HAVE_WANDB:
         return
     if log_images and step % log_images_freq == 0:

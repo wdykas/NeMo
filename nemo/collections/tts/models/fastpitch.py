@@ -481,7 +481,7 @@ class FastPitchModel(SpectrogramGenerator, Exportable):
             )
             self.log_train_images = True
         elif isinstance(self.logger, WandbLogger):
-            fastpitch_log_to_wandb_func(self.logger.experiment, outputs[0].values(), self.global_step, tag="val", )
+            fastpitch_log_to_wandb_func(self.logger.experiment, spec_target, spec_predict, self.global_step, tag="val", )
             self.log_train_images = True
 
     def __setup_dataloader_from_config(self, cfg, shuffle_should_be: bool = True, name: str = "train"):

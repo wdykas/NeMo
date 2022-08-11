@@ -449,6 +449,7 @@ class FastPitchAdversarialModel(SpectrogramGenerator, Exportable):
                     self.tb_logger.add_image(
                         "train_soft_attn", plot_alignment_to_numpy(soft_attn.T), self.global_step, dataformats="HWC",
                     )
+            
             elif isinstance(self.logger, WandbLogger):
                 self.log_train_images = False
                 specs = []
@@ -550,7 +551,7 @@ class FastPitchAdversarialModel(SpectrogramGenerator, Exportable):
         self.log("v_loss_generator", gen_loss)
         self.log("v_pitch_loss", pitch_loss)
 
-        _, _, _, _, _, _, spec_target, spec_predict = outputs[0].values()
+        _, _, _, _, _, spec_target, spec_predict = outputs[0].values()
 
         if isinstance(self.logger, TensorBoardLogger):
             self.tb_logger.add_image(
@@ -565,7 +566,7 @@ class FastPitchAdversarialModel(SpectrogramGenerator, Exportable):
             )
             self.log_train_images = True
         elif isinstance(self.logger, WandbLogger):
-            fastpitch_log_to_wandb_func(self.logger.experiment, outputs[0].values(), self.global_step, tag="val", griffin_lim_power=2)
+            fastpitch_log_to_wandb_func(self.logger.experiment, spec_target, spec_predict, self.global_step, tag="val", griffin_lim_power=2)
             self.log_train_images = True
 
     def __setup_dataloader_from_config(self, cfg, shuffle_should_be: bool = True, name: str = "train"):
