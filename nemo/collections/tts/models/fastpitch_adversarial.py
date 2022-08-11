@@ -550,7 +550,7 @@ class FastPitchAdversarialModel(SpectrogramGenerator, Exportable):
         self.log("v_loss_generator", gen_loss)
         self.log("v_pitch_loss", pitch_loss)
 
-        _, _, _, _, _, spec_target, spec_predict = outputs[0].values()
+        _, _, _, _, _, _, spec_target, spec_predict = outputs[0].values()
 
         if isinstance(self.logger, TensorBoardLogger):
             self.tb_logger.add_image(
