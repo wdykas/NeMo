@@ -42,6 +42,7 @@ from nemo.collections.nlp.modules.common.transformer.text_generation import Leng
 from nemo.collections.nlp.parts.nlp_overrides import NLPSaveRestoreConnector
 from nemo.collections.nlp.parts.utils_funcs import get_last_rank
 from nemo.utils import logging
+import os
 
 try:
     from apex.transformer import parallel_state
@@ -83,9 +84,12 @@ class MegatronGPTPromptLearningModel(MegatronBaseModel, TextGeneration):
         super().__init__(cfg, trainer)
 
         self.cfg = cfg
-
+        save_resotre_connector = NLPSaveRestoreConnector()
+        if os.path.isdir(cfg.get('language_model_path')):
+            save_resotre_connector.model_extracted_dir = cfg.get('language_model_path')
         frozen_model_cfg = MegatronGPTModel.restore_from(
-            cfg.get('language_model_path'), trainer=trainer, return_config=True
+            cfg.get('language_model_path'), trainer=trainer, return_config=True, 
+            save_restore_connector=save_resotre_connector
         )
 
         # Need to overwrite some params in frozen model's config before restoring
@@ -100,7 +104,7 @@ class MegatronGPTPromptLearningModel(MegatronBaseModel, TextGeneration):
             self.frozen_model = MegatronGPTModel.restore_from(
                 cfg.get('language_model_path'),
                 trainer=trainer,
-                save_restore_connector=NLPSaveRestoreConnector(),
+                save_restore_connector=save_resotre_connector,
                 override_config_path=frozen_model_cfg,
             )
 
