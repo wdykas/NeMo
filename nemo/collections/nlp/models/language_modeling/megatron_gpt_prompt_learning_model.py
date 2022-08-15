@@ -355,29 +355,14 @@ class MegatronGPTPromptLearningModel(MegatronBaseModel, TextGeneration):
         for param in self.frozen_model.parameters():
             param.requires_grad = False
 
-        # Need to handle frozen model freezing differently when pp > 1
-        if self.pipeline_parallel:
-            virtual_prompt_params = {'params': []}
-            frozen_model_params = {'params': [], 'lr': 0.0}
+        virtual_prompt_params = {'params': []}
 
-            if self.frozen_model.model.pre_process:
-                virtual_prompt_params['params'].extend([param for param in self.prompt_table.parameters()])
+        if self.frozen_model.model.pre_process:
+            virtual_prompt_params['params'].extend([param for param in self.prompt_table.parameters()])
 
-                if self.virtual_prompt_source == VirtualPromptSource.PROMPT_ENCODER:
-                    virtual_prompt_params['params'].extend([param for param in self.prompt_encoder.parameters()])
-
-            # Unfreeze one part of each transformer layer setting lr to 0.0 so DDP
-            # and AMP won't complain but model still remains frozen
-            for layer in self.frozen_model.model.language_model.encoder.layers:
-                for param in layer.input_layernorm.parameters():
-                    param.requires_grad = True
-
-            frozen_model_params['params'].extend([param for param in self.frozen_model.parameters()])
-
-            self._optimizer_param_groups = virtual_prompt_params, frozen_model_params
-
-        else:
-            super().setup_optimizer_param_groups()
+            if self.virtual_prompt_source == VirtualPromptSource.PROMPT_ENCODER:
+                virtual_prompt_params['params'].extend([param for param in self.prompt_encoder.parameters()])
+        self._optimizer_param_groups = (virtual_prompt_params,)
 
     def forward(
         self,
@@ -600,8 +585,8 @@ class MegatronGPTPromptLearningModel(MegatronBaseModel, TextGeneration):
 
         # Need to make sure the frozen model param learning rate stays 0.0
         # so forceing lr to be 0.0 for gpt layers before param update
-        if self.pipeline_parallel:
-            self._optimizer.param_groups[1]['lr'] = 0.0
+        # if self.pipeline_parallel:
+        #     self._optimizer.param_groups[1]['lr'] = 0.0
 
         return loss_mean
 
@@ -817,7 +802,7 @@ class MegatronGPTPromptLearningModel(MegatronBaseModel, TextGeneration):
             input_ids, labels, loss_mask, position_ids, attention_mask, taskname_ids = batch
             output_tensor = model(input_ids, position_ids, attention_mask, taskname_ids, labels, inference=False)
 
-            if len(output_tensor) == 2:
+            if isinstance(output_tensor, tuple):
                 output_tensor, _ = output_tensor
 
             def loss_func(output_tensor):
