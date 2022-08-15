@@ -42,10 +42,13 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+from typing import Optional, List
 import torch
 
 from nemo.collections.tts.helpers.helpers import binarize_attention_parallel, regulate_len
+from nemo.collections.asr.parts.utils import adapter_utils
 from nemo.core.classes import NeuralModule, typecheck
+from nemo.core.classes.mixins import adapter_mixins
 from nemo.core.neural_types.elements import (
     EncodedRepresentation,
     Index,
@@ -60,6 +63,7 @@ from nemo.core.neural_types.elements import (
 )
 from nemo.core.neural_types.neural_type import NeuralType
 
+from omegaconf import DictConfig
 
 def average_pitch(pitch, durs):
     durs_cums_ends = torch.cumsum(durs, dim=1).long()
@@ -79,7 +83,7 @@ def average_pitch(pitch, durs):
     return pitch_avg
 
 
-class ConvReLUNorm(torch.nn.Module):
+class ConvReLUNorm(torch.nn.Module, adapter_mixins.AdapterModuleMixin):
     def __init__(self, in_channels, out_channels, kernel_size=1, dropout=0.0):
         super(ConvReLUNorm, self).__init__()
         self.conv = torch.nn.Conv1d(in_channels, out_channels, kernel_size=kernel_size, padding=(kernel_size // 2))
@@ -89,6 +93,9 @@ class ConvReLUNorm(torch.nn.Module):
     def forward(self, signal):
         out = torch.nn.functional.relu(self.conv(signal))
         out = self.norm(out.transpose(1, 2)).transpose(1, 2)
+
+        if self.is_adapter_available():
+            out = self.forward_enabled_adapters(out.transpose(1,2)).transpose(1, 2)
         return self.dropout(out)
 
 
@@ -107,6 +114,7 @@ class TemporalPredictor(NeuralModule):
             ]
         )
         self.fc = torch.nn.Linear(filter_size, 1, bias=True)
+        self.filter_size = filter_size
 
     @property
     def input_types(self):
@@ -128,7 +136,43 @@ class TemporalPredictor(NeuralModule):
         return out.squeeze(-1)
 
 
-class FastPitchModule(NeuralModule):
+class TemporalPredictorAdapter(TemporalPredictor, adapter_mixins.AdapterModuleMixin):
+    
+    # Higher level forwarding
+    def add_adapter(self, name: str, cfg: dict):
+        cfg = self._update_adapter_cfg_input_dim(cfg)
+        for i, conv_layer in enumerate(self.layers):  # type: adapter_mixins.AdapterModuleMixin
+            conv_layer.add_adapter(f"{name}_{i}", cfg)
+
+    def is_adapter_available(self) -> bool:
+        return any([conv_layer.is_adapter_available() for conv_layer in self.layers])
+
+    def set_enabled_adapters(self, name: Optional[str] = None, enabled: bool = True):
+        for conv_layer in self.layers:  # type: adapter_mixins.AdapterModuleMixin
+            conv_layer.set_enabled_adapters(name=name, enabled=enabled)
+
+    def get_enabled_adapters(self) -> List[str]:
+        names = set([])
+        for conv_layer in self.layers:  # type: adapter_mixins.AdapterModuleMixin
+            names.update(conv_layer.get_enabled_adapters())
+
+        names = sorted(list(names))
+        return names
+
+    def _update_adapter_cfg_input_dim(self, cfg: DictConfig):
+        cfg = adapter_utils.update_adapter_cfg_input_dim(self, cfg, module_dim=self.filter_size)
+        return cfg
+
+
+
+"""
+Register any additional information
+"""
+if adapter_mixins.get_registered_adapter(TemporalPredictor) is None:
+    adapter_mixins.register_adapter(base_class=TemporalPredictor, adapter_class=TemporalPredictorAdapter)
+
+
+class FastPitchModule(NeuralModule, adapter_mixins.AdapterModuleMixin):
     def __init__(
         self,
         encoder_module: NeuralModule,
@@ -138,6 +182,7 @@ class FastPitchModule(NeuralModule):
         aligner: NeuralModule,
         n_speakers: int,
         symbols_embedding_dim: int,
+        speaker_embedding_dim: int,
         pitch_embedding_kernel_size: int,
         n_mel_channels: int = 80,
         max_token_duration: int = 75,
@@ -158,7 +203,7 @@ class FastPitchModule(NeuralModule):
         else:
             self.speaker_emb = None
 
-        self.speaker_proj = torch.nn.Linear(192, symbols_embedding_dim)
+        self.speaker_proj = torch.nn.Linear(speaker_embedding_dim, symbols_embedding_dim)
         self.bn1 = torch.nn.BatchNorm1d(num_features=symbols_embedding_dim)
 
         self.max_token_duration = max_token_duration
@@ -235,21 +280,25 @@ class FastPitchModule(NeuralModule):
         else:
             spk_emb = self.speaker_emb(speaker).unsqueeze(1)
 
+        if self.is_adapter_available():
+            out_adapter = self.forward_enabled_adapters(spk_emb)
+            spk_emb = out_adapter
+
         # Input FFT
         enc_out, enc_mask = self.encoder(input=text, conditioning=spk_emb)
 
-        log_durs_predicted = self.duration_predictor(enc_out, enc_mask)
+        log_durs_predicted = self.duration_predictor(enc_out+spk_emb, enc_mask)
         durs_predicted = torch.clamp(torch.exp(log_durs_predicted) - 1, 0, self.max_token_duration)
 
         attn_soft, attn_hard, attn_hard_dur, attn_logprob = None, None, None, None
         if self.learn_alignment and spec is not None:
             text_emb = self.encoder.word_emb(text)
-            attn_soft, attn_logprob = self.aligner(spec, text_emb.permute(0, 2, 1), enc_mask == 0, attn_prior)
+            attn_soft, attn_logprob = self.aligner(spec, text_emb.permute(0, 2, 1), enc_mask == 0, attn_prior, conditioning=spk_emb)
             attn_hard = binarize_attention_parallel(attn_soft, input_lens, mel_lens)
             attn_hard_dur = attn_hard.sum(2)[:, 0, :]
 
         # Predict pitch
-        pitch_predicted = self.pitch_predictor(enc_out, enc_mask)
+        pitch_predicted = self.pitch_predictor(enc_out+spk_emb, enc_mask)
         if pitch is not None:
             if self.learn_alignment and pitch.shape[-1] != pitch_predicted.shape[-1]:
                 # Pitch during training is per spectrogram frame, but during inference, it should be per character
@@ -269,7 +318,7 @@ class FastPitchModule(NeuralModule):
             len_regulated, dec_lens = regulate_len(durs_predicted, enc_out, pace)
 
         # Output FFT
-        dec_out, _ = self.decoder(input=len_regulated, seq_lens=dec_lens)
+        dec_out, _ = self.decoder(input=len_regulated, seq_lens=dec_lens, conditioning=spk_emb)
         spect = self.proj(dec_out).transpose(1, 2)
         return (
             spect,
@@ -295,11 +344,11 @@ class FastPitchModule(NeuralModule):
         enc_out, enc_mask = self.encoder(input=text, conditioning=spk_emb)
 
         # Predict duration and pitch
-        log_durs_predicted = self.duration_predictor(enc_out, enc_mask)
+        log_durs_predicted = self.duration_predictor(enc_out+spk_emb, enc_mask)
         durs_predicted = torch.clamp(
             torch.exp(log_durs_predicted) - 1.0, self.min_token_duration, self.max_token_duration
         )
-        pitch_predicted = self.pitch_predictor(enc_out, enc_mask) + pitch
+        pitch_predicted = self.pitch_predictor(enc_out+spk_emb, enc_mask) + pitch
         pitch_emb = self.pitch_emb(pitch_predicted.unsqueeze(1))
         enc_out = enc_out + pitch_emb.transpose(1, 2)
 
@@ -311,7 +360,7 @@ class FastPitchModule(NeuralModule):
             volume_extended = volume_extended.squeeze(-1).float()
 
         # Output FFT
-        dec_out, _ = self.decoder(input=len_regulated, seq_lens=dec_lens)
+        dec_out, _ = self.decoder(input=len_regulated, seq_lens=dec_lens, conditioning=spk_emb)
         spect = self.proj(dec_out).transpose(1, 2)
         return (
             spect.to(torch.float),

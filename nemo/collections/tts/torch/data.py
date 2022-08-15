@@ -20,6 +20,8 @@ import random
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Union
 
+from pexpect import ExceptionPexpect
+
 import librosa
 import numpy as np
 import torch
@@ -537,7 +539,10 @@ class TTSDataset(Dataset):
                 prior_path = self.align_prior_matrix_folder / f"{rel_audio_path_as_text_id}.pt"
 
                 if prior_path.exists():
-                    align_prior_matrix = torch.load(prior_path)
+                    try:
+                        align_prior_matrix = torch.load(prior_path)
+                    except Exception as e:
+                        print(f"filename {prior_path} exception {e}")
                 else:
                     mel_len = self.get_log_mel(audio).shape[2]
                     align_prior_matrix = beta_binomial_prior_distribution(text_length, mel_len)
@@ -551,7 +556,10 @@ class TTSDataset(Dataset):
                 voiced_folder = getattr(self, f"{voiced_item.name}_folder")
                 voiced_filepath = voiced_folder / f"{rel_audio_path_as_text_id}.pt"
                 if voiced_filepath.exists():
-                    my_var.__setitem__(voiced_item.name, torch.load(voiced_filepath).float())
+                    try:
+                        my_var.__setitem__(voiced_item.name, torch.load(voiced_filepath).float())
+                    except Exception as e:
+                        print(f"filename {voiced_filepath} exception {e}")
                 else:
                     non_exist_voiced_index.append((i, voiced_item.name, voiced_filepath))
 
@@ -581,6 +589,9 @@ class TTSDataset(Dataset):
                 pitch /= self.pitch_std
 
             pitch_length = torch.tensor(len(pitch)).long()
+        else:
+            print(f"filename {voiced_filepath} Pitch None")
+            pitch_length = torch.tensor(0).long()
 
         # Load energy if needed
         energy, energy_length = None, None

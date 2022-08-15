@@ -1,7 +1,6 @@
-# This config contains the default values for training FastPitch model with aligner using 44.1KHz sampling 
-# rate. If you want to train model on other dataset, you can change config values according to your dataset. 
+# This config contains the default values for training FastPitch model with aligner on LJSpeech dataset.
+# If you want to train model on other dataset, you can change config values according to your dataset.
 # Most dataset-specific arguments are in the head of the config file, see below.
-
 
 name: FastPitch
 
@@ -14,22 +13,26 @@ sup_data_types: [ "align_prior_matrix", "pitch" ]
 pitch_fmin: 65.40639132514966
 pitch_fmax: 2093.004522404789
 
-# Stats (per frame), train (these values depend on pitch_fmin and pitch_fmax)
+# LJSpeech stats (per frame), train (these values depend on pitch_fmin and pitch_fmax)
 pitch_mean: 212.35873413085938
 pitch_std: 68.52806091308594
 
-sample_rate: 44100
+# Default values for dataset with sample_rate=22050
+sample_rate: 22050
 n_mel_channels: 80
-n_window_size: 2048
-n_window_stride: 512
-n_fft: 2048
+n_window_size: 1024
+n_window_stride: 256
+n_fft: 1024
 lowfreq: 0
-highfreq: null
+highfreq: 8000
 window: hann
 
 phoneme_dict_path: "scripts/tts_dataset_files/cmudict-0.7b_nv22.07"
 heteronyms_path: "scripts/tts_dataset_files/heteronyms-030921"
 whitelist_path: "nemo_text_processing/text_normalization/en/data/whitelist/lj_speech.tsv"
+
+finetune:
+  add_adapter: true
 
 model:
   learn_alignment: true
@@ -61,12 +64,12 @@ model:
     lang: en
     input_case: cased
     whitelist: ${whitelist_path}
-  
+
   text_normalizer_call_kwargs:
     verbose: false
     punct_pre_process: true
     punct_post_process: true
-  
+
   text_tokenizer:
     _target_: nemo.collections.tts.torch.tts_tokenizers.EnglishPhonemesTokenizer
     punct: true
@@ -104,13 +107,13 @@ model:
       pitch_mean: ${model.pitch_mean}
       pitch_std: ${model.pitch_std}
       use_beta_binomial_interpolator: true
+
     dataloader_params:
       drop_last: false
       shuffle: true
       batch_size: 32
       num_workers: 12
       pin_memory: true
-
 
   validation_ds:
     dataset:
@@ -152,7 +155,7 @@ model:
     n_fft: ${model.n_fft}
     n_window_size: ${model.n_window_size}
     window_size: false
-    n_window_stride:  ${model.n_window_stride}
+    n_window_stride: ${model.n_window_stride}
     window_stride: false
     pad_to: 1
     pad_value: 0
@@ -226,15 +229,15 @@ model:
 
 trainer:
   num_nodes: 1
-  devices: -1 # number of gpus
+  devices: 1
   accelerator: gpu
   strategy: ddp
   precision: 16
-  max_epochs: 1500
+  max_epochs: 1000
   accumulate_grad_batches: 1
   gradient_clip_val: 1000.0
-  enable_checkpointing: False  # Provided by exp_manager
-  logger: False  # Provided by exp_manager
+  enable_checkpointing: False # Provided by exp_manager
+  logger: false # Provided by exp_manager
   log_every_n_steps: 100
   check_val_every_n_epoch: 5
   benchmark: false
@@ -242,10 +245,14 @@ trainer:
 exp_manager:
   exp_dir: null
   name: ${name}
-  create_tensorboard_logger: True
-  create_checkpoint_callback: True
+  create_tensorboard_logger: true
+  create_checkpoint_callback: true
   checkpoint_callback_params:
     monitor: v_loss
+  create_wandb_logger: false
+  wandb_logger_kwargs:
+    name: null
+    project: null
+    entity: null
   resume_if_exists: false
   resume_ignore_no_checkpoint: false
-

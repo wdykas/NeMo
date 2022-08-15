@@ -13,13 +13,14 @@
 # limitations under the License.
 import contextlib
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, List
+
 
 import torch
 from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf, open_dict
 from pytorch_lightning import Trainer
-from pytorch_lightning.loggers import LoggerCollection, TensorBoardLogger
+from pytorch_lightning.loggers import LoggerCollection, TensorBoardLogger, WandbLogger
 
 from nemo.collections.common.parts.preprocessing import parsers
 from nemo.collections.tts.helpers.helpers import plot_alignment_to_numpy, plot_spectrogram_to_numpy
@@ -28,6 +29,7 @@ from nemo.collections.tts.losses.fastpitchloss import DurationLoss, MelLoss, Pit
 from nemo.collections.tts.models.base import SpectrogramGenerator
 from nemo.collections.tts.modules.fastpitch import FastPitchModule
 from nemo.collections.tts.torch.tts_data_types import SpeakerID, SpeakerEmb
+from nemo.core.classes.mixins.adapter_mixins import AdapterModelPTMixin, AdapterModuleMixin
 from nemo.core.classes import Exportable
 from nemo.core.classes.common import PretrainedModelInfo, typecheck
 from nemo.core.neural_types.elements import (
@@ -42,6 +44,12 @@ from nemo.core.neural_types.elements import (
 )
 from nemo.core.neural_types.neural_type import NeuralType
 from nemo.utils import logging, model_utils
+
+HAVE_WANDB = True
+try:
+    import wandb
+except ModuleNotFoundError:
+    HAVE_WANDB = False
 
 
 @dataclass
@@ -69,7 +77,373 @@ class TextTokenizerConfig:
     text_tokenizer: TextTokenizer = TextTokenizer()
 
 
-class FastPitchModel(SpectrogramGenerator, Exportable):
+class FastPitchModuleAdapter(AdapterModelPTMixin):
+    """ FastPitch Adapter Mixin that can augment any Encoder module with Adapter module support.
+    This mixin class should be used only with a top level ModelPT subclass, that includes an `encoder` submodule.
+    This mixin class adds several utility methods which are propagated to the `encoder`.
+    An Adapter module is any Pytorch nn.Module that possess a few properties :
+    - It's input and output dimension are the same, while the hidden dimension need not be the same.
+    - The final layer of the Adapter module is zero-initialized, so that the residual connection to the adapter
+        yields the original output.
+    This mixin adds the following instance variables to the class this inherits it:
+        -   `adapter_layer`: A torch.nn.ModuleDict(), whose keys are the names of the adapter (globally unique),
+                and values are the Adapter nn.Module().
+        -   `adapter_cfg`: A OmegaConf DictConfig object that holds the config of the adapters that are initialized.
+        -   `adapter_global_cfg_key`: A str representing a key in the model config that can be provided by the user.
+                The value resolves to `global_cfg`, and can be overridden via `model.cfg.adapters.global_cfg.*`.
+    **Note**: This module **is** responsible for maintaining its config. At the ModelPT level, it will access and
+        write Adapter config information to `self.cfg.adapters`.
+    """
+    def setup_adapters(self):
+        """
+        Utility method that is called in the ASR ModelPT-implementation constructor, so as to restore any
+        adapters that were previously added.
+        This method should be called just once at constructor time.
+        """
+        supports_adapters = False
+
+
+        # At least the encoder must extend AdapterModuleMixin
+        if hasattr(self.fastpitch, 'encoder') and isinstance(self.fastpitch.encoder, AdapterModuleMixin):
+            supports_adapters |= True
+
+
+        if hasattr(self.fastpitch, 'decoder') and isinstance(self.fastpitch.decoder, AdapterModuleMixin):
+            supports_adapters |= True
+
+
+        if hasattr(self.fastpitch, 'duration_predictor') and isinstance(self.fastpitch.duration_predictor, AdapterModuleMixin):
+            supports_adapters |= True
+
+
+        if hasattr(self.fastpitch, 'pitch_predictor') and isinstance(self.fastpitch.pitch_predictor, AdapterModuleMixin):
+            supports_adapters |= True
+
+
+        if hasattr(self.fastpitch, 'speaker_proj') and isinstance(self.fastpitch, AdapterModuleMixin):
+            supports_adapters |= True
+
+        # If adapters are supported, setup the adapter config + any modules (pre-existing adapter modules)
+        if supports_adapters:
+            super().setup_adapters()
+
+
+    def add_adapter(self, name: str, cfg: DictConfig):
+        """
+        Add an Adapter module to this model.
+        Args:
+            name: A globally unique name for the adapter. Will be used to access, enable and disable adapters.
+            cfg: A DictConfig that contains at the bare minimum `__target__` to instantiate a new Adapter module.
+        """
+        # setup the config for adapters
+        super().add_adapter(name=name, cfg=cfg)
+
+
+        # Resolve module name and adapter name
+        module_name, _ = self.resolve_adapter_module_name_(name)
+
+
+        # Use + as a splitter, in order to share one name across multiple modules
+        if '+' in module_name:
+            module_names = module_name.split('+')
+        else:
+            module_names = [module_name]
+
+
+        # Update the model.cfg with information about the new adapter from cfg
+        global_config = self._get_global_cfg()
+
+
+        with open_dict(self.cfg):
+            for module_name in module_names:
+
+
+                # Check if encoder adapters should be added
+                if module_name  == 'encoder':
+                    # Dispatch the call to the encoder.
+                    self.fastpitch.encoder.add_adapter(name=name, cfg=cfg)
+
+
+                # Check if decoder adapters should be added
+                if module_name in ('', 'decoder'):
+                    # Dispatch call to the decoder. (default use decoder)
+                    self.fastpitch.decoder.add_adapter(name=name, cfg=cfg)
+
+
+                if module_name  == 'duration_predictor':
+                    # Dispatch the call to the duration_predictor.
+                    self.fastpitch.duration_predictor.add_adapter(name=name, cfg=cfg)
+
+
+                if module_name  == 'pitch_predictor':
+                    # Dispatch the call to the pitch_predictor.
+                    self.fastpitch.pitch_predictor.add_adapter(name=name, cfg=cfg)
+
+                if module_name  == 'speaker_proj':
+                    # Dispatch the call to the pitch_predictor.
+                    self.fastpitch.add_adapter(name=name, cfg=cfg)
+
+
+    def is_adapter_available(self) -> bool:
+        """
+        Checks if any Adapter module has been instantiated.
+        Returns:
+            bool, determining if any Adapter module has been instantiated. Returns true even if the adapters are
+            enabled or disabled, false only if no adapters exist.
+        """
+        config_contains_adapter = super().is_adapter_available()
+
+
+        # Forward the method call to the individual modules
+        if hasattr(self.fastpitch, 'encoder') and isinstance(self.fastpitch.encoder, AdapterModuleMixin):
+            config_contains_adapter |= self.fastpitch.encoder.is_adapter_available()
+
+
+        if hasattr(self.fastpitch, 'decoder') and isinstance(self.fastpitch.decoder, AdapterModuleMixin):
+            config_contains_adapter |= self.fastpitch.decoder.is_adapter_available()
+
+
+        if hasattr(self.fastpitch, 'duration_predictor') and isinstance(self.fastpitch.duration_predictor, AdapterModuleMixin):
+            config_contains_adapter |= self.fastpitch.duration_predictor.is_adapter_available()
+
+
+        if hasattr(self.fastpitch, 'pitch_predictor') and isinstance(self.fastpitch.pitch_predictor, AdapterModuleMixin):
+            config_contains_adapter |= self.fastpitch.pitch_predictor.is_adapter_available()
+
+        if hasattr(self.fastpitch, 'speaker_proj') and isinstance(self.fastpitch, AdapterModuleMixin):
+            config_contains_adapter |= self.fastpitch.is_adapter_available()
+
+
+        return config_contains_adapter
+
+
+    def set_enabled_adapters(self, name: Optional[str] = None, enabled: bool = True):
+        """
+        Updated the internal adapter config, determining if an adapter (or all adapters) are either
+        enabled or disabled.
+        A common user pattern would be to disable all adapters (either after adding them, or restoring a model
+        with pre-existing adapters) and then simply enable one of the adapters.
+        .. code::
+            model.set_enabled_adapters(enabled=False)
+            model.set_enabled_adapters(name=<some adapter name>, enabled=True)
+        Args:
+            name: Optional str. If a str name is given, the config will be updated to the value of `enabled`.
+                If no name is given, then all adapters will be enabled/disabled.
+            enabled: Bool, determines if the adapter(s) will be enabled/disabled.
+        """
+        super().set_enabled_adapters(name=name, enabled=enabled)
+
+
+        # Resolve the module name and adapter name
+        if name is not None:
+            module_name, _ = self.resolve_adapter_module_name_(name)
+        else:
+            module_name = None
+
+
+        # Use + as a splitter, in order to share one name across multiple modules
+        if module_name is not None and '+' in module_name:
+            module_names = module_name.split('+')
+        else:
+            module_names = [module_name]
+
+
+        for module_name in module_names:
+            # Check if encoder adapters should be used
+            # Dispatch the call to the encoder.
+            if name is None or module_name == 'encoder':
+                if self.fastpitch.encoder.is_adapter_available():
+                    self.fastpitch.encoder.set_enabled_adapters(name=name, enabled=enabled)
+
+
+            # Dispatch the call to the decoder.
+            if name is None or module_name in ('', 'decoder'):
+                if self.fastpitch.decoder.is_adapter_available():
+                    self.fastpitch.decoder.set_enabled_adapters(name=name, enabled=enabled)
+
+
+            # Dispatch the call to the duration_predictor.
+            if module_name == 'duration_predictor':
+                if self.fastpitch.duration_predictor.is_adapter_available():
+                    self.fastpitch.duration_predictor.set_enabled_adapters(name=name, enabled=enabled)
+
+
+            # Dispatch the call to the pitch_predictor.
+            if module_name == 'pitch_predictor':
+                if self.fastpitch.pitch_predictor.is_adapter_available():
+                    self.fastpitch.pitch_predictor.set_enabled_adapters(name=name, enabled=enabled)
+
+            # Dispatch the call to the speaker_proj.
+            if module_name == 'speaker_proj':
+                if self.fastpitch.is_adapter_available():
+                    self.fastpitch.set_enabled_adapters(name=name, enabled=enabled)
+
+
+    def get_enabled_adapters(self) -> List[str]:
+        """
+        Returns a list of all enabled adapters.
+        Returns:
+            A list of str names of each enabled adapter(s).
+        """
+        enabled_adapters = super().get_enabled_adapters()
+
+
+        # Check if encoder adapters should be used or are enabled
+        if hasattr(self.fastpitch, 'encoder') and isinstance(self.fastpitch.encoder, AdapterModuleMixin):
+            enabled_adapters.extend(self.fastpitch.encoder.get_enabled_adapters())
+
+
+        if hasattr(self.fastpitch, 'decoder') and isinstance(self.fastpitch.decoder, AdapterModuleMixin):
+            enabled_adapters.extend(self.fastpitch.decoder.get_enabled_adapters())
+
+
+        if hasattr(self.fastpitch, 'duration_predictor') and isinstance(self.fastpitch.duration_predictor, AdapterModuleMixin):
+            enabled_adapters.extend(self.fastpitch.duration_predictor.get_enabled_adapters())
+
+
+        if hasattr(self.fastpitch, 'pitch_predictor') and isinstance(self.fastpitch.pitch_predictor, AdapterModuleMixin):
+            enabled_adapters.extend(self.fastpitch.pitch_predictor.get_enabled_adapters())
+
+        if hasattr(self.fastpitch, 'speaker_proj') and isinstance(self.fastpitch, AdapterModuleMixin):
+            enabled_adapters.extend(self.fastpitch.get_enabled_adapters())
+
+
+        enabled_adapters = list(sorted(list(set(enabled_adapters))))
+
+
+        return enabled_adapters
+
+
+    def check_valid_model_with_adapter_support_(self):
+        """
+        Utility method to test if the subclass of this mixin is an appropriate subclass of ModelPT itself.
+        """
+        # Obtain the global adapter config if possible, otherwise use sensible defaults.
+        global_cfg = self._get_global_cfg()
+
+
+        # Test whether the encoder supports adapters
+        use_encoder_adapter = global_cfg.get('check_encoder_adapter', False)
+        if use_encoder_adapter:
+            if not hasattr(self.fastpitch, 'encoder'):
+                logging.warning(
+                    "Cannot add adapter to this object as it does not have an `fastpitch.encoder` sub-module!",
+                    mode=logging_mode.ONCE,
+                )
+
+
+            if hasattr(self.fastpitch, 'encoder') and not isinstance(self.fastpitch.encoder, AdapterModuleMixin):
+                logging.warning(
+                    f'{self.fastpitch.encoder.__class__.__name__} does not implement `AdapterModuleMixin`',
+                    mode=logging_mode.ONCE,
+                )
+
+
+        # Test whether the decoder supports adapters
+        use_decoder_adapter = global_cfg.get('check_decoder_adapter', True)
+        if use_decoder_adapter:
+            if not hasattr(self.fastpitch, 'decoder'):
+                logging.warning(
+                    "Cannot add adapter to this object as it does not have an `fastpitch.decoder` sub-module!",
+                    mode=logging_mode.ONCE,
+                )
+
+
+            if hasattr(self.fastpitch, 'decoder') and not isinstance(self.fastpitch.decoder, AdapterModuleMixin):
+                logging.warning(
+                    f'{self.fastpitch.decoder.__class__.__name__} does not implement `AdapterModuleMixin`',
+                    mode=logging_mode.ONCE,
+                )
+
+
+        # Test whether the decoder supports adapters
+        use_duration_predictor_adapter = global_cfg.get('check_duration_predictor_adapter', True)
+        if use_duration_predictor_adapter:
+            if not hasattr(self.fastpitch, 'duration_predictor'):
+                logging.warning(
+                    "Cannot add adapter to this object as it does not have an `fastpitch.duration_predictor` sub-module!",
+                    mode=logging_mode.ONCE,
+                )
+
+
+            if hasattr(self.fastpitch, 'duration_predictor') and not isinstance(self.fastpitch.duration_predictor, AdapterModuleMixin):
+                logging.warning(
+                    f'{self.fastpitch.duration_predictor.__class__.__name__} does not implement `AdapterModuleMixin`',
+                    mode=logging_mode.ONCE,
+                )
+
+
+        # Test whether the decoder supports adapters
+        use_pitch_predictor_adapter = global_cfg.get('check_pitch_predictor_adapter', True)
+        if use_pitch_predictor_adapter:
+            if not hasattr(self.fastpitch, 'pitch_predictor'):
+                logging.warning(
+                    "Cannot add adapter to this object as it does not have an `fastpitch.pitch_predictor` sub-module!",
+                    mode=logging_mode.ONCE,
+                )
+
+
+            if hasattr(self.fastpitch, 'pitch_predictor') and not isinstance(self.fastpitch.pitch_predictor, AdapterModuleMixin):
+                logging.warning(
+                    f'{self.fastpitch.pitch_predictor.__class__.__name__} does not implement `AdapterModuleMixin`',
+                    mode=logging_mode.ONCE,
+                )
+
+
+    def resolve_adapter_module_name_(self, name: str) -> (str, str):
+        """
+        Utility method to resolve a given global/module adapter name to its components.
+        Always returns a tuple representing (module_name, adapter_name). ":" is used as the
+        delimiter for denoting the module name vs the adapter name.
+        Will attempt to also resolve a given adapter_name alone back to (module_name, adapter_name)
+        if the metadata config exists for access.
+        Args:
+            name: A global adapter, or a module adapter name (with structure module_name:adapter_name).
+        Returns:
+            A tuple representing (module_name, adapter_name). If a global adapter is provided,
+            module_name is set to ''.
+        """
+        module_name, adapter_name = super().resolve_adapter_module_name_(name)
+
+
+        # Use + as a splitter, in order to share one name across multiple modules
+        if '+' in module_name:
+            module_names = module_name.split('+')
+        else:
+            module_names = [module_name]
+
+
+        # resolve name and module only for valid modules
+        valid_module_names = self.adapter_module_names
+
+
+        for mod_name in module_names:
+            if mod_name not in valid_module_names:
+                raise ValueError(f"Provided module name `{mod_name}` is not in valid list : {valid_module_names}")
+
+
+        return (module_name, adapter_name)
+
+
+    def _get_global_cfg(self):
+        """
+        Utility method, to either extract or construct the global config inside adapters config.
+        """
+        global_config = DictConfig({})
+        if 'adapters' in self.cfg and self.adapter_global_cfg_key in self.cfg.adapters:
+            global_config = self.adapter_cfg[self.adapter_global_cfg_key]
+        return global_config
+
+
+    @property
+    def adapter_module_names(self) -> List[str]:
+        module_names = super().adapter_module_names  # "Default" adapter module: ''
+        # Add support for `encoder`, `decoder`, `duration_predictor`, `pitch_predictor` modules
+        module_names.extend(['encoder', 'decoder', 'duration_predictor', 'pitch_predictor', 'speaker_proj']) 
+        return module_names 
+
+
+class FastPitchModel(SpectrogramGenerator, Exportable, FastPitchModuleAdapter, AdapterModuleMixin):
     """FastPitch model (https://arxiv.org/abs/2006.06873) that is used to generate mel spectrogram from text."""
 
     def __init__(self, cfg: DictConfig, trainer: Trainer = None):
@@ -148,11 +522,13 @@ class FastPitchModel(SpectrogramGenerator, Exportable):
             self.aligner,
             cfg.n_speakers,
             cfg.symbols_embedding_dim,
+            cfg.speaker_embedding_dim,
             cfg.pitch_embedding_kernel_size,
             cfg.n_mel_channels,
         )
         self._input_types = self._output_types = None
         self.export_config = {"enable_volume": False, "enable_ragged_batches": False}
+        self.setup_adapters()
 
     def _get_default_text_tokenizer_conf(self):
         text_tokenizer: TextTokenizerConfig = TextTokenizerConfig()
@@ -390,6 +766,26 @@ class FastPitchModel(SpectrogramGenerator, Exportable):
                     "train_soft_attn", plot_alignment_to_numpy(soft_attn.T), self.global_step, dataformats="HWC",
                 )
 
+        if self.log_train_images and isinstance(self.logger, WandbLogger) and HAVE_WANDB:
+            self.log_train_images = False
+            attn = attn_hard[0].data.cpu().float().numpy().squeeze()
+            soft_attn = attn_soft[0].data.cpu().float().numpy().squeeze()
+
+            attn_matrices = []
+            attn_matrices.append(
+                wandb.Image(
+                    plot_alignment_to_numpy(soft_attn.T), caption=f"attn soft",
+                )
+            )
+
+            attn_matrices.append(
+                wandb.Image(
+                    plot_alignment_to_numpy(attn.T), caption=f"attn hard",
+                )
+            )
+
+            self.logger.experiment.log({"attn_matrices": attn_matrices})
+
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -463,6 +859,10 @@ class FastPitchModel(SpectrogramGenerator, Exportable):
             self.tb_logger.add_image(
                 "val_mel_predicted", plot_spectrogram_to_numpy(spec_predict), self.global_step, dataformats="HWC",
             )
+            self.log_train_images = True
+
+        if isinstance(self.logger, WandbLogger) and HAVE_WANDB:
+            print("WANDB SETTING self.log_train_images = True")
             self.log_train_images = True
 
     def __setup_dataloader_from_config(self, cfg, shuffle_should_be: bool = True, name: str = "train"):
