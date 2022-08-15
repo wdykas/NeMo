@@ -31,6 +31,7 @@ class BlendableDataset(torch.utils.data.Dataset):
         assert num_datasets == len(weights)
 
         self.size = size
+        assert self.size < sum([len(d) for d in self.datasets])
 
         # Normalize weights.
         weights = np.array(weights, dtype=np.float64)
