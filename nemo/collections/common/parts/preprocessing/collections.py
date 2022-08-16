@@ -155,7 +155,7 @@ class AudioText(_Collection):
         if "keep_fields" in kwargs:
             fields.extend([kwargs[x] for x in kwargs['keep_fields']])
         for x in zip(*fields):
-            id_, audio_file, duration, offset, text, speaker, orig_sr, token_labels, lang = x[0:9]
+            id_, audio_file, duration, offset, text, speaker, orig_sr, token_label, lang = x[0:9]
             # Duration filters.
             if min_duration is not None and duration < min_duration:
                 duration_filtered += duration
@@ -167,8 +167,8 @@ class AudioText(_Collection):
                 num_filtered += 1
                 continue
 
-            if token_labels is not None:
-                text_tokens = token_labels
+            if token_label is not None:
+                text_tokens = token_label
             else:
                 if text != '':
                     if hasattr(parser, "is_aggregate") and parser.is_aggregate:
@@ -188,7 +188,7 @@ class AudioText(_Collection):
 
             total_duration += duration
 
-            output = [id_, audio_file, duration, text_tokens, offset, text, speaker, orig_sr, token_labels, lang]
+            output = [id_, audio_file, duration, text_tokens, offset, text, speaker, orig_sr, lang]
             if len(x) > 9:
                 output.extend(x[9:])
             data.append(output_type(*output))
