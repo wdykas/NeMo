@@ -629,8 +629,8 @@ class AudioAndEmbeddingToBPEDataset(AudioToBPEDataset):
         )
         self.synthetic_generation = synthetic_generation
 
-        self.eval_dir= '/home/yangzhang/code/ts_asr/data/ls_train_clean_mixed'
-        self.manifest_eval= self.eval_dir + '/manifest.json'
+        # self.eval_dir= '/home/yangzhang/code/ts_asr/data/wsj_cv_mixed'
+        # self.manifest_eval= self.eval_dir + '/manifest.json'
         # os.makedirs(self.eval_dir, exist_ok=True)
         # with open(self.manifest_eval, 'w') as fp:
         #     pass

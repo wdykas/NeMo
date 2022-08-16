@@ -157,25 +157,29 @@ class WaveformFeaturizerAndEmbedding(WaveformFeaturizer):
             orig_sr=orig_sr,
         )
 
-        other_utterance = AudioSegment.from_file(
-            other_utterance_file,
-            target_sr=self.sample_rate,
-            int_values=self.int_values,
-            offset=offset,
-            duration=other_utterance_duration,
-            trim=trim,
-            orig_sr=orig_sr,
-        )
+        other_utterance = None
+        if other_utterance_file:
+            other_utterance = AudioSegment.from_file(
+                other_utterance_file,
+                target_sr=self.sample_rate,
+                int_values=self.int_values,
+                offset=offset,
+                duration=other_utterance_duration,
+                trim=trim,
+                orig_sr=orig_sr,
+            )
 
-        second_speaker = AudioSegment.from_file(
-            second_speaker_file,
-            target_sr=self.sample_rate,
-            int_values=self.int_values,
-            offset=offset,
-            duration=second_speaker_duration,
-            trim=trim,
-            orig_sr=orig_sr,
-        )
+        second_speaker = None
+        if second_speaker_file:
+            second_speaker = AudioSegment.from_file(
+                second_speaker_file,
+                target_sr=self.sample_rate,
+                int_values=self.int_values,
+                offset=offset,
+                duration=second_speaker_duration,
+                trim=trim,
+                orig_sr=orig_sr,
+            )
         
     
         return self.process_segment(audio, other_utterance=other_utterance, second_speaker=second_speaker,  scale_factor=scale_factor, scale_factor_second=scale_factor2)

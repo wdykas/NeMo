@@ -661,7 +661,6 @@ class RirNoiseSpeakerPerturbation(Perturbation):
 
 
     def perturb(self, data, second_speaker, scale_factor, scale_factor_second):
-        print("##########")
         self.perturb_with_other_input(data=data, second_speaker=second_speaker, scale_factor=scale_factor, scale_factor_second=scale_factor_second)
 
 
