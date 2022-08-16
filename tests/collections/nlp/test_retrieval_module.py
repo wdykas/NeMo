@@ -132,7 +132,7 @@ class TestRetrievalModule:
             ParallelChunkedCrossAttention(
                 init_method=init_method,
                 output_layer_init_method=scaled_init_method,
-                layer_number=0,
+                layer_number=1,
                 num_attention_heads=num_attention_heads,
                 hidden_size=dim,
                 precision=16,
@@ -249,7 +249,7 @@ class TestRetrievalModule:
             .half()
         )
         out = decoder(hidden_emb, hidden_mask, retrieved_attn_mask=context_mask, retrieved_emb=retrieved_emb)
-        assert out.shape == torch.Size([batch, input_length, dim])
+        assert out.shape == torch.Size([input_length, batch, dim])
 
     @pytest.mark.unit
     def test_encoder_decoder_module(self):
