@@ -20,6 +20,7 @@ def main() -> None:
     with args.input.open() as in_f:
         lines = in_f.readlines()
     extracted = [json.loads(line)[args.key].strip() for line in lines]
+    args.output.parent.mkdir(exist_ok=True, parents=True)
     with args.output.open('w') as out_f:
         for line in extracted:
             out_f.write(line + '\n')
