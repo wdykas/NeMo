@@ -353,11 +353,17 @@ class FastPitchAdversarialModel(SpectrogramGenerator, Exportable):
 
             preds = []
             for m in mels_pred:
+                s = int(m.size(1) - self.splice_length)
+                if s <= 0:
+                    m = torch.nn.functional.pad(m, (0, -s + 1))
                 start = np.random.randint(low=0, high=int(m.size(1) - self.splice_length))
                 preds.append(m[:, start : start + self.splice_length])
             preds = torch.stack(preds)
             gt_mels = []
             for m in mels:
+                s = int(m.size(1) - self.splice_length)
+                if s <= 0:
+                    m = torch.nn.functional.pad(m, (0, -s + 1))
                 start = np.random.randint(low=0, high=int(m.size(1) - self.splice_length))
                 gt_mels.append(m[:, start : start + self.splice_length])
             gt_mels = torch.stack(gt_mels)
@@ -394,6 +400,9 @@ class FastPitchAdversarialModel(SpectrogramGenerator, Exportable):
 
             preds = []
             for m in mels_pred:
+                s = int(m.size(1) - self.splice_length)
+                if s <= 0:
+                    m = torch.nn.functional.pad(m, (0, -s + 1))
                 start = np.random.randint(low=0, high=int(m.size(1) - self.splice_length))
                 preds.append(m[:, start : start + self.splice_length])
             preds = torch.stack(preds)
