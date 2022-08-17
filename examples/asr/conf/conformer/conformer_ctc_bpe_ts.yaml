@@ -47,6 +47,8 @@ model:
   train_ds:
     augmentor:
       rir_noise_speaker:
+        max_snr_db: null
+        min_snr_db: null
         prob: 1.0
     manifest_filepath: ???
     synthetic_generation: true
@@ -71,6 +73,8 @@ model:
     augmentor:
       rir_noise_speaker:
         prob: 1.0
+        max_snr_db: null
+        min_snr_db: null
     synthetic_generation: false
     manifest_filepath: ???
     sample_rate: ${model.sample_rate}
@@ -84,6 +88,8 @@ model:
     augmentor:
       rir_noise_speaker:
         prob: 1.0
+        max_snr_db: null
+        min_snr_db: null
     synthetic_generation: false
     manifest_filepath: null
     sample_rate: ${model.sample_rate}

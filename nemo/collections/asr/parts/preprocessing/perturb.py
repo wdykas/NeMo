@@ -638,26 +638,12 @@ class RirNoiseSpeakerPerturbation(Perturbation):
         training a mixed sample rate model. For example, when training a mixed model with 8 kHz and 16 kHz audio with a
         target sampling rate of 16 kHz, one would want to augment 8 kHz data with 8 kHz noise rather than 16 kHz noise.
 
-        Args:
-            rir_manifest_path: Manifest file for RIRs
-            rir_tar_filepaths: Tar files, if RIR audio files are tarred
-            rir_prob: Probability of applying a RIR
-            noise_manifest_paths: Foreground noise manifest path
-            min_snr_db: Min SNR for foreground noise
-            max_snr_db: Max SNR for background noise,
-            noise_tar_filepaths: Tar files, if noise files are tarred
-            apply_noise_rir: Whether to convolve foreground noise with a a random RIR
-            orig_sample_rate: Original sampling rate of foreground noise audio
-            max_additions: Max number of times foreground noise is added to an utterance,
-            max_duration: Max duration of foreground noise
-            bg_noise_manifest_paths: Background noise manifest path
-            bg_min_snr_db: Min SNR for background noise
-            bg_max_snr_db: Max SNR for background noise
-            bg_noise_tar_filepaths: Tar files, if noise files are tarred
-            bg_orig_sample_rate: Original sampling rate of background noise audio
-
     """
 
+    def __init__(self, max_snr_db=None, min_snr_db=None, rng=None):
+        self._max_snr_db = max_snr_db
+        self._min_snr_db = min_snr_db
+        self._rng = np.random.RandomState() if rng is None else rng
 
 
     def perturb(self, data, second_speaker, scale_factor, scale_factor_second):
@@ -668,13 +654,20 @@ class RirNoiseSpeakerPerturbation(Perturbation):
         scale_factor = float(scale_factor)
         scale_factor_second = float(scale_factor_second)
 
+        second_speaker._samples *= scale_factor_second
+        data._samples *= scale_factor
+
+        if self._max_snr_db is not None and self._min_snr_db is not None:
+            snr_db = self._rng.uniform(self._min_snr_db, self._max_snr_db)
+            noise_gain_db = data.rms_db - second_speaker.rms_db - snr_db
+            second_speaker.gain_db(noise_gain_db)
+
+
         if len(data._samples) > len(second_speaker._samples):
-            data._samples *= scale_factor
-            data._samples[:len(second_speaker._samples)] += scale_factor_second * second_speaker._samples
+            data._samples[:len(second_speaker._samples)] += second_speaker._samples
         else:
             tmp = second_speaker._samples
-            tmp *= scale_factor_second
-            tmp[:len(data._samples)] += scale_factor * data._samples
+            tmp[:len(data._samples)] +=  data._samples
             data._samples = tmp
 
 
