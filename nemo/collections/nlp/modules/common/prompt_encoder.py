@@ -40,7 +40,7 @@ class PromptEncoder(NeuralModule, Exportable):
     def output_types(self) -> Optional[Dict[str, NeuralType]]:
         return {"output_embeds": NeuralType(('B', 'T', 'C'), ChannelType())}
 
-    def __init__(self, total_virtual_tokens: int, hidden_size: int, lstm_dropout: float, num_layers: int):
+    def __init__(self, total_virtual_tokens: int, hidden_size: int, output_size: int, lstm_dropout: float, num_layers: int):
         """
         Initializes the PromptEncoder module.
         Args:
@@ -51,17 +51,18 @@ class PromptEncoder(NeuralModule, Exportable):
         """
         super().__init__()
         self.hidden_size = hidden_size
+        self.output_size = output_size
         self.total_virtual_tokens = total_virtual_tokens
 
         # Set fixed indicies for forward pass
         self.register_buffer('indices', torch.LongTensor(list(range(self.total_virtual_tokens))))
 
         # embedding
-        self.embedding = torch.nn.Embedding(self.total_virtual_tokens, self.hidden_size)
+        self.embedding = torch.nn.Embedding(self.total_virtual_tokens, output_size)
 
         # LSTM
         self.lstm_head = torch.nn.LSTM(
-            input_size=self.hidden_size,
+            input_size=output_size,
             hidden_size=self.hidden_size // 2,
             num_layers=num_layers,
             dropout=lstm_dropout,
@@ -69,14 +70,14 @@ class PromptEncoder(NeuralModule, Exportable):
             batch_first=True,
         )
         self.mlp_head = nn.Sequential(
-            nn.Linear(self.hidden_size, self.hidden_size), nn.ReLU(), nn.Linear(self.hidden_size, self.hidden_size)
+            nn.Linear(self.hidden_size, self.hidden_size), nn.ReLU(), nn.Linear(self.hidden_size, output_size)
         )
 
     @typecheck()
     def forward(self, taskname_embeddings) -> torch.Tensor:
         input_embeds = self.embedding(self.indices).unsqueeze(0)
         batch_size, task_seq_length, _ = taskname_embeddings.shape
-        input_embeds = input_embeds.expand(batch_size, self.total_virtual_tokens, self.hidden_size).clone()
+        input_embeds = input_embeds.expand(batch_size, self.total_virtual_tokens, self.output_size).clone()
         length = min(task_seq_length, self.total_virtual_tokens)
 
         # Replace general input with task specific embeddings to specify the correct task

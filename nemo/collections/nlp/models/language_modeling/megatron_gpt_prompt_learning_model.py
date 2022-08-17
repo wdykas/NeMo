@@ -249,7 +249,8 @@ class MegatronGPTPromptLearningModel(MegatronBaseModel, TextGeneration):
 
         self.prompt_encoder = PromptEncoder(
             total_virtual_tokens=total_virtual_tokens,
-            hidden_size=self.hidden_size,
+            hidden_size=self.cfg.p_tuning.encoder_hidden,
+            output_size=self.hidden_size,
             lstm_dropout=self.cfg.p_tuning.dropout,
             num_layers=self.cfg.p_tuning.num_layers,
         )
