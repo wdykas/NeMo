@@ -43,6 +43,20 @@ except (ImportError, ModuleNotFoundError):
 __all__ = ["MegatronRetrievalTokenLevelEncoderDecoderModule"]
 
 
+def get_tensor_hook(scale: float):
+    """
+    A tensor hook to scale grad
+    For more details about the tensor hook, check https://pytorch.org/docs/stable/generated/torch.Tensor.register_hook.html 
+
+    Args:
+        scale: scale value
+    """
+
+    def tensor_hook(grad):
+        return grad * scale
+    return tensor_hook
+
+
 class MegatronRetrievalTokenLevelEncoderDecoderModule(MegatronModule):
     """Token-based (input/output is tokens) retrieval encoder-decoder model"""
 
@@ -355,6 +369,7 @@ class MegatronRetrievalTokenLevelEncoderDecoderModule(MegatronModule):
                 inference_max_sequence_len=inference_max_sequence_len,
                 neighbors=neighbors,
             )
+            retrieved_emb.register_hook(get_tensor_hook(1/self.num_chunked_cross_attention))
 
         if self.add_decoder:
             dec_output = self.post_decoder(
