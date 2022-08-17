@@ -98,10 +98,10 @@ class MegatronGPTPromptLearningModel(MegatronBaseModel, TextGeneration):
             frozen_model_cfg.micro_batch_size = self.cfg.micro_batch_size
             frozen_model_cfg.global_batch_size = self.cfg.global_batch_size
             frozen_model_cfg.precision = trainer.precision
-            frozen_model_cfg.sequence_parallel = True
-            frozen_model_cfg.activations_checkpoint_granularity = 'selective'
-            frozen_model_cfg.activations_checkpoint_num_layers = None
-            frozen_model_cfg.activations_checkpoint_method = None
+            # frozen_model_cfg.sequence_parallel = True
+            # frozen_model_cfg.activations_checkpoint_granularity = 'selective'
+            # frozen_model_cfg.activations_checkpoint_num_layers = None
+            # frozen_model_cfg.activations_checkpoint_method = None
 
         # Load pretrained GPT model and tokenizer, frozen model will have lr=0.0
         if cfg.get('language_model_path', None):
