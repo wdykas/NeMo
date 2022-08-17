@@ -65,7 +65,7 @@ def main(cfg) -> None:
             trainer.callbacks[idx] = StatelessTimer(cfg.trainer.max_time,)
 
     # Get the T5 Base configuration.
-    if hasattr(t5_cfg.data.validation_ds, 'task_name'):
+    if hasattr(cfg.model.data.validation_ds, 'task_name'):
         t5_cfg = MegatronT5GLUEModel.restore_from(
             restore_path=cfg.model.restore_from_path, trainer=trainer, return_config=True
         )
