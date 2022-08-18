@@ -69,7 +69,7 @@ class SpeakerBeam(NeuralModule, Exportable):
         return OrderedDict({"audio_signal": NeuralType(('B', 'D', 'T'), SpectrogramType()),})
 
     def __init__(
-        self, feat_in, n_layers, d_model, activation, feat_in_adapt, n_layers_adapt, d_models_adapt, activation_adapt
+        self, feat_in, n_layers, d_model, activation, feat_in_adapt, n_layers_adapt, d_models_adapt, activation_adapt, lstm_layers=1
     ):
         super().__init__()
 
@@ -86,7 +86,7 @@ class SpeakerBeam(NeuralModule, Exportable):
         hidden_size = feat_in
         for i in range(n_layers):
             sub_lstm_layer = nn.LSTM(
-                input_size=hidden_size, hidden_size=self.d_model, num_layers=1, batch_first=True, bidirectional=True,
+                input_size=hidden_size, hidden_size=self.d_model, num_layers=lstm_layers, batch_first=True, bidirectional=True,
             )
             sub_linear = nn.Linear(self.d_model * 2, self.d_model, bias=True)
             sub_activation = speakerbeam_activations[self._activation]()
