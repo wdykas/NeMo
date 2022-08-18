@@ -645,10 +645,13 @@ class RirNoiseSpeakerPerturbation(Perturbation):
         self._min_snr_db = min_snr_db
         self._rng = np.random.RandomState() if rng is None else rng
 
-
     def perturb(self, data, second_speaker, scale_factor, scale_factor_second):
-        self.perturb_with_other_input(data=data, second_speaker=second_speaker, scale_factor=scale_factor, scale_factor_second=scale_factor_second)
-
+        self.perturb_with_other_input(
+            data=data,
+            second_speaker=second_speaker,
+            scale_factor=scale_factor,
+            scale_factor_second=scale_factor_second,
+        )
 
     def perturb_with_other_input(self, data, second_speaker, scale_factor, scale_factor_second):
         scale_factor = float(scale_factor)
@@ -662,12 +665,11 @@ class RirNoiseSpeakerPerturbation(Perturbation):
             noise_gain_db = data.rms_db - second_speaker.rms_db - snr_db
             second_speaker.gain_db(noise_gain_db)
 
-
         if len(data._samples) > len(second_speaker._samples):
-            data._samples[:len(second_speaker._samples)] += second_speaker._samples
+            data._samples[: len(second_speaker._samples)] += second_speaker._samples
         else:
             tmp = second_speaker._samples
-            tmp[:len(data._samples)] +=  data._samples
+            tmp[: len(data._samples)] += data._samples
             data._samples = tmp
 
 

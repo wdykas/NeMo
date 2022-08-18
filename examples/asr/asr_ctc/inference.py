@@ -21,17 +21,18 @@ Use the `process_asr_text_tokenizer.py` script under <NEMO_ROOT>/scripts in orde
 ```
 """
 
+import json
+import sys
+
 import pytorch_lightning as pl
 import torch
 from omegaconf import OmegaConf
+from tqdm import tqdm
 
 import nemo.collections.asr as nemo_asr
 from nemo.core.config import hydra_runner
 from nemo.utils import logging
 from nemo.utils.exp_manager import exp_manager
-from tqdm import tqdm
-import sys
-import json
 
 input_manifest = sys.argv[1]
 new_manifest_path = sys.argv[2]
@@ -44,15 +45,14 @@ with open(input_manifest, 'r') as fp:
 
 
 model = nemo_asr.models.TSEncDecCTCModelBPE.restore_from(ckpt)
-    # model = nemo_asr.models.EncDecCTCModelBPE.restore_from('/home/yangzhang/code/NeMo/examples/asr/asr_ctc/ngc_ckpt/2820728/Conformer-CTC-BPE/2022-04-21_20-26-13/checkpoints/Conformer-CTC-BPE.nemo')
-predictions=[]
+# model = nemo_asr.models.EncDecCTCModelBPE.restore_from('/home/yangzhang/code/NeMo/examples/asr/asr_ctc/ngc_ckpt/2820728/Conformer-CTC-BPE/2022-04-21_20-26-13/checkpoints/Conformer-CTC-BPE.nemo')
+predictions = []
 
 pred = model.transcribe(input_manifest, batch_size=bs)
 predictions.extend(pred)
 
-with open(new_manifest_path, 'w', encoding ='utf8') as fp:
+with open(new_manifest_path, 'w', encoding='utf8') as fp:
     for data, pred in zip(data, predictions):
         data['pred_text'] = pred
         json.dump(data, fp)
         fp.write('\n')
-

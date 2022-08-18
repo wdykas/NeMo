@@ -22,5 +22,6 @@ from nemo.collections.asr.models.k2_sequence_models import EncDecK2SeqModel, Enc
 from nemo.collections.asr.models.label_models import EncDecSpeakerLabelModel
 from nemo.collections.asr.models.msdd_models import EncDecDiarLabelModel
 from nemo.collections.asr.models.rnnt_bpe_models import EncDecRNNTBPEModel
+from nemo.collections.asr.models.rnnt_bpe_models_ts import TSEncDecRNNTBPEModel
 from nemo.collections.asr.models.rnnt_models import EncDecRNNTModel
 from nemo.collections.asr.models.ssl_models import SpeechEncDecSelfSupervisedModel

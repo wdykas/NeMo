@@ -607,7 +607,14 @@ class AudioAndEmbeddingToBPEDataset(AudioToBPEDataset):
         return_sample_id: bool = False,
         synthetic_generation: bool = False,
     ):
-        keep_fields = ["audio_filepath2", "duration2", "scale_factor2", "scale_factor", "audio_filepath_adapt", "duration_adapt"]
+        keep_fields = [
+            "audio_filepath2",
+            "duration2",
+            "scale_factor2",
+            "scale_factor",
+            "audio_filepath_adapt",
+            "duration_adapt",
+        ]
         super().__init__(
             manifest_filepath=manifest_filepath,
             tokenizer=tokenizer,
@@ -667,10 +674,9 @@ class AudioAndEmbeddingToBPEDataset(AudioToBPEDataset):
             other_utterance_duration = other_utterance.duration
             other_utterance_file = other_utterance.audio_file
 
-        
             second_speaker_duration = sample.duration2
             second_speaker_file = sample.audio_filepath2
-            
+
             features, speaker_features = self.featurizer.process(
                 sample.audio_file,
                 duration=sample.duration,
@@ -692,13 +698,12 @@ class AudioAndEmbeddingToBPEDataset(AudioToBPEDataset):
             #         tmp = {"audio_filepath": f, "individual_audio_file": sample.audio_file, "speaker": target_speaker, "duration": len(f)/16000, "text": sample.text_raw, "overlap_audio_filepath_1": second_speaker_file, "other_utterance_file": other_utterance_file}
             #         print(tmp)
             #         fp.write(json.dumps(tmp) + "\n")
-                    
-                    
-                # f = f"{self.eval_individual_dir}/{index}.wav"
-                # sf.write(f, speaker_features, 16000)
-                # with open(self.manifest_eval_aux_utterance, 'a') as fp:
-                #     tmp = {"audio_filepath": f, "individual_audio_file": other_utterance.audio_file, "speaker": target_speaker, "duration": other_utterance.duration, "text": other_utterance.text_raw}
-                #     fp.write(json.dumps(tmp) + "\n")
+
+            # f = f"{self.eval_individual_dir}/{index}.wav"
+            # sf.write(f, speaker_features, 16000)
+            # with open(self.manifest_eval_aux_utterance, 'a') as fp:
+            #     tmp = {"audio_filepath": f, "individual_audio_file": other_utterance.audio_file, "speaker": target_speaker, "duration": other_utterance.duration, "text": other_utterance.text_raw}
+            #     fp.write(json.dumps(tmp) + "\n")
 
         else:
             target_speaker = sample.speaker
@@ -706,10 +711,9 @@ class AudioAndEmbeddingToBPEDataset(AudioToBPEDataset):
             other_utterance_duration = sample.duration_adapt
             other_utterance_file = sample.audio_filepath_adapt
 
-        
             second_speaker_duration = sample.duration2
             second_speaker_file = sample.audio_filepath2
-            
+
             features, speaker_features = self.featurizer.process(
                 sample.audio_file,
                 duration=sample.duration,

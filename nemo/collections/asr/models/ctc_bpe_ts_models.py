@@ -13,15 +13,15 @@
 # limitations under the License.
 
 import copy
-import os
-from copyreg import dispatch_table
-from typing import Dict, Optional, Union
-from tqdm.auto import tqdm
-import tempfile
-from typing import List
 import json
+import os
+import tempfile
+from copyreg import dispatch_table
+from typing import Dict, List, Optional, Union
+
 import torch
 from omegaconf import DictConfig, ListConfig, OmegaConf, open_dict
+from tqdm.auto import tqdm
 
 from nemo.collections.asr.data import audio_to_text_dataset, feature
 from nemo.collections.asr.data.audio_to_text_dali import DALIOutputs
@@ -65,7 +65,6 @@ class TSEncDecCTCModelBPE(EncDecCTCModelBPE):
             self.encoder.freeze()
         if self._cfg.freeze_asr_decoder:
             self.decoder.freeze()
-
 
     @classmethod
     def list_available_models(cls) -> Optional[PretrainedModelInfo]:
@@ -130,18 +129,18 @@ class TSEncDecCTCModelBPE(EncDecCTCModelBPE):
 
         if self.spec_augmentation is not None and self.training:
             processed_signal = self.spec_augmentation(input_spec=processed_signal, length=processed_signal_length)
-        
+
         if self.speaker_model:
             _, speaker_embedding = self.speaker_model.forward(
                 input_signal=speaker_embedding, input_signal_length=embedding_lengths
             )
-            
-        mask = self.speaker_beam(audio_signal=processed_signal, features =speaker_embedding)
+
+        mask = self.speaker_beam(audio_signal=processed_signal, features=speaker_embedding)
         processed_signal = mask * processed_signal
         encoded, encoded_len = self.encoder(audio_signal=processed_signal, length=processed_signal_length)
-                # emb_shape = speaker_embedding.shape[-1]
-                # embs = speaker_embedding.view(-1, emb_shape)
-                # all_embs.extend(embs.cpu().detach().numpy())
+        # emb_shape = speaker_embedding.shape[-1]
+        # embs = speaker_embedding.view(-1, emb_shape)
+        # all_embs.extend(embs.cpu().detach().numpy())
         # speaker_embedding = self.f1(speaker_embedding).unsqueeze(-1).repeat(1, 1, encoded.shape[2])
         # encoded += speaker_embedding
         log_probs = self.decoder(encoder_output=encoded)
@@ -264,7 +263,10 @@ class TSEncDecCTCModelBPE(EncDecCTCModelBPE):
                 return None
 
             dataset = audio_to_text_dataset.get_audio_embedding_bpe_dataset(
-                config=config, tokenizer=self.tokenizer, augmentor=augmentor, synthetic_generation=config.get('synthetic_generation', False)
+                config=config,
+                tokenizer=self.tokenizer,
+                augmentor=augmentor,
+                synthetic_generation=config.get('synthetic_generation', False),
             )
 
         loader = torch.utils.data.DataLoader(
@@ -312,49 +314,6 @@ class TSEncDecCTCModelBPE(EncDecCTCModelBPE):
         temporary_datalayer = self._setup_dataloader_from_config(config=DictConfig(dl_config))
         return temporary_datalayer
 
-    def setup_training_data(self, train_data_config):
-
-        """
-        Sets up the training data loader via a Dict-like object.
-
-        Args:
-            train_data_config: A config that contains the information regarding construction
-                of an ASR Training dataset.
-
-        Supported Datasets:
-            -   :class:`~nemo.collections.asr.data.audio_to_text.AudioToCharDataset`
-            -   :class:`~nemo.collections.asr.data.audio_to_text.AudioToBPEDataset`
-            -   :class:`~nemo.collections.asr.data.audio_to_text.TarredAudioToCharDataset`
-            -   :class:`~nemo.collections.asr.data.audio_to_text.TarredAudioToBPEDataset`
-            -   :class:`~nemo.collections.asr.data.audio_to_text_dali.AudioToCharDALIDataset`
-        """
-        if 'shuffle' not in train_data_config:
-            train_data_config['shuffle'] = True
-
-        # preserve config
-        self._update_dataset_config(dataset_name='train', config=train_data_config)
-
-        self._train_dl = self._setup_dataloader_from_config(config=train_data_config)
-
-        # Need to set this because if using an IterableDataset, the length of the dataloader is the total number
-        # of samples rather than the number of batches, and this messes up the tqdm progress bar.
-        # So we set the number of steps manually (to the correct number) to fix this.
-        if 'is_tarred' in train_data_config and train_data_config['is_tarred']:
-            # We also need to check if limit_train_batches is already set.
-            # If it's an int, we assume that the user has set it to something sane, i.e. <= # training batches,
-            # and don't change it. Otherwise, adjust batches accordingly if it's a float (including 1.0).
-            if self._trainer is not None and isinstance(self._trainer.limit_train_batches, float):
-                self._trainer.limit_train_batches = int(
-                    self._trainer.limit_train_batches
-                    * ceil((len(self._train_dl.dataset) / self.world_size) / train_data_config['batch_size'])
-                )
-            elif self._trainer is None:
-                logging.warning(
-                    "Model Trainer was not set before constructing the dataset, incorrect number of "
-                    "training batches will be used. Please set the trainer and rebuild the dataset."
-                )
-
-    
     @torch.no_grad()
     def transcribe(
         self,
@@ -414,7 +373,7 @@ class TSEncDecCTCModelBPE(EncDecCTCModelBPE):
             logging_level = logging.get_verbosity()
             logging.set_verbosity(logging.WARNING)
             # Work in tmp directory - will store manifest file there
-            
+
             config = {
                 'manifest_filepath': manifest_filepath,
                 'batch_size': batch_size,
@@ -463,4 +422,3 @@ class TSEncDecCTCModelBPE(EncDecCTCModelBPE):
                 self.speaker_model.unfreeze()
             logging.set_verbosity(logging_level)
         return hypotheses
-

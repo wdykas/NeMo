@@ -203,12 +203,24 @@ class WaveformFeaturizerAndEmbedding(WaveformFeaturizer):
                 trim=trim,
                 orig_sr=orig_sr,
             )
-        
-    
-        return self.process_segment(audio, other_utterance=other_utterance, second_speaker=second_speaker,  scale_factor=scale_factor, scale_factor_second=scale_factor2)
 
-    def process_segment(self, audio_segment, other_utterance, second_speaker=None, scale_factor=None, scale_factor_second=None):
-        self.augmentor.perturb(audio_segment, second_speaker=second_speaker, scale_factor=scale_factor, scale_factor_second=scale_factor_second)
+        return self.process_segment(
+            audio,
+            other_utterance=other_utterance,
+            second_speaker=second_speaker,
+            scale_factor=scale_factor,
+            scale_factor_second=scale_factor2,
+        )
+
+    def process_segment(
+        self, audio_segment, other_utterance, second_speaker=None, scale_factor=None, scale_factor_second=None
+    ):
+        self.augmentor.perturb(
+            audio_segment,
+            second_speaker=second_speaker,
+            scale_factor=scale_factor,
+            scale_factor_second=scale_factor_second,
+        )
         return (
             torch.tensor(audio_segment.samples, dtype=torch.float),
             torch.tensor(other_utterance.samples, dtype=torch.float),

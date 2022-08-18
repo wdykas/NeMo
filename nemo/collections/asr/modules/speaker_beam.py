@@ -14,15 +14,16 @@
 
 import math
 from collections import OrderedDict
-from nemo.core.neural_types.elements import MaskType
 
 import torch
 import torch.distributed
 import torch.nn as nn
+
 from nemo.core.classes.common import typecheck
 from nemo.core.classes.exportable import Exportable
 from nemo.core.classes.module import NeuralModule
-from nemo.core.neural_types import  NeuralType, SpectrogramType, EncodedRepresentation
+from nemo.core.neural_types import EncodedRepresentation, NeuralType, SpectrogramType
+from nemo.core.neural_types.elements import MaskType
 
 __all__ = ['SpeakerBeam']
 
@@ -33,7 +34,7 @@ speakerbeam_activations = {
     "selu": nn.SELU,
     "silu": nn.SiLU,
     "gelu": nn.GELU,
-    "sigmoid": nn.Sigmoid
+    "sigmoid": nn.Sigmoid,
 }
 
 
@@ -65,68 +66,49 @@ class SpeakerBeam(NeuralModule, Exportable):
     def output_types(self):
         """Returns definitions of module output ports.
         """
-        return OrderedDict(
-            {
-                "audio_signal": NeuralType(('B', 'D', 'T'), SpectrogramType()),
-            }
-        )
+        return OrderedDict({"audio_signal": NeuralType(('B', 'D', 'T'), SpectrogramType()),})
 
     def __init__(
-        self,
-        feat_in,
-        n_layers,
-        d_model,
-        activation,
-        feat_in_adapt,
-        n_layers_adapt,
-        d_models_adapt,
-        activation_adapt
+        self, feat_in, n_layers, d_model, activation, feat_in_adapt, n_layers_adapt, d_models_adapt, activation_adapt
     ):
         super().__init__()
 
         self.d_model = d_model
         self._feat_in = feat_in
         self._activation = activation
-        
+
         self._feat_in_adapt = feat_in_adapt
         self.layers_adapt = n_layers_adapt
         self.d_model_adapt = d_models_adapt
         self._activation_adapt = activation_adapt
-        
+
         self.layers = nn.ModuleList()
         hidden_size = feat_in
         for i in range(n_layers):
             sub_lstm_layer = nn.LSTM(
-            input_size=hidden_size,
-            hidden_size=self.d_model,
-            num_layers=1,
-            batch_first=True,
-            bidirectional=True,
+                input_size=hidden_size, hidden_size=self.d_model, num_layers=1, batch_first=True, bidirectional=True,
             )
             sub_linear = nn.Linear(self.d_model * 2, self.d_model, bias=True)
             sub_activation = speakerbeam_activations[self._activation]()
             self.layers.append(sub_lstm_layer)
             seq = nn.Sequential(sub_linear, sub_activation)
-            hidden_size=self.d_model
+            hidden_size = self.d_model
             self.layers.append(seq)
-            
-        
+
         sub_linear = nn.Linear(self.d_model, self._feat_in, bias=True)
         sub_activation = speakerbeam_activations["sigmoid"]()
         self.layers.append(nn.Sequential(sub_linear, sub_activation))
-        
-        
+
         self.layers_adapt = nn.ModuleList()
         hidden_size = self._feat_in_adapt
         for i in range(n_layers_adapt):
-            seq = nn.Sequential(nn.Linear(hidden_size, self.d_model_adapt),
-                               speakerbeam_activations[self._activation_adapt]() )
+            seq = nn.Sequential(
+                nn.Linear(hidden_size, self.d_model_adapt), speakerbeam_activations[self._activation_adapt]()
+            )
             hidden_size = self.d_model_adapt
             self.layers_adapt.append(seq)
-        
-        self.layers_adapt.append(nn.Linear(hidden_size, self.d_model))
-        
 
+        self.layers_adapt.append(nn.Linear(hidden_size, self.d_model))
 
     @typecheck()
     def forward(self, audio_signal, features):
@@ -136,7 +118,7 @@ class SpeakerBeam(NeuralModule, Exportable):
         audio_signal = audio_signal.transpose(1, 2)
         for lth, layer in enumerate(self.layers):
             audio_signal = layer(audio_signal)
-            
+
             if isinstance(audio_signal, tuple):
                 audio_signal, _ = audio_signal
             if lth == 1:

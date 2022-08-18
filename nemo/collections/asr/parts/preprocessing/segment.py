@@ -168,7 +168,7 @@ class AudioSegment(object):
         :return: numpy array of samples
         """
         samples = None
-        
+
         if not isinstance(audio_file, str) or os.path.splitext(audio_file)[-1] in sf_supported_formats:
             try:
                 with sf.SoundFile(audio_file, 'r') as f:
