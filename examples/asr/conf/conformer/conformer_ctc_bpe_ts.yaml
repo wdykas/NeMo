@@ -134,6 +134,7 @@ model:
     activation: tanh
     n_layers: 3
     d_model: 256
+    lstm_layers: 1
     feat_in_adapt: ${model.speaker_embeddings.feature_dim}
     n_layers_adapt: 1
     d_models_adapt: 128

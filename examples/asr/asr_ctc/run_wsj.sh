@@ -1,7 +1,9 @@
 #!/bin/bash
 python speech_to_text_ctc_bpe_ts.py \
+--config-path=../conf/conformer \
+--config-name=conformer_ctc_bpe_ts.yaml \
 model.tokenizer.type=bpe \
-model.tokenizer.dir=/home/yangzhang/code/ts_asr/tokenizer_conformer/tokenizer_spe_unigram_v128/ \
+model.tokenizer.dir=/home/yangzhang/code/ts_asr/tokenizer_conformer/ctc_medium/tokenizer_spe_unigram_v128/ \
 model.train_ds.manifest_filepath=/mnt/data/wsj/wsj0-2mix/manifests/train.json \
 trainer.max_epochs=1 \
 model.validation_ds.manifest_filepath=/mnt/data/wsj/wsj0-2mix/manifests/cv.json \
