@@ -131,7 +131,7 @@ model:
       drop_last: false
       shuffle: false
       batch_size: 32
-      num_workers: 2
+      num_workers: 12
 
   preprocessor:
     _target_: nemo.collections.asr.modules.AudioToMelSpectrogramPreprocessor
