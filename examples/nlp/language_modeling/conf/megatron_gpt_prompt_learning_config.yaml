@@ -41,7 +41,7 @@ exp_manager:
 model:
   seed: 1234
   nemo_path: ${name}.nemo # .nemo filename/absolute path to where the virtual prompt model parameters will be saved
-  virtual_prompt_style: 'p-tuning' # one of 'prompt-tuning', 'p-tuning', or 'inference'
+  virtual_prompt_style: 'prompt-tuning' # one of 'prompt-tuning', 'p-tuning', or 'inference'
   encoder_seq_length: 2048 
   tensor_model_parallel_size: 1 # intra-layer model parallelism
   pipeline_model_parallel_size: 1 # inter-layer model parallelism
@@ -68,6 +68,14 @@ model:
     answer_only_loss: False 
     virtual_token_splits: [15, 10, 5]
     truncate_field: null
+  
+  - taskname: "squad" 
+    prompt_template: "<|VIRTUAL_PROMPT_0|> context: {context} question: {question} answer: {answer}" 
+    total_virtual_tokens: 100
+    virtual_token_splits: [100]
+    truncate_field: null
+    answer_only_loss: True
+    answer_field: "answer"
 
   - taskname: "rte" 
     prompt_template: "<|VIRTUAL_PROMPT_0|>{premise}\n{hypothesis}\nAnswer: {answer}" 
