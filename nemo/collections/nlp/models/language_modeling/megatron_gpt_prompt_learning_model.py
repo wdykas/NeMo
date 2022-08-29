@@ -102,6 +102,7 @@ class MegatronGPTPromptLearningModel(MegatronBaseModel, TextGeneration):
             frozen_model_cfg.activations_checkpoint_granularity = self.cfg.activations_checkpoint_granularity
             frozen_model_cfg.activations_checkpoint_num_layers = self.cfg.activations_checkpoint_num_layers
             frozen_model_cfg.activations_checkpoint_method = self.cfg.activations_checkpoint_method
+            frozen_model_cfg.sequence_parallel = False
 
         # Load pretrained GPT model and tokenizer, frozen model will have lr=0.0
         if cfg.get('language_model_path', None):

@@ -75,7 +75,8 @@ def main(cfg) -> None:
             cfg.virtual_prompt_model_file, trainer=trainer, return_config=True
         )
         with open_dict(prompt_learning_cfg):
-            prompt_learning_cfg.pretrained_language_model_path = cfg.pretrained_language_model_file
+            if cfg.get("pretrained_language_model_file"):
+                prompt_learning_cfg.pretrained_language_model_path = cfg.pretrained_language_model_file
             prompt_learning_cfg.micro_batch_size = cfg.data.get('micro_batch_size', 4)
             prompt_learning_cfg.global_batch_size = cfg.data.get('global_batch_size', 4)
 
@@ -109,7 +110,16 @@ def main(cfg) -> None:
         pin_memory=True,
     )
 
-    trainer.predict(model, test_dl)
+    input_prediction_pairs = trainer.predict(model, test_dl)
+    print("***************************")
+    with open(cfg.pred_file_path, "w", encoding="utf-8") as pred_file:
+        for pair in input_prediction_pairs:
+            prompt, pred = pair
+            pred = pred.strip()
+            pred = pred.replace("\n", " ")
+            pred_file.write(pred + "\n")
+    print(f"Inference Complete, prediction file saved at {cfg.pred_file_path}")
+    print("***************************")
 
     print('test finish---------------------------------')
 
