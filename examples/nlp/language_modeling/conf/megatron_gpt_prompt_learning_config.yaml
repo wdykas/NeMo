@@ -11,7 +11,7 @@ trainer:
   max_epochs: 3
   max_steps: -1 # consumed_samples = global_step * micro_batch_size * data_parallel_size * accumulate_grad_batches
   log_every_n_steps: 10
-  val_check_interval: 1.0
+  val_check_interval: 0.2
   accumulate_grad_batches: 1
   gradient_clip_val: 1.0
   resume_from_checkpoint: null # The path to a checkpoint file to continue the training, restores the whole state including the epoch, step, LR schedulers, apex, etc.
@@ -81,6 +81,14 @@ model:
     prompt_template: "<|VIRTUAL_PROMPT_0|>{premise}\n{hypothesis}\nAnswer: {answer}" 
     total_virtual_tokens: 9 
     virtual_token_splits: [9] 
+    truncate_field: null
+    answer_only_loss: True
+    answer_field: "answer"
+  
+  - taskname: "squad" 
+    prompt_template: "<|VIRTUAL_PROMPT_0|> context: {context} question: {question} answer: {answer}" 
+    total_virtual_tokens: 100
+    virtual_token_splits: [100]
     truncate_field: null
     answer_only_loss: True
     answer_field: "answer"
