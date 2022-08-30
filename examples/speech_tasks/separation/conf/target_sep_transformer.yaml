@@ -123,12 +123,21 @@ model:
     stride: 8
     bias: False
 
-  loss:
+  train_loss:
     base_loss:
       _target_: nemo.collections.asr.losses.TargetSiSNR
       sdr_type: sisdr
+      first_channel_only: False
     loss_wrapper: null #permutation_invariance
     loss_clamp: [-30.0, 999999.0]  # upper limit is arbitrary high number
+
+
+  val_loss:
+    base_loss:
+      _target_: nemo.collections.asr.losses.TargetSiSNR
+      sdr_type: sisdr
+      first_channel_only: True
+    loss_wrapper: null #permutation_invariance
 
   optim:
     name: adamw
