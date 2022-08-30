@@ -58,11 +58,11 @@ class PromptEncoder(NeuralModule, Exportable):
         self.register_buffer('indices', torch.LongTensor(list(range(self.total_virtual_tokens))))
 
         # embedding
-        self.embedding = torch.nn.Embedding(self.total_virtual_tokens, output_size)
+        self.embedding = torch.nn.Embedding(self.total_virtual_tokens, hidden_size)
 
         # LSTM
         self.lstm_head = torch.nn.LSTM(
-            input_size=output_size,
+            input_size=hidden_size,
             hidden_size=self.hidden_size // 2,
             num_layers=num_layers,
             dropout=lstm_dropout,
@@ -77,9 +77,10 @@ class PromptEncoder(NeuralModule, Exportable):
     def forward(self, taskname_embeddings) -> torch.Tensor:
         input_embeds = self.embedding(self.indices).unsqueeze(0)
         batch_size, task_seq_length, _ = taskname_embeddings.shape
-        input_embeds = input_embeds.expand(batch_size, self.total_virtual_tokens, self.output_size).clone()
+        input_embeds = input_embeds.expand(batch_size, self.total_virtual_tokens, self.hidden_size).clone()
         length = min(task_seq_length, self.total_virtual_tokens)
-
+        # need to adapt taskname embedding hidden to the same size as hidden_size
+        taskname_embeddings = torch.matmul(taskname_embeddings, self.mlp_head[2].weight)
         # Replace general input with task specific embeddings to specify the correct task
         input_embeds[:, 0:length, :] = taskname_embeddings[:, 0:length, :]
         output_embeds = self.mlp_head(self.lstm_head(input_embeds)[0])
