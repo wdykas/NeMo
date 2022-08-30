@@ -213,7 +213,7 @@ class DualPathModel(NeuralModule, Exportable):
         self.output = nn.Sequential(nn.Conv1d(feat_out, feat_out, 1), nn.Tanh())
         self.output_gate = nn.Sequential(nn.Conv1d(feat_out, feat_out, 1), nn.Sigmoid())
 
-    def forward(self, x):
+    def forward(self, x, emb=None):
         """
         Return output tensor
 

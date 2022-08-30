@@ -46,3 +46,24 @@ def get_audio_to_source_dataset(config: dict, featurizer,) -> audio_to_audio.Aud
         orig_sr=config.get('orig_sr', None),
     )
     return dataset
+
+
+def get_dynamic_target_audio_to_audio_dataset(config: dict, featurizer,) -> audio_to_audio.DynamicTargetAudioToAudioDataset:
+    """
+    Instantiates an audio to source(s) dataset.
+    Args:
+        config: Config of the AudioToSourceDataset.
+        featurizer: An instance of featurizer.
+    Returns:
+        An instance of AudioToSourceDataset.
+    """
+    dataset = audio_to_audio.DynamicTargetAudioToAudioDataset(
+        manifest_filepath=config['manifest_filepath'],
+        featurizer=featurizer,
+        max_duration=config.get('max_duration', None),
+        min_duration=config.get('min_duration', None),
+        max_utts=config.get('max_utts', 0),
+        trim=config.get('trim_silence', False),
+        orig_sr=config.get('orig_sr', None),
+    )
+    return dataset

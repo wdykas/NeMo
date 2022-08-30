@@ -41,10 +41,10 @@ from nemo.utils import logging
 
 EPS = 1e-8
 
-__all__ = ['EncDecSpeechSeparationModel']
+__all__ = ['TargetEncDecSpeechSeparationModel']
 
 
-class EncDecSpeechSeparationModel(SeparationModel):
+class TargetEncDecSpeechSeparationModel(SeparationModel):
     """Base class for encoder-decoder models used for Speech Separation"""
 
     @classmethod
@@ -65,11 +65,17 @@ class EncDecSpeechSeparationModel(SeparationModel):
             self.world_size = trainer.num_nodes * trainer.num_devices
 
         super().__init__(cfg=cfg, trainer=trainer)
-        self.preprocessor = EncDecSpeechSeparationModel.from_config_dict(self._cfg.preprocessor)
-        self.encoder = EncDecSpeechSeparationModel.from_config_dict(self._cfg.encoder)
-        self.decoder = EncDecSpeechSeparationModel.from_config_dict(self._cfg.decoder)
+        self.preprocessor = TargetEncDecSpeechSeparationModel.from_config_dict(self._cfg.preprocessor)
+        self.encoder = TargetEncDecSpeechSeparationModel.from_config_dict(self._cfg.encoder)
+        self.decoder = TargetEncDecSpeechSeparationModel.from_config_dict(self._cfg.decoder)
 
-        base_loss = EncDecSpeechSeparationModel.from_config_dict(self._cfg.loss.base_loss)
+        self.speaker_model = EncDecSpeakerLabelModel.from_pretrained(self._cfg.speaker_embeddings.model_path)
+        if self._cfg.speaker_embeddings.freeze_encoder:
+            self.speaker_model.encoder.freeze()
+        if self._cfg.speaker_embeddings.freeze_decoder:
+            self.speaker_model.decoder.freeze()
+
+        base_loss = TargetEncDecSpeechSeparationModel.from_config_dict(self._cfg.loss.base_loss)
         if self._cfg.loss.loss_wrapper is not None:
             if self._cfg.loss.loss_wrapper == 'permutation_invariance':
                 self.loss = PermuationInvarianceWrapper(base_loss)
@@ -106,7 +112,7 @@ class EncDecSpeechSeparationModel(SeparationModel):
             logging.warning("Could not load dataset as `manifest_filepath` was None. Provided config : {config}")
             return None
 
-        dataset = audio_to_audio_dataset.get_audio_to_source_dataset(config=config, featurizer=featurizer,)
+        dataset = audio_to_audio_dataset.get_dynamic_target_audio_to_audio_dataset(config=config, featurizer=featurizer,)
 
         if hasattr(dataset, 'collate_fn'):
             collate_fn = dataset.collate_fn
@@ -237,7 +243,7 @@ class EncDecSpeechSeparationModel(SeparationModel):
                     "test batches will be used. Please set the trainer and rebuild the dataset."
                 )
 
-    def forward(self, mix_audio):
+    def forward(self, mix_audio, enrollment, enroll_len):
         """
         Forward pass of the model.
 
@@ -247,7 +253,10 @@ class EncDecSpeechSeparationModel(SeparationModel):
     
         """
         mix_feat = self.preprocessor(mix_audio)
-        mask_estimate = self.encoder(mix_feat)
+        _, enroll_emb = self.speaker_model.forward(
+                input_signal=enrollment, input_signal_length=enroll_len
+            )
+        mask_estimate = self.encoder(mix_feat, enroll_emb)
 
         mix_feat = torch.stack([mix_feat] * self.num_sources)
         sep_feat = mix_feat * mask_estimate
@@ -270,11 +279,11 @@ class EncDecSpeechSeparationModel(SeparationModel):
     # PTL-specific methods
     def training_step(self, batch, batch_nb):
         if self.num_sources == 2:
-            input, input_len, target1, target2, sample_ids = batch
+            input, input_len, target1, target2, enrollment, enroll_len = batch
         else:
             logging.info(f"current support is only for 2 sources")
 
-        target_estimate = self.forward(input)
+        target_estimate = self.forward(input, enrollment, enroll_len)
         target = [target1, target2]
         target = torch.cat([target[i].unsqueeze(-1) for i in range(self.num_sources)], dim=-1,)
 
@@ -286,10 +295,10 @@ class EncDecSpeechSeparationModel(SeparationModel):
 
     def validation_step(self, batch, batch_idx, dataloader_idx=0):
         if self.num_sources == 2:
-            input, input_len, target1, target2, sample_ids = batch
+            input, input_len, target1, target2, enrollment, enroll_len = batch
         else:
             logging.info(f"current support is only for 2 sources")
-        target_estimate = self.forward(input)
+        target_estimate = self.forward(input, enrollment, enroll_len)
         target = [target1, target2]
         target = torch.cat([target[i].unsqueeze(-1) for i in range(self.num_sources)], dim=-1,)
 

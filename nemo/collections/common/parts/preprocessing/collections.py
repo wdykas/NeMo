@@ -729,7 +729,7 @@ class Audio(_Collection):
     List of audio's with pre-processing for speech tasks (e.g. separation, enhancement)
     """
 
-    OUTPUT_TYPE = collections.namedtuple(typename='Audio', field_names='audio_file duration offset scale_factor',)
+    OUTPUT_TYPE = collections.namedtuple(typename='Audio', field_names='audio_file duration offset scale_factor speaker',)
 
     def __init__(
         self,
@@ -737,6 +737,7 @@ class Audio(_Collection):
         durations_list: List[tuple],
         offsets_list: List[Optional[tuple]],
         scale_factors_list: List[Optional[tuple]],
+        speaker_list: List[Optional[tuple]] = None,
         min_duration: Optional[float] = None,
         max_duration: Optional[float] = None,
         max_utts: Optional[int] = None,
@@ -750,23 +751,42 @@ class Audio(_Collection):
         output_type = self.OUTPUT_TYPE
         data, duration_filtered = [], 0.0
 
-        for audio_files, durations, offsets, scale_factors in zip(
-            audio_files_list, durations_list, offsets_list, scale_factors_list
+
+        if speaker_list:
+            self.speaker2audio = {}
+        else:
+            speaker_list = []
+
+        idx = 0
+        for audio_files, durations, offsets, scale_factors, speakers in zip(
+            audio_files_list, durations_list, offsets_list, scale_factors_list, speaker_list
         ):
             # duration filters
-            if min_duration is not None and min(durations) < min_duration:
+            if min_duration is not None and durations[0] is not None and  min(durations) < min_duration:
                 duration_filtered += min(durations)
                 continue
 
-            if max_duration is not None and min(durations) > max_duration:
+            if max_duration is not None and durations[0] is not None and  min(durations) > max_duration:
                 duration_filtered += min(durations)
                 continue
 
-            data.append(output_type(audio_files, durations, offsets, scale_factors))
+            data.append(output_type(audio_files, durations, offsets, scale_factors, speakers))
+
+            
+            for speaker in speakers:
+                if speaker and speaker not in self.speaker2audio:
+                    self.speaker2audio[speaker] = [idx]
+                elif speaker and speaker in self.speaker2audio:
+                    self.speaker2audio[speaker].append(idx)
+
+            idx += 1
 
             # Max number of entries filter
             if len(data) == max_utts:
                 break
+
+
+                
 
         logging.info(f"Filtered duration for loading collection is {duration_filtered}")
 
@@ -797,19 +817,22 @@ class SpeechSeparationAudio(Audio):
         """
 
         self.num_sources = num_sources
-        audio_files_list, durations_list, offsets_list, scale_factors_list = [], [], [], []
+        audio_files_list, durations_list, offsets_list, scale_factors_list, speaker_list = [], [], [], [], []
 
         for item in manifest.item_iter(manifest_files, parse_func=self.__parse_item):
             audio_files_list.append(item['audio_file'])
             durations_list.append(item['duration'])
             offsets_list.append(item['offset'])
             scale_factors_list.append(item['scale_factor'])
+            speaker_list.append(item['speaker'])
+            
 
         super().__init__(
             audio_files_list,
             durations_list,
             offsets_list,
             scale_factors_list,
+            speaker_list=speaker_list,
             min_duration=min_duration,
             max_duration=max_duration,
             max_utts=max_utts,
@@ -844,6 +867,7 @@ class SpeechSeparationAudio(Audio):
                 f"Manifest file has invalid json line: {line}.  Number of audio files: {len(item['audio_file'])} not equal to num_sources: {self.num_sources}"
             )
 
+        
         if not (self.num_sources == len(item['duration'])):
             raise ValueError(
                 f"Manifest file has invalid json line: {line}.  Number of durations: {len(item['duration'])} not equal to num_sources: {self.num_sources}"
@@ -864,6 +888,8 @@ class SpeechSeparationAudio(Audio):
             duration=item['duration'],
             offset=item.get('offset', None),
             scale_factor=item.get('scale_factor', None),
+            speaker=item.get('speaker', None),
         )
 
         return item
+
