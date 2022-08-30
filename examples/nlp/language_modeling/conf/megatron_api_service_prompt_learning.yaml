@@ -1,0 +1,110 @@
+name: megatron_virtual_prompt_gpt
+tokens: 100
+taskname: "squad"
+encoder_hidden: 1024
+template: "<|VIRTUAL_PROMPT_0|>{prompt}{answer}" 
+
+trainer:
+  devices: 1
+  accelerator: gpu
+  num_nodes: 1
+  precision: 16
+  logger: False # logger provided by exp_manager
+  enable_checkpointing: False
+  replace_sampler_ddp: False
+  max_epochs: 25
+  max_steps: null # consumed_samples = global_step * micro_batch_size * data_parallel_size * accumulate_grad_batches
+  log_every_n_steps: 10
+  val_check_interval: 1.0
+  accumulate_grad_batches: 1
+  gradient_clip_val: 1.0
+  resume_from_checkpoint: null # The path to a checkpoint file to continue the training, restores the whole state including the epoch, step, LR schedulers, apex, etc.
+  benchmark: False
+
+
+exp_manager:
+  explicit_log_dir: null
+  exp_dir: null
+  name: ${name}
+  create_wandb_logger: False
+  wandb_logger_kwargs:
+    project: null
+    name: null
+  resume_if_exists: True
+  resume_ignore_no_checkpoint: True
+  create_checkpoint_callback: True
+  checkpoint_callback_params:
+    monitor: val_loss
+    save_top_k: 2
+    mode: min
+    save_nemo_on_train_end: False 
+    filename: 'megatron_gpt_prompt_tune--{val_loss:.3f}-{step}'
+    model_parallel_size: ${model.tensor_model_parallel_size}
+    save_best_model: True
+
+model:
+  seed: 1234
+  nemo_path: ${name}.nemo 
+  virtual_prompt_style: 'p-tuning' 
+  encoder_seq_length: 2048 
+  tensor_model_parallel_size: 1 
+  pipeline_model_parallel_size: 1 
+  global_batch_size: 64
+  micro_batch_size: 4
+
+  ## Sequence Parallelism
+  # Makes tensor parallelism more memory efficient for LLMs (20B+) by parallelizing layer norms and dropout sequentially
+  # See Reducing Activation Recomputation in Large Transformer Models: https://arxiv.org/abs/2205.05198 for more details.
+  sequence_parallel: False
+  activations_checkpoint_granularity: null # 'selective' or 'full' 
+
+  # 'uniform' divides the total number of transformer layers and checkpoints the input activation
+  # of each chunk at the specified granularity
+  # 'block' checkpoints the specified number of layers per pipeline stage at the specified granularity
+  activations_checkpoint_method: null # 'uniform', 'block', not used with 'selective'
+
+  activations_checkpoint_num_layers: null # not used with 'selective'
+
+
+  restore_path: null 
+  language_model_path: ?? 
+  existing_tasks: [ ] 
+  new_tasks: ["${taskname}"] 
+
+  task_templates: 
+  - taskname: "${taskname}"
+    prompt_template: "${template}" 
+    total_virtual_tokens: ${tokens}
+    answer_only_loss: True
+    virtual_token_splits: ["${tokens}"]
+    truncate_field: null
+    answer_field: "answer"
+
+  p_tuning: 
+    dropout: 0.0
+    num_layers: 1
+    encoder_hidden: ${encoder_hidden}
+
+  data:
+    train_ds: [data/rte_train.jsonl,]
+    validation_ds: [data/rte_val.jsonl,]
+    add_eos: True
+    shuffle: True
+    num_workers: 8
+    pin_memory: True
+
+
+  optim:
+    name: fused_adam
+    lr: 1e-4
+    weight_decay: 0.01 
+    betas: 
+    - 0.9
+    - 0.98
+    sched:
+      name: CosineAnnealing
+      warmup_steps: 0
+      min_lr: 0.0 # min_lr must be 0.0 for prompt learning when pipeline parallel > 1
+      constant_steps: 0 # Constant steps should also be 0 when min_lr=0
+      monitor: val_loss
+      reduce_on_plateau: false
