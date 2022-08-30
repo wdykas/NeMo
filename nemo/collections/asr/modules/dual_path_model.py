@@ -147,6 +147,9 @@ class DualPathModel(NeuralModule, Exportable):
         skip_around_intra=True,
         linear_layer_after_inter_intra=False,
         max_seq_length=5000,
+        emb_dim=256,
+        use_target_embed=False,
+        fusion_type='add',
         *args,
         **kwargs,
     ):
@@ -155,6 +158,7 @@ class DualPathModel(NeuralModule, Exportable):
         self.num_speakers = num_speakers
         self.chunk_len = chunk_len
         self.num_layers = num_layers
+        self.use_target_embed = use_target_embed
 
         self.norm = nn.GroupNorm(1, feat_in, eps=EPS)
         self.conv1d = nn.Conv1d(feat_in, feat_out, 1, bias=False)
@@ -192,6 +196,7 @@ class DualPathModel(NeuralModule, Exportable):
             raise ValueError(f"{inter_model.get('model_type')} is not valid for inter_model")
 
         self.layers = nn.ModuleList([])
+        self.fusion_mdl = nn.ModuleList([])
         for i in range(num_layers):
             layer = copy.deepcopy(
                 DualBlock(
@@ -203,6 +208,10 @@ class DualPathModel(NeuralModule, Exportable):
                 )
             )
             self.layers.append(layer)
+            if use_target_embed:
+                self.fusion_mdl.append(
+                    FusionLayer(feat_out, emb_dim, fusion_type)
+                )
 
         self.conv2d = nn.Conv2d(feat_out, feat_out * num_speakers, kernel_size=1)
         self.end_conv1x1 = nn.Conv1d(feat_out, feat_in, 1, bias=False)
@@ -237,6 +246,8 @@ class DualPathModel(NeuralModule, Exportable):
         x, pad_len = self._chunk(x, self.chunk_len, hop)
 
         for i, layer in enumerate(self.layers):
+            if self.use_target_embed:
+                x = self.fusion_mdl[i](x, emb)
             x = layer(x)
         x = self.prelu(x)
         # [B, F, C, Nc]
@@ -319,3 +330,58 @@ class DualPathModel(NeuralModule, Exportable):
         x = torch.cat([_pad, x, _pad], dim=2)
 
         return x, pad_len
+
+
+class FusionLayer(nn.Module):
+    def __init__(
+        self,
+        in_dim,
+        emb_dim,
+        fusion_type='cat'
+    ):
+        super().__init__()
+        assert fusion_type in ['cat', 'add', 'mult']
+        self.fusion_type = fusion_type
+        if fusion_type == 'cat':
+            self.layer = nn.Linear(in_dim + emb_dim, in_dim)
+        elif fusion_type in ['add', 'mult']:
+            self.layer = nn.Linear(emb_dim, in_dim)
+
+        
+
+    def forward(self, x, emb):
+        '''
+            args:
+                x: Tensor with shape [B, N, K, S],
+                    B is batch size, N is channel, K is chunk len, S is num chunk
+                emb: Tensor with shape [B, D]
+                    D is embedder dimension
+        '''
+        # [B, D, K, S]
+        emb = emb.unsqueeze(-1).unsqueeze(-1).expand(-1, -1, x.shape[2], x.shape[3])
+        if self.fusion_type == 'cat':
+            # [B, N+D, K, S]
+            x = torch.cat([x, emb], dim=1)
+            # [B, K, S, N+D]
+            x = x.permute(0, 2, 3, 1).contiguous()
+            # [B, K, S, N]
+            out = self.layer(x)
+            # [B, N, K, S]
+            out = out.permute(0, 3, 1, 2).contiguous()
+        elif self.fusion_type == 'add':
+            # [B, K, S, D]
+            emb = emb.permute(0, 2, 3, 1).contiguous()
+            # [B, K, S, N]
+            out = self.layer(emb)
+            # [B, N, K, S]
+            out = out.permute(0, 3, 1, 2).contiguous()
+            out = x + out
+        elif self.fusion_type == 'mult':
+            # [B, K, S, D]
+            emb = emb.permute(0, 2, 3, 1).contiguous()
+            # [B, K, S, N]
+            out = self.layer(emb)
+            # [B, N, K, S]
+            out = out.permute(0, 3, 1, 2).contiguous()
+            out = x * out
+        return out

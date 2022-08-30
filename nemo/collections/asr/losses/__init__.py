@@ -15,7 +15,7 @@
 from nemo.collections.asr.losses.angularloss import AngularSoftmaxLoss
 from nemo.collections.asr.losses.ctc import CTCLoss
 from nemo.collections.asr.losses.lattice_losses import LatticeLoss
-from nemo.collections.asr.losses.ss_losses.si_snr import SiSNR
+from nemo.collections.asr.losses.ss_losses.si_snr import SiSNR, TargetSiSNR
 from nemo.collections.asr.losses.ssl_losses.contrastive import ContrastiveLoss
 from nemo.collections.asr.losses.ssl_losses.ctc import CTCLossForSSL
 from nemo.collections.asr.losses.ssl_losses.mlm import MLMLoss

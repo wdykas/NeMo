@@ -21,7 +21,7 @@ from torch import nn
 from nemo.core import Loss, typecheck
 from nemo.core.neural_types import AcousticEncodedRepresentation, LengthsType, LossType, NeuralType, SpectrogramType
 
-__all__ = ["SiSNR"]
+__all__ = ["SiSNR", "TargetSiSNR"]
 
 
 class SiSNR(Loss):
@@ -206,3 +206,72 @@ class PermuationInvarianceWrapper(Loss):
                 loss = current_loss
                 optimal_perm = p
         return loss, optimal_perm
+
+
+
+
+
+
+class TargetSiSNR(Loss):
+
+    """
+    Calculate Scale-Invariant SNR
+    """
+    def __init__(self, sdr_type, zero_mean=True, take_log=True, EPS=1e-8, first_channel_only=False):
+        super().__init__()
+
+        assert sdr_type in ["snr", "sisdr", "sdsdr"]
+        self.sdr_type = sdr_type
+        self.zero_mean = zero_mean
+        self.take_log = take_log
+        self.EPS = 1e-8
+        self.first_channel_only = first_channel_only
+
+    def forward(self, est_targets, targets, src_masks=None):
+        '''
+            args:
+                est_targets: [bs, n_time, n_src]
+                src_mask: [bs, n_src] or None
+        '''
+        if targets.size() != est_targets.size() or targets.ndim != 3:
+            raise TypeError(
+                f"Inputs must be of shape [batch, time, n_src], got {targets.size()} and {est_targets.size()} instead"
+            )
+        if src_masks is None:
+            src_masks = torch.ones(targets.shape[0], targets.shape[-1]).to(targets.device)
+        # evaluate with the target speaker only: [bs, n_time, 1]
+        if self.first_channel_only:
+            est_targets = est_targets[:, :, 0].unsqueeze(-1)
+            targets = targets[:, :, 0].unsqueeze(-1)
+            # [bs, 1]
+            src_masks = src_masks[:, 0].unsqueeze(-1)
+        est_targets = est_targets.permute(0, 2, 1).contiguous()
+        targets = targets.permute(0, 2, 1).contiguous()
+        if self.zero_mean:
+            mean_source = torch.mean(targets, dim=2, keepdim=True)
+            mean_estimate = torch.mean(est_targets, dim=2, keepdim=True)
+            targets = targets - mean_source
+            est_targets = est_targets - mean_estimate
+        # Step 2. Pair-wise SI-SDR.
+        if self.sdr_type in ["sisdr", "sdsdr"]:
+            # [batch, n_src]
+            pair_wise_dot = torch.sum(est_targets * targets, dim=2, keepdim=True)
+            # [batch, n_src]
+            s_target_energy = torch.sum(targets ** 2, dim=2, keepdim=True) + self.EPS
+            # [batch, n_src, time]
+            scaled_targets = pair_wise_dot * targets / s_target_energy
+        else:
+            # [batch, n_src, time]
+            scaled_targets = targets
+        if self.sdr_type in ["sdsdr", "snr"]:
+            e_noise = est_targets - targets
+        else:
+            e_noise = est_targets - scaled_targets
+        # [batch, n_src]
+        pair_wise_sdr = torch.sum(scaled_targets ** 2, dim=2) / (
+            torch.sum(e_noise ** 2, dim=2) + self.EPS
+        )
+        pair_wise_sdr = src_masks * pair_wise_sdr
+        if self.take_log:
+            pair_wise_sdr = 10 * torch.log10(pair_wise_sdr + self.EPS)
+        return -torch.mean(pair_wise_sdr, dim=-1).mean()

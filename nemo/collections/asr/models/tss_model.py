@@ -254,8 +254,9 @@ class TargetEncDecSpeechSeparationModel(SeparationModel):
         """
         mix_feat = self.preprocessor(mix_audio)
         _, enroll_emb = self.speaker_model.forward(
-                input_signal=enrollment, input_signal_length=enroll_len
+                input_signal=torch.concat([enrollment, enrollment]), input_signal_length=torch.concat([enroll_len, enroll_len])
             )
+        enroll_emb = enroll_emb[:1, :]
         mask_estimate = self.encoder(mix_feat, enroll_emb)
 
         mix_feat = torch.stack([mix_feat] * self.num_sources)
@@ -287,8 +288,8 @@ class TargetEncDecSpeechSeparationModel(SeparationModel):
         target = [target1, target2]
         target = torch.cat([target[i].unsqueeze(-1) for i in range(self.num_sources)], dim=-1,)
 
-        loss, _ = self.loss(preds=target_estimate, targets=target)
-        loss = loss.mean().clamp(*self.loss_clamp)
+        loss = self.loss(target_estimate, target)
+        loss = loss.clamp(*self.loss_clamp)
 
         tensorboard_logs = {'train_loss': loss, 'learning_rate': self._optimizer.param_groups[0]['lr']}
         return {'loss': loss, 'log': tensorboard_logs}
@@ -302,8 +303,7 @@ class TargetEncDecSpeechSeparationModel(SeparationModel):
         target = [target1, target2]
         target = torch.cat([target[i].unsqueeze(-1) for i in range(self.num_sources)], dim=-1,)
 
-        loss, _ = self.loss(preds=target_estimate, targets=target)
-        loss = loss.mean()
+        loss = self.loss(target_estimate, target)
 
         return {
             'val_loss': loss,

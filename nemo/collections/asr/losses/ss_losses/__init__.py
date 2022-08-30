@@ -12,4 +12,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nemo.collections.asr.losses.ss_losses.si_snr import SiSNR
+from nemo.collections.asr.losses.ss_losses.si_snr import SiSNR, TargetSiSNR

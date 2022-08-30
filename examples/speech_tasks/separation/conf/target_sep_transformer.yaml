@@ -77,6 +77,9 @@ model:
     num_layers: 2
     ff_expansion_factor: 4      # expansion factor in 
     chunk_len: 250
+    emb_dim: 192
+    use_target_embed: True
+    fusion_type: 'add'
     
     ### regularization
     dropout: 0.0 # The dropout used in most of the Transformer/Conformer Modules
@@ -122,8 +125,9 @@ model:
 
   loss:
     base_loss:
-      _target_: nemo.collections.asr.losses.SiSNR
-    loss_wrapper: permutation_invariance
+      _target_: nemo.collections.asr.losses.TargetSiSNR
+      sdr_type: sisdr
+    loss_wrapper: null #permutation_invariance
     loss_clamp: [-30.0, 999999.0]  # upper limit is arbitrary high number
 
   optim:
