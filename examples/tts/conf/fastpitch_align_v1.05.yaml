@@ -31,8 +31,8 @@ lowfreq: 0
 highfreq: 8000
 window: hann
 
-phoneme_dict_path: "scripts/tts_dataset_files/cmudict-0.7b_nv22.01"
-heteronyms_path: "scripts/tts_dataset_files/heteronyms-030921"
+phoneme_dict_path: "scripts/tts_dataset_files/cmudict-0.7b_nv22.08"
+heteronyms_path: "scripts/tts_dataset_files/heteronyms-052722"
 whitelist_path: "nemo_text_processing/text_normalization/en/data/whitelist/lj_speech.tsv"
 
 model:
@@ -75,14 +75,14 @@ model:
     punct_post_process: true
 
   text_tokenizer:
-    _target_: nemo.collections.tts.torch.tts_tokenizers.EnglishPhonemesTokenizer
+    _target_: nemo.collections.common.tokenizers.text_to_speech.tts_tokenizers.EnglishPhonemesTokenizer
     punct: true
     stresses: true
     chars: true
     apostrophe: true
     pad_with_space: true
     g2p:
-      _target_: nemo.collections.tts.torch.g2ps.EnglishG2p
+      _target_: nemo_text_processing.g2p.modules.EnglishG2p
       phoneme_dict: ${phoneme_dict_path}
       heteronyms: ${heteronyms_path}
       # phoneme_probability: 0.5
@@ -115,8 +115,9 @@ model:
     dataloader_params:
       drop_last: false
       shuffle: true
-      batch_size: 24
-      num_workers: 8
+      batch_size: 32
+      num_workers: 12
+      pin_memory: true
 
   validation_ds:
     dataset:
@@ -148,7 +149,7 @@ model:
       shuffle: false
       batch_size: 24
       num_workers: 8
-    
+      pin_memory: true
 
   preprocessor:
     _target_: nemo.collections.asr.modules.AudioToMelSpectrogramPreprocessor
@@ -220,9 +221,9 @@ model:
     _target_: nemo.collections.tts.modules.fastpitch.MultipleRandomWindowDisciminator
 
   optim:
-    name: lamb
-    lr: 2e-4
-    betas: [0.9, 0.98]
+    name: adamw
+    lr: 1e-3
+    betas: [0.9, 0.999]
     weight_decay: 1e-6
 
     sched:
@@ -243,7 +244,8 @@ trainer:
   enable_checkpointing: False # Provided by exp_manager
   logger: false # Provided by exp_manager
   log_every_n_steps: 100
-  check_val_every_n_epoch: 10
+  check_val_every_n_epoch: 5
+  benchmark: false
 
 exp_manager:
   exp_dir: 'fastpitch_fixed/'

@@ -16,7 +16,7 @@ import re
 from typing import Optional
 
 import torch
-from omegaconf.dictconfig import DictConfig
+from omegaconf import DictConfig
 from pytorch_lightning.plugins.precision.native_amp import NativeMixedPrecisionPlugin
 from pytorch_lightning.trainer.trainer import Trainer
 
@@ -24,8 +24,12 @@ from nemo.collections.nlp.data.language_modeling.megatron.data_samplers import (
     MegatronPretrainingRandomSampler,
     MegatronPretrainingSampler,
 )
-from nemo.collections.nlp.data.language_modeling.megatron.retro_dataset import build_mock_train_valid_test_datasets
+from nemo.collections.nlp.data.language_modeling.megatron.retro_dataset import (
+    build_mock_train_valid_test_datasets,
+    build_train_valid_test_datasets,
+)
 from nemo.collections.nlp.models.language_modeling.megatron_base_model import MegatronBaseModel
+from nemo.collections.nlp.modules.common.megatron.module import Float16Module
 from nemo.collections.nlp.modules.common.megatron.retrieval_token_level_encoder_decoder import (
     MegatronRetrievalTokenLevelEncoderDecoderModule,
 )
@@ -34,6 +38,7 @@ from nemo.collections.nlp.modules.common.megatron.utils import (
     average_losses_across_data_parallel_group,
     get_params_for_weight_decay_optimization,
 )
+from nemo.collections.nlp.modules.common.tokenizer_utils import get_nmt_tokenizer
 from nemo.collections.nlp.parts.nlp_overrides import GradScaler
 from nemo.utils import AppState, logging
 
@@ -60,6 +65,17 @@ class MegatronRetrievalModel(MegatronBaseModel):
 
         # TODO does not support PP yet
         self.model = self.model_provider_func(pre_process=True, post_process=True, add_encoder=True, add_decoder=True)
+
+        self.megatron_amp_o2 = cfg.get('megatron_amp_O2', False)
+
+        if self.megatron_amp_o2:
+
+            # Pre-allocate the model on GPU to have master parameters allocated on the same device with matching data type
+            self.model.cuda(torch.cuda.current_device())
+
+            # Model wrapper to convert both model and inputs to half precision
+            self.model = Float16Module(module=self.model, precision=self.cfg.precision)
+
         # self.setup_optimizer_param_groups()
         if self.cfg.precision == 32:
             self.autocast_dtype = torch.float
@@ -70,11 +86,19 @@ class MegatronRetrievalModel(MegatronBaseModel):
         else:
             raise ValueError('precision must be in [32, 16, "bf16"]')
         self.model.model_type = ModelType.encoder_and_decoder
-        # not using amp o2
-        self.megatron_amp_o2 = False
+        # self.grad_clip_pl_default = True
 
     def _build_tokenizer(self):
-        super()._build_tokenizer()
+        self.tokenizer = get_nmt_tokenizer(
+            library=self._cfg.tokenizer.library,
+            model_name=self._cfg.tokenizer.type,
+            tokenizer_model=self.register_artifact("tokenizer.model", self._cfg.tokenizer.model),
+            vocab_file=self.register_artifact("tokenizer.vocab_file", self._cfg.tokenizer.vocab_file),
+            merges_file=self.register_artifact("tokenizer.merge_file", self._cfg.tokenizer.merge_file),
+            delimiter=self.cfg.tokenizer.get('delimiter', None),
+            legacy=False,
+        )
+
         # add pad special token
         if not hasattr(self.tokenizer, "pad_id"):
             self.tokenizer.add_special_tokens({'pad_token': '<pad>'})
@@ -113,6 +137,9 @@ class MegatronRetrievalModel(MegatronBaseModel):
             onnx_safe=self.cfg.get('onnx_safe', False),
             activation=self.cfg.get('activation', 'gelu'),
             bias=self.cfg.get('bias', True),
+            normalization=self.cfg.get('normalization', 'layernorm'),
+            headscale=self.cfg.get('headscale', False),
+            transformer_block_type=self.cfg.get('transformer_block_type', 'pre_ln'),
             add_encoder=add_encoder,
             add_decoder=add_decoder,
             chunk_size=self.cfg.get('chunk_size', 64),  # the chunk size used to retrive
@@ -169,6 +196,27 @@ class MegatronRetrievalModel(MegatronBaseModel):
         reduced_loss = average_losses_across_data_parallel_group([lm_loss])
         self._reduced_loss_buffer.append(reduced_loss[0])
 
+        if self.cfg.precision == 16:
+            loss_scale = self.trainer.precision_plugin.scaler._scale
+            if loss_scale is not None:
+                self.log('loss_scale', loss_scale)
+        # while async grad allreduce is enabled, bprop will keep moving forward without waiting for
+        # the finish of async grad AR works. Hence, to guarantee the correctness of grads reduction,
+        # we cannot start weight update until all async grad AR works are done.
+        if self.megatron_amp_o2 and self.cfg.get('pipeline_model_parallel_size', 1) == 1:
+            torch.cuda.synchronize()
+
+        if self.megatron_amp_o2:
+            # when using pipeline parallelism grads must be reduced after the pipeline (not asynchronously)
+            if self.cfg.get('pipeline_model_parallel_size', 1) > 1:
+                # main grads are stored in the MainParamsOptimizer wrapper
+                self._optimizer.allreduce_main_grads()
+        else:
+            # async grad allreduce is not currently implemented for O1/autocasting mixed precision training
+            # no pipeline, so use the default pytorch lightning way of doing all_reduce
+            # self.allreduce_gradients()  # @sangkug we think this is causing memory to blow up (hurts perf)
+            pass
+
         if (batch_idx + 1) % self.trainer.accumulate_grad_batches == 0:
             # Reduced loss for logging.
             average_reduced_loss = sum(self._reduced_loss_buffer) / len(self._reduced_loss_buffer)
@@ -216,7 +264,6 @@ class MegatronRetrievalModel(MegatronBaseModel):
                         scheduler['scheduler'].step()
 
                     # Increase the max step count by 1
-                    self.trainer.fit_loop.max_steps = self.trainer.fit_loop.max_steps + 1
 
                     # Reset the optimizer update skipped to `None` - this is to prevent scheduler no-ops during
                     # accumulated gradient updates.
@@ -240,6 +287,9 @@ class MegatronRetrievalModel(MegatronBaseModel):
             return
         averaged_loss = torch.stack(outputs).mean()
         self.log('val_loss', averaged_loss, prog_bar=True)
+        # formula to compute the perplexity
+        # https://towardsdatascience.com/the-relationship-between-perplexity-and-entropy-in-nlp-f81888775ccc
+        self.log('perplexity', torch.exp(averaged_loss), prog_bar=True)
         self.log('consumed_samples', self.compute_consumed_samples(self.trainer.global_step - self.init_global_step))
         return averaged_loss
 
@@ -256,13 +306,40 @@ class MegatronRetrievalModel(MegatronBaseModel):
 
     def build_train_valid_test_datasets(self):
         logging.info('Building RETRO datasets.')
-        self._train_ds, self._validation_ds, self._test_ds = build_mock_train_valid_test_datasets(
-            cfg=self.cfg,
-            trainer=self.trainer,
-            splits_string=self.cfg.data.splits_string,
-            tokenizer=self.tokenizer,
-            mock_data_size=self.cfg.data.get('mock_data_size', 10000),
-        )
+        global_batch_size = self.trainer.world_size * self.cfg.micro_batch_size // self.cfg.tensor_model_parallel_size
+        # Compute trianing micro-batch steps: total_global_batch_steps x grad_acumms_per_global_batch
+        max_train_steps = self.trainer.max_steps * self.trainer.accumulate_grad_batches
+        eval_iters = (max_train_steps // self.trainer.val_check_interval + 1) * self.trainer.limit_val_batches
+        test_iters = self.trainer.limit_test_batches
+
+        train_valid_test_num_samples = [
+            max_train_steps * global_batch_size,
+            eval_iters * global_batch_size,
+            test_iters * global_batch_size,
+        ]
+        if self.cfg.data.get('mock', False):
+            self._train_ds, self._validation_ds, self._test_ds = build_mock_train_valid_test_datasets(
+                cfg=self.cfg,
+                trainer=self.trainer,
+                splits_string=self.cfg.data.splits_string,
+                tokenizer=self.tokenizer,
+                mock_data_size=self.cfg.data.get('mock_data_size', 10000),
+            )
+        else:
+            self._train_ds, self._validation_ds, self._test_ds = build_train_valid_test_datasets(
+                cfg=self.cfg,
+                trainer=self.trainer,
+                data_prefix=self.cfg.data.data_prefix,
+                data_impl=self.cfg.data.data_impl,
+                splits_string=self.cfg.data.splits_string,
+                train_valid_test_num_samples=train_valid_test_num_samples,
+                seq_length=self.cfg.data.seq_length,
+                seed=self.cfg.seed,
+                skip_warmup=self.cfg.data.get('skip_warmup', True),
+                tokenizer=self.tokenizer,
+                retrieval_prefix=self.cfg.data.retrieval_prefix,
+                knn_map_path=self.cfg.data.knn_index,
+            )
         if self._train_ds is not None:
             logging.info(f'Length of train dataset: {len(self._train_ds)}')
         if self._validation_ds is not None:

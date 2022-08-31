@@ -40,6 +40,11 @@ class TextMemMapDataset(Dataset):
         self, dataset_paths, newline_int=10, header_lines=0, workers=None, tokenizer=None, sort_dataset_paths=True,
     ):
         super().__init__()
+        self.mdata_midx_list = []
+
+        # Make a single string into a list
+        if isinstance(dataset_paths, str):
+            dataset_paths = [dataset_paths]
 
         if len(dataset_paths) < 1:
             raise ValueError("files_list must contain at leat one file name")
@@ -106,7 +111,7 @@ class TextMemMapDataset(Dataset):
             i = midx[file_idx - 1] + 1  # ignore newline
             j = midx[file_idx]
 
-        text = mdata[i:j].tobytes().decode("ascii")
+        text = mdata[i:j].tobytes().decode("utf-8")
 
         # parse raw text (e.g., tokenize)
         data = self._build_data_from_text(text)
@@ -149,7 +154,9 @@ class TextMemMapDataset(Dataset):
             if 'newline_int' in idx_dict:
                 newline_int = idx_dict['newline_int']
                 if self._newline_int != newline_int:
-                    logger.warning(f"Mismatch in newline_int, expected = {self._newline_int} but loaded {newline_int}")
+                    logging.warning(
+                        f"Mismatch in newline_int, expected = {self._newline_int} but loaded {newline_int}"
+                    )
 
             # test for version mismatch (useful to force recreation of index files)
             idx_version = idx_dict.get('version', '0.0')
