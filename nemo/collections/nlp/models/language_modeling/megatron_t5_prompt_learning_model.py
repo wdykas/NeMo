@@ -269,18 +269,12 @@ class MegatronT5PromptLearningModel(MegatronBasePromptLearningModel):
                 idx = pred.index(self.tokenizer.eos_id)
                 pred = pred[:idx]
 
-            # Sentencepiece case
-            if hasattr(self.tokenizer, 'special_token_to_id'):
-                pred = [id for id in pred if id not in self.tokenizer.special_token_to_id.values()]
-                label = [id for id in label if id not in self.tokenizer.special_token_to_id.values()]
-                enc_input = [id for id in enc_input if id not in self.tokenizer.special_token_to_id.values()]
-            # HF Autotokenizer case.
-            else:
-                pred = [id for id in pred if id not in self.tokenizer.tokenizer.additional_special_tokens_ids]
-                label = [id for id in label if id not in self.tokenizer.tokenizer.additional_special_tokens_ids]
-                enc_input = [
-                    id for id in enc_input if id not in self.tokenizer.tokenizer.additional_special_tokens_ids
-                ]
+            # Semantics to access special tokens in HF tokenizers vs sentencepiece tokenizers is different.
+            # if hasattr(self.tokenizer, 'special_token_to_id') is True, this is a sentencepiece tokenizer, else HF tokenizer.
+            special_token_ids = self.tokenizer.special_token_to_id.values() if hasattr(self.tokenizer, 'special_token_to_id') else self.tokenizer.tokenizer.additional_special_tokens_ids
+            pred = [id for id in pred if id not in special_token_ids]
+            label = [id for id in label if id not in special_token_ids]
+            enc_input = [id for id in enc_input if id not in special_token_ids]
 
             pred = self.tokenizer.ids_to_text(pred)
             label = self.tokenizer.ids_to_text(label)
@@ -424,10 +418,13 @@ class MegatronT5PromptLearningModel(MegatronBasePromptLearningModel):
                 idx = pred.index(self.tokenizer.eos_id)
                 pred = pred[:idx]
 
+            # Semantics to access special tokens in HF tokenizers vs sentencepiece tokenizers is different.
+            # if hasattr(self.tokenizer, 'special_token_to_id') is True, this is a sentencepiece tokenizer, else HF tokenizer.
+            special_token_ids = self.tokenizer.special_token_to_id.values() if hasattr(self.tokenizer, 'special_token_to_id') else self.tokenizer.tokenizer.additional_special_tokens_ids
             pred = [
                 id
                 for id in pred
-                if id not in self.tokenizer.tokenizer.additional_special_tokens_ids
+                if id not in special_token_ids
                 and id not in self.tokenizer.text_to_ids(T5Sentinel.FIRST.value)
             ]  # delete the sentinel token at the beginning of prediction
 
@@ -445,7 +442,7 @@ class MegatronT5PromptLearningModel(MegatronBasePromptLearningModel):
                 label = [
                     id
                     for id in label
-                    if id not in self.tokenizer.tokenizer.additional_special_tokens_ids
+                    if id not in special_token_ids
                     and id not in self.tokenizer.text_to_ids(T5Sentinel.FIRST.value)
                 ]  # delete the sentinel token at the beginning of label
 
