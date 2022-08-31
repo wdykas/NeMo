@@ -15,7 +15,7 @@ import io
 import math
 import os
 from typing import Callable, Dict, Iterable, List, Optional, Union
-
+import random
 import braceexpand
 import numpy as np
 import torch
@@ -31,7 +31,7 @@ from nemo.core.neural_types import *
 from nemo.utils import logging
 
 __all__ = [
-    'AudioToAudioDataset', 'DynamicTargetAudioToAudioDataset', 'AudioToSourceDataset'
+    'AudioToAudioDataset', 'DynamicTargetAudioToAudioDataset', 'AudioToSourceDataset', 'StaticTargetAudioToAudioDataset'
 ]
 
 
@@ -265,6 +265,9 @@ class DynamicTargetAudioToAudioDataset(_AudioDataset):
         second_pt = super().__getitem__(second_speaker_index)['features_list'][0]
         enroll_pt = super().__getitem__(enroll_index)['features_list'][0]
 
+        
+        enroll_len = torch.tensor(enroll_pt.shape[0]).long()
+
         features_list = [target_pt, second_pt]
         features_lengths = [torch.tensor(x.shape[0]).long() for x in features_list]
 
@@ -272,17 +275,119 @@ class DynamicTargetAudioToAudioDataset(_AudioDataset):
 
 
         t1, t2 = [x[:min_l] for x in features_list]
+        
+        t1_gain = np.clip(random.normalvariate(-27.43, 2.57), -45, 0)
+        t1 = _rescale(t1, t1_gain)
+        t2_gain = np.clip(
+                    t1_gain + random.normalvariate(-2.51, 2.66), -45, 0
+                )
+        t2 = _rescale(t2, t2_gain)
         mix = t1 + t2
-        output = [mix, torch.tensor(min_l).long(), t1, t2, enroll_pt, torch.tensor(enroll_pt.shape[0]).long()]
+
+        sources = torch.stack([t1, t2], dim=0)
+        max_amp = max(
+            torch.abs(mix).max().item(),
+            *[x.item() for x in torch.abs(sources).max(dim=-1)[0]],
+        )
+
+        mix_scaling = 1 / max_amp * 0.9
+        t1 = mix_scaling * t1
+        t2 = mix_scaling * t2
+        mix = mix_scaling * mix
+        output = [mix, torch.tensor(min_l).long(), t1, t2, enroll_pt, enroll_len]
 
 
         return output
 
     def _collate_fn(self, batch):
-        return _dynamic_target_audio_to_audio_collate_fn(batch)
+        return _target_audio_to_audio_collate_fn(batch)
 
 
-def _dynamic_target_audio_to_audio_collate_fn(batch):
+def _rescale(x, gain):
+    x = x.unsqueeze(0)
+    EPS = 1e-14
+    avg_amplitude = torch.mean(torch.abs(x), dim=1, keepdim=True)
+    normalized = x/ (avg_amplitude + EPS)
+    out = 10 **  (gain/20 ) * normalized
+    out = out.squeeze(0)
+    return out
+
+
+class StaticTargetAudioToAudioDataset(_AudioDataset):
+    """
+    AudioToAudioDataset is intended for Audio to Audio tasks such as speech separation,
+    speech enchancement, music source separation etc.
+    """
+
+
+    @property
+    def output_types(self) -> Optional[Dict[str, NeuralType]]:
+        """Returns definitions of module output ports"""
+        output = {}
+        output['mixed_audio'] = NeuralType(('B', 'T'), AudioSignal())
+        output['mixed_audio_len'] = NeuralType(tuple('B'), LengthsType())
+        output['target1'] = NeuralType(('B', 'T'), AudioSignal())
+        output['target2'] = NeuralType(('B', 'T'), AudioSignal())
+        output['enrollment'] = NeuralType(('B', 'T'), AudioSignal())
+        output['enrollment_len'] = NeuralType(tuple('B'), LengthsType())
+        return output
+
+    def __init__(
+        self,
+        manifest_filepath: str,
+        featurizer,
+        max_duration: Optional[float] = None,
+        min_duration: Optional[float] = None,
+        max_utts: Optional[int] = None,
+        *args,
+        **kwargs,
+    ):
+        super().__init__(
+            manifest_filepath=manifest_filepath,
+            num_sources=3,
+            featurizer=featurizer,
+            max_duration=max_duration,
+            min_duration=min_duration,
+            max_utts=max_utts,
+            **kwargs,
+        )
+
+
+
+    def __getitem__(self, index):
+
+        data_pt = super().__getitem__(index)
+        features_list = data_pt['features_list']
+        enroll_pt = features_list[-1]
+        enroll_len = torch.tensor(features_list[-1].shape[0]).long()
+
+        features_list = features_list[:-1]
+        features_lengths = [torch.tensor(x.shape[0]).long() for x in features_list]
+
+        min_l = torch.min(torch.stack(features_lengths)).item()
+        t1, t2 = [x[:min_l] for x in features_list]
+        mix = t1 + t2
+
+        sources = torch.stack([t1, t2], dim=0)
+        max_amp = max(
+            torch.abs(mix).max().item(),
+            *[x.item() for x in torch.abs(sources).max(dim=-1)[0]],
+        )
+
+        mix_scaling = 1 / max_amp * 0.9
+        t1 = mix_scaling * t1
+        t2 = mix_scaling * t2
+        mix = mix_scaling * mix
+
+        output = [mix, torch.tensor(min_l).long(), t1, t2, enroll_pt, enroll_len]
+        return output
+
+    def _collate_fn(self, batch):
+        return _target_audio_to_audio_collate_fn(batch)
+
+
+
+def _target_audio_to_audio_collate_fn(batch):
     """collate batch 
     Args:
         batch 

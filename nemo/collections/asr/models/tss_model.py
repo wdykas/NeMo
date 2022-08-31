@@ -108,7 +108,10 @@ class TargetEncDecSpeechSeparationModel(SeparationModel):
             logging.warning("Could not load dataset as `manifest_filepath` was None. Provided config : {config}")
             return None
 
-        dataset = audio_to_audio_dataset.get_dynamic_target_audio_to_audio_dataset(config=config, featurizer=featurizer,)
+        if config.get('dynamic_mixing', False):
+            dataset = audio_to_audio_dataset.get_dynamic_target_audio_to_audio_dataset(config=config, featurizer=featurizer,)
+        else:
+            dataset = audio_to_audio_dataset.get_static_target_audio_to_audio_dataset(config=config, featurizer=featurizer,)
 
         if hasattr(dataset, 'collate_fn'):
             collate_fn = dataset.collate_fn

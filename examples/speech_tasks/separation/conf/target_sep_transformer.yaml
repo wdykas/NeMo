@@ -11,6 +11,7 @@ model:
   skip_nan_grad: false
   train_ds:
     manifest_filepath: ???
+    dynamic_mixing: True
     sample_rate: ${model.sample_rate}
     orig_sr: ${model.original_sample_rate}
     num_sources: ${num_sources}
@@ -36,6 +37,7 @@ model:
     num_sources: ${num_sources}
     batch_size: 1 
     shuffle: false
+    dynamic_mixing: False
     num_workers: 4
     pin_memory: true
 
@@ -47,6 +49,7 @@ model:
     batch_size: 1 
     shuffle: false
     num_workers: 4
+    dynamic_mixing: False
     pin_memory: true
 
   d_model: 256
@@ -88,7 +91,7 @@ model:
     
     intra_model:
       model_type: transformer 
-      num_layers: 2
+      num_layers: 8
       d_model: ${model.d_model}
       ff_expansion_factor: ${model.encoder.ff_expansion_factor}
       n_heads: 8
@@ -101,7 +104,7 @@ model:
 
     inter_model:
       model_type: transformer
-      num_layers: 2
+      num_layers: 8
       d_model: ${model.d_model}
       ff_expansion_factor: ${model.encoder.ff_expansion_factor}
       n_heads: 8
@@ -152,13 +155,13 @@ model:
 trainer:
   devices: -1 # number of GPUs, -1 would use all available GPUs
   num_nodes: 1
-  max_epochs: 65
+  max_epochs: 100
   accelerator: auto
   max_steps: -1 # computed at runtime if not set
   val_check_interval: 1.0 # Set to 0.25 to check 4 times per epoch, or an int for number of iterations
   strategy: ddp
   accumulate_grad_batches: 1
-  gradient_clip_val: 1.0
+  gradient_clip_val: 5.0
   precision: 32 # Should be set to 16 for O1 and O2 to enable the AMP.
   log_every_n_steps: 100  # Interval of logging.
   resume_from_checkpoint: null # The path to a checkpoint file to continue the training, restores the whole state including the epoch, step, LR schedulers, apex, etc.

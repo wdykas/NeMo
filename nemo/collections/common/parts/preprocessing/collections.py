@@ -772,12 +772,12 @@ class Audio(_Collection):
 
             data.append(output_type(audio_files, durations, offsets, scale_factors, speakers))
 
-            
-            for speaker in speakers:
-                if speaker and speaker not in self.speaker2audio:
-                    self.speaker2audio[speaker] = [idx]
-                elif speaker and speaker in self.speaker2audio:
-                    self.speaker2audio[speaker].append(idx)
+            if speakers is not None: 
+                for speaker in speakers:
+                    if speaker and speaker not in self.speaker2audio:
+                        self.speaker2audio[speaker] = [idx]
+                    elif speaker and speaker in self.speaker2audio:
+                        self.speaker2audio[speaker].append(idx)
 
             idx += 1
 
