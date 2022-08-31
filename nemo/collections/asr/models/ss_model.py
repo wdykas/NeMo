@@ -30,10 +30,10 @@ from pytorch_lightning import Trainer
 
 from nemo.collections.asr.data import audio_to_audio_dataset
 from nemo.collections.asr.losses.ss_losses.si_snr import PermuationInvarianceWrapper
+from nemo.collections.asr.models.label_models import EncDecSpeakerLabelModel
 from nemo.collections.asr.models.separation_model import SeparationModel
 from nemo.collections.asr.parts.preprocessing.features import WaveformFeaturizer
 from nemo.collections.asr.parts.preprocessing.perturb import process_augmentations
-from nemo.collections.asr.models.label_models import EncDecSpeakerLabelModel
 from nemo.core.classes import ModelPT
 from nemo.core.classes.common import PretrainedModelInfo, typecheck
 from nemo.core.neural_types import AudioSignal, LengthsType, NeuralType, SpectrogramType, VoidType

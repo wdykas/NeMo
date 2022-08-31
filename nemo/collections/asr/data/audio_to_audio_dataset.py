@@ -48,7 +48,9 @@ def get_audio_to_source_dataset(config: dict, featurizer,) -> audio_to_audio.Aud
     return dataset
 
 
-def get_dynamic_target_audio_to_audio_dataset(config: dict, featurizer,) -> audio_to_audio.DynamicTargetAudioToAudioDataset:
+def get_dynamic_target_audio_to_audio_dataset(
+    config: dict, featurizer,
+) -> audio_to_audio.DynamicTargetAudioToAudioDataset:
     """
     Instantiates an audio to source(s) dataset.
     Args:
@@ -69,7 +71,9 @@ def get_dynamic_target_audio_to_audio_dataset(config: dict, featurizer,) -> audi
     return dataset
 
 
-def get_static_target_audio_to_audio_dataset(config: dict, featurizer,) -> audio_to_audio.StaticTargetAudioToAudioDataset:
+def get_static_target_audio_to_audio_dataset(
+    config: dict, featurizer,
+) -> audio_to_audio.StaticTargetAudioToAudioDataset:
     """
     Instantiates an audio to source(s) dataset.
     Args:

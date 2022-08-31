@@ -150,6 +150,10 @@ model:
     # less necessity for weight_decay as we already have large augmentations with SpecAug
     # you may need weight_decay for large models, stable AMP training, small datasets, or when lower augmentations are used
     weight_decay: 0
+    sched:
+      name: CosineAnnealing
+      warmup_steps: 10000
+      min_lr: 1e-6
 
 
 trainer:

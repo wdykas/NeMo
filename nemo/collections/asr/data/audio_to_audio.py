@@ -14,8 +14,9 @@
 import io
 import math
 import os
-from typing import Callable, Dict, Iterable, List, Optional, Union
 import random
+from typing import Callable, Dict, Iterable, List, Optional, Union
+
 import braceexpand
 import numpy as np
 import torch
@@ -31,7 +32,10 @@ from nemo.core.neural_types import *
 from nemo.utils import logging
 
 __all__ = [
-    'AudioToAudioDataset', 'DynamicTargetAudioToAudioDataset', 'AudioToSourceDataset', 'StaticTargetAudioToAudioDataset'
+    'AudioToAudioDataset',
+    'DynamicTargetAudioToAudioDataset',
+    'AudioToSourceDataset',
+    'StaticTargetAudioToAudioDataset',
 ]
 
 
@@ -202,17 +206,11 @@ def _audio_to_audio_collate_fn(batch):
         return audio_signal, audio_lengths, target1, target2, target3, sample_ids
 
 
-
-
-
-
-
 class DynamicTargetAudioToAudioDataset(_AudioDataset):
     """
     AudioToAudioDataset is intended for Audio to Audio tasks such as speech separation,
     speech enchancement, music source separation etc.
     """
-
 
     @property
     def output_types(self) -> Optional[Dict[str, NeuralType]]:
@@ -246,26 +244,18 @@ class DynamicTargetAudioToAudioDataset(_AudioDataset):
             **kwargs,
         )
 
-
-
     def __getitem__(self, index):
         sample = self.collection[index]
         target_speaker = sample.speaker[0]
+        enroll_index = np.random.choice(self.collection.speaker2audio[target_speaker])
 
-        enroll_index = np.random.choice(
-               self.collection.speaker2audio[target_speaker]
-            )
-        
         second_speaker = np.random.choice(list(self.collection.speaker2audio.keys()))
 
-        second_speaker_index = np.random.choice(
-               self.collection.speaker2audio[second_speaker]
-            )
+        second_speaker_index = np.random.choice(self.collection.speaker2audio[second_speaker])
         target_pt = super().__getitem__(index)['features_list'][0]
         second_pt = super().__getitem__(second_speaker_index)['features_list'][0]
         enroll_pt = super().__getitem__(enroll_index)['features_list'][0]
 
-        
         enroll_len = torch.tensor(enroll_pt.shape[0]).long()
 
         features_list = [target_pt, second_pt]
@@ -273,29 +263,22 @@ class DynamicTargetAudioToAudioDataset(_AudioDataset):
 
         min_l = torch.min(torch.stack(features_lengths)).item()
 
-
         t1, t2 = [x[:min_l] for x in features_list]
-        
+
         t1_gain = np.clip(random.normalvariate(-27.43, 2.57), -45, 0)
         t1 = _rescale(t1, t1_gain)
-        t2_gain = np.clip(
-                    t1_gain + random.normalvariate(-2.51, 2.66), -45, 0
-                )
+        t2_gain = np.clip(t1_gain + random.normalvariate(-2.51, 2.66), -45, 0)
         t2 = _rescale(t2, t2_gain)
         mix = t1 + t2
 
         sources = torch.stack([t1, t2], dim=0)
-        max_amp = max(
-            torch.abs(mix).max().item(),
-            *[x.item() for x in torch.abs(sources).max(dim=-1)[0]],
-        )
+        max_amp = max(torch.abs(mix).max().item(), *[x.item() for x in torch.abs(sources).max(dim=-1)[0]],)
 
         mix_scaling = 1 / max_amp * 0.9
         t1 = mix_scaling * t1
         t2 = mix_scaling * t2
         mix = mix_scaling * mix
         output = [mix, torch.tensor(min_l).long(), t1, t2, enroll_pt, enroll_len]
-
 
         return output
 
@@ -307,8 +290,8 @@ def _rescale(x, gain):
     x = x.unsqueeze(0)
     EPS = 1e-14
     avg_amplitude = torch.mean(torch.abs(x), dim=1, keepdim=True)
-    normalized = x/ (avg_amplitude + EPS)
-    out = 10 **  (gain/20 ) * normalized
+    normalized = x / (avg_amplitude + EPS)
+    out = 10 ** (gain / 20) * normalized
     out = out.squeeze(0)
     return out
 
@@ -318,7 +301,6 @@ class StaticTargetAudioToAudioDataset(_AudioDataset):
     AudioToAudioDataset is intended for Audio to Audio tasks such as speech separation,
     speech enchancement, music source separation etc.
     """
-
 
     @property
     def output_types(self) -> Optional[Dict[str, NeuralType]]:
@@ -352,8 +334,6 @@ class StaticTargetAudioToAudioDataset(_AudioDataset):
             **kwargs,
         )
 
-
-
     def __getitem__(self, index):
 
         data_pt = super().__getitem__(index)
@@ -369,10 +349,7 @@ class StaticTargetAudioToAudioDataset(_AudioDataset):
         mix = t1 + t2
 
         sources = torch.stack([t1, t2], dim=0)
-        max_amp = max(
-            torch.abs(mix).max().item(),
-            *[x.item() for x in torch.abs(sources).max(dim=-1)[0]],
-        )
+        max_amp = max(torch.abs(mix).max().item(), *[x.item() for x in torch.abs(sources).max(dim=-1)[0]],)
 
         mix_scaling = 1 / max_amp * 0.9
         t1 = mix_scaling * t1
@@ -384,7 +361,6 @@ class StaticTargetAudioToAudioDataset(_AudioDataset):
 
     def _collate_fn(self, batch):
         return _target_audio_to_audio_collate_fn(batch)
-
 
 
 def _target_audio_to_audio_collate_fn(batch):
@@ -421,7 +397,6 @@ def _target_audio_to_audio_collate_fn(batch):
                 pad = (0, max_enroll_len - enroll_len)
                 enroll_sig = torch.nn.functional.pad(enroll_sig, pad)
 
-
             audio_signal.append(sig)
             target1.append(t1)
             target2.append(t2)
@@ -435,10 +410,16 @@ def _target_audio_to_audio_collate_fn(batch):
         audio_lengths = torch.stack(audio_lengths)
         enroll_lengths = torch.stack(enroll_lengths)
     else:
-        audio_signal, audio_lengths, target1, target2, enroll_signal, enroll_lengths = None, None, None, None, None, None
+        audio_signal, audio_lengths, target1, target2, enroll_signal, enroll_lengths = (
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
 
     return audio_signal, audio_lengths, target1, target2, enroll_signal, enroll_lengths
-
 
 
 def test_AudioToSourceDataset():

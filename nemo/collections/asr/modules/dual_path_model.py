@@ -209,9 +209,7 @@ class DualPathModel(NeuralModule, Exportable):
             )
             self.layers.append(layer)
             if use_target_embed:
-                self.fusion_mdl.append(
-                    FusionLayer(feat_out, emb_dim, fusion_type)
-                )
+                self.fusion_mdl.append(FusionLayer(feat_out, emb_dim, fusion_type))
 
         self.conv2d = nn.Conv2d(feat_out, feat_out * num_speakers, kernel_size=1)
         self.end_conv1x1 = nn.Conv1d(feat_out, feat_in, 1, bias=False)
@@ -333,12 +331,7 @@ class DualPathModel(NeuralModule, Exportable):
 
 
 class FusionLayer(nn.Module):
-    def __init__(
-        self,
-        in_dim,
-        emb_dim,
-        fusion_type='cat'
-    ):
+    def __init__(self, in_dim, emb_dim, fusion_type='cat'):
         super().__init__()
         assert fusion_type in ['cat', 'add', 'mult']
         self.fusion_type = fusion_type
@@ -346,8 +339,6 @@ class FusionLayer(nn.Module):
             self.layer = nn.Linear(in_dim + emb_dim, in_dim)
         elif fusion_type in ['add', 'mult']:
             self.layer = nn.Linear(emb_dim, in_dim)
-
-        
 
     def forward(self, x, emb):
         '''

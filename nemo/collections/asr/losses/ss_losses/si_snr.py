@@ -208,15 +208,12 @@ class PermuationInvarianceWrapper(Loss):
         return loss, optimal_perm
 
 
-
-
-
-
 class TargetSiSNR(Loss):
 
     """
     Calculate Scale-Invariant SNR
     """
+
     def __init__(self, sdr_type, zero_mean=True, take_log=True, EPS=1e-8, first_channel_only=False):
         super().__init__()
 
@@ -268,9 +265,7 @@ class TargetSiSNR(Loss):
         else:
             e_noise = est_targets - scaled_targets
         # [batch, n_src]
-        pair_wise_sdr = torch.sum(scaled_targets ** 2, dim=2) / (
-            torch.sum(e_noise ** 2, dim=2) + self.EPS
-        )
+        pair_wise_sdr = torch.sum(scaled_targets ** 2, dim=2) / (torch.sum(e_noise ** 2, dim=2) + self.EPS)
         pair_wise_sdr = src_masks * pair_wise_sdr
         if self.take_log:
             pair_wise_sdr = 10 * torch.log10(pair_wise_sdr + self.EPS)

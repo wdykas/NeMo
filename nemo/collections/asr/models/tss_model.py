@@ -30,10 +30,10 @@ from pytorch_lightning import Trainer
 
 from nemo.collections.asr.data import audio_to_audio_dataset
 from nemo.collections.asr.losses.ss_losses.si_snr import PermuationInvarianceWrapper
+from nemo.collections.asr.models.label_models import EncDecSpeakerLabelModel
 from nemo.collections.asr.models.separation_model import SeparationModel
 from nemo.collections.asr.parts.preprocessing.features import WaveformFeaturizer
 from nemo.collections.asr.parts.preprocessing.perturb import process_augmentations
-from nemo.collections.asr.models.label_models import EncDecSpeakerLabelModel
 from nemo.core.classes import ModelPT
 from nemo.core.classes.common import PretrainedModelInfo, typecheck
 from nemo.core.neural_types import AudioSignal, LengthsType, NeuralType, SpectrogramType, VoidType
@@ -109,9 +109,13 @@ class TargetEncDecSpeechSeparationModel(SeparationModel):
             return None
 
         if config.get('dynamic_mixing', False):
-            dataset = audio_to_audio_dataset.get_dynamic_target_audio_to_audio_dataset(config=config, featurizer=featurizer,)
+            dataset = audio_to_audio_dataset.get_dynamic_target_audio_to_audio_dataset(
+                config=config, featurizer=featurizer,
+            )
         else:
-            dataset = audio_to_audio_dataset.get_static_target_audio_to_audio_dataset(config=config, featurizer=featurizer,)
+            dataset = audio_to_audio_dataset.get_static_target_audio_to_audio_dataset(
+                config=config, featurizer=featurizer,
+            )
 
         if hasattr(dataset, 'collate_fn'):
             collate_fn = dataset.collate_fn
@@ -253,9 +257,7 @@ class TargetEncDecSpeechSeparationModel(SeparationModel):
         """
         mix_feat = self.preprocessor(mix_audio)
         self.speaker_model.eval()
-        _, enroll_emb = self.speaker_model.forward(
-                input_signal=enrollment, input_signal_length=enroll_len
-            )
+        _, enroll_emb = self.speaker_model.forward(input_signal=enrollment, input_signal_length=enroll_len)
         mask_estimate = self.encoder(mix_feat, enroll_emb)
 
         mix_feat = torch.stack([mix_feat] * self.num_sources)
