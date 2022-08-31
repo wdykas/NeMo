@@ -229,7 +229,7 @@ class TTSDataset(Dataset):
                     if "normalized_text" in item:
                         file_info["normalized_text"] = item["normalized_text"]
                     elif "text_normalized" in item:
-                        file_info["normalized_text"] = item["text_normalized"]not in item and "tts_text_normalized" not
+                        file_info["normalized_text"] = item["text_normalized"]
                     elif "tts_text_normalized" in item:
                         file_info["normalized_text"] = item["tts_text_normalized"]
                     else:
