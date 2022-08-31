@@ -80,7 +80,7 @@ model:
     num_layers: 2
     ff_expansion_factor: 4      # expansion factor in 
     chunk_len: 250
-    emb_dim: 192
+    emb_dim: ${model.speaker_embeddings.feature_dim}
     use_target_embed: True
     fusion_type: 'add'
     
