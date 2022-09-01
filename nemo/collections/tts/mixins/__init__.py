@@ -13,3 +13,5 @@
 # limitations under the License.
 
 from nemo.collections.tts.mixins.fastpitch_adapter_mixins import FastPitchAdapterModelMixin
+from nemo.collections.tts.mixins.fastpitch_lora_mixins import FastPitchLoraModelMixin
+from nemo.collections.tts.mixins.fastpitch_prefix_mixins import FastPitchPrefixModelMixin

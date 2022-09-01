@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import math
+import torch
 from dataclasses import dataclass, is_dataclass
 from typing import Optional
 
@@ -136,6 +138,109 @@ class LinearAdapter(AbstractAdapterModule):
 
         return x
 
+    
+    
+class LoRA(AbstractAdapterModule):
+    """
+    Args:
+        in_features: Input dimension of the module.
+        out_features: Output dimension of the module.
+        r (int, optional): The rank of the LoRA layer. Defaults to 8.
+        alpha (int, optional): The hyperparameter used for scaling the LoRA reparametrization. Defaults to 8.
+        dropout: float value, whether to perform dropout on the input.
+        adapter_strategy: By default, AddAdapterStrategyConfig. An adapter composition function object.
+    """
+    def __init__(
+        self,
+        in_features: int,
+        out_features: int,
+        r: int = 8,
+        alpha: int = 8,
+        dropout: float = 0.0,
+        adapter_strategy: adapter_mixin_strategies.AddAdapterStrategyConfig = None,
+    ):
+
+        super().__init__()
+        self.lora_A_q = nn.Parameter(torch.zeros(r,in_features))
+        self.lora_B_q = nn.Parameter(torch.zeros(out_features,r))
+        self.lora_A_k = nn.Parameter(torch.zeros(r,in_features))
+        self.lora_B_k = nn.Parameter(torch.zeros(out_features,r))
+        self.scaling = alpha / r
+        
+        if dropout > 0.0:
+            self.dropout = nn.Dropout(dropout)
+        else:
+            self.dropout = None
+        
+        # Setup adapter strategy
+        self.setup_adapter_strategy(adapter_strategy)
+        
+        # reset parameters
+        self.reset_parameters()
+        
+    def reset_parameters(self):
+        nn.init.kaiming_uniform_(self.lora_A_q, a=math.sqrt(5))
+        nn.init.zeros_(self.lora_B_q)
+        nn.init.kaiming_uniform_(self.lora_A_k, a=math.sqrt(5))
+        nn.init.zeros_(self.lora_B_k)
+        
+    def forward(self, x):
+        
+        # Add dropout if available
+        if self.dropout is not None:
+            x = self.dropout(x)
+        
+        x_q = x @ self.lora_A_q.T @ self.lora_B_q.T * self.scaling
+        x_k = x @ self.lora_A_k.T @ self.lora_B_k.T * self.scaling
+        return torch.cat((x_q,x_k), dim=2)
+        
+        
+class Prefix(AbstractAdapterModule):
+    """
+    Args:
+        in_features: Input dimension of the module.
+        dim: Hidden dimension of the feed forward network.
+        prefix_length: The length of the prefix tokens.
+        dropout: float value, whether to perform dropout on the output of the last layer of the prefixes.
+        adapter_strategy: By default, AddAdapterStrategyConfig. An adapter composition function object.
+    """
+    def __init__(
+        self,
+        in_features: int,
+        dim: int,
+        prefix_length: int,
+        dropout: float = 0.0,
+        adapter_strategy: adapter_mixin_strategies.AddAdapterStrategyConfig = None,
+    ):
+
+        super().__init__()
+        
+        self.in_features = in_features         
+        self.prefix_length = prefix_length
+        
+        self.wte = nn.Embedding(self.prefix_length, in_features)
+        self.control_trans = nn.Sequential(
+            nn.Linear(in_features, dim),
+            nn.Tanh(),
+            nn.Linear(dim, 2 * in_features),
+        )
+
+        if dropout > 0.0:
+            self.dropout = nn.Dropout(dropout)
+        else:
+            self.dropout = None
+        
+        # Setup adapter strategy
+        self.setup_adapter_strategy(adapter_strategy)
+
+    def forward(self, x):
+        batch_size = x.shape[0]
+        input_tokens = torch.arange(self.prefix_length).long()
+        input_tokens = input_tokens.unsqueeze(0).expand(batch_size, -1).to(x.device)
+        embs = self.wte(input_tokens)
+        key_values = self.control_trans(embs)
+        key_values = self.dropout(key_values)
+        return key_values
 
 @dataclass
 class LinearAdapterConfig:
@@ -146,3 +251,24 @@ class LinearAdapterConfig:
     dropout: float = 0.0
     adapter_strategy: Optional[dict] = adapter_mixin_strategies.ResidualAddAdapterStrategyConfig()
     _target_: str = "{0}.{1}".format(LinearAdapter.__module__, LinearAdapter.__name__)
+
+
+@dataclass
+class LoraConfig:
+    in_features: int
+    out_features: int
+    r: int = 8
+    alpha: int = 8
+    dropout: float = 0.0
+    adapter_strategy: Optional[dict] = adapter_mixin_strategies.AddAdapterStrategyConfig()
+    _target_: str = "{0}.{1}".format(LoRA.__module__, LoRA.__name__)
+    
+    
+@dataclass
+class PrefixConfig:
+    in_features: int
+    dim: int
+    prefix_length: int
+    dropout: float = 0.0
+    adapter_strategy: Optional[dict] = adapter_mixin_strategies.AddAdapterStrategyConfig()
+    _target_: str = "{0}.{1}".format(Prefix.__module__, Prefix.__name__)

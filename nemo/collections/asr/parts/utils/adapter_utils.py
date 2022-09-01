@@ -58,3 +58,33 @@ def update_adapter_cfg_input_dim(module: torch.nn.Module, cfg: DictConfig, *, mo
         raise ValueError(
             f"Failed to infer the input dimension of the Adapter cfg. Provided config : \n" f"{OmegaConf.to_yaml(cfg)}"
         )
+        
+        
+def update_adapter_cfg_output_dim(module: torch.nn.Module, cfg: DictConfig, *, module_dim: int):
+    """
+    Update the output dimension of the provided adapter config with some default value.
+
+    Args:
+        module: The module that implements AdapterModuleMixin.
+        cfg: A DictConfig or a Dataclass representing the adapter config.
+        module_dim: A default module dimension, used if cfg has an incorrect output dimension.
+
+    Returns:
+        A DictConfig representing the adapter's config.
+    """
+    cfg = convert_adapter_cfg_to_dict_config(cfg)
+
+    if 'out_features' in cfg:
+        out_planes = cfg['out_features']
+
+        if out_planes != module_dim:
+            logging.info(f"Updating {module.__class__.__name__} Adapter output dim from {out_planes} to {module_dim}")
+            out_planes = module_dim
+
+        cfg['out_features'] = out_planes
+        return cfg
+    else:
+        raise ValueError(
+            f"Failed to infer the output dimension of the Adapter cfg. Provided config : \n" f"{OmegaConf.to_yaml(cfg)}"
+        )
+

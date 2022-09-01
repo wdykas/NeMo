@@ -21,7 +21,7 @@ from nemo.core.config import hydra_runner
 from nemo.utils import logging
 from nemo.utils.exp_manager import exp_manager
 
-from nemo.core import adapter_mixins
+from nemo.core import adapter_mixins, lora_mixins, prefix_mixins
 from nemo.collections.common.parts import adapter_modules
 from omegaconf import DictConfig, open_dict
 
@@ -49,8 +49,32 @@ def update_model_config_to_support_adapter(config) -> DictConfig:
             
     return config
 
+def update_model_config_to_support_lora(config) -> DictConfig:
+    with open_dict(config):
+        enc_lora_metadata = lora_mixins.get_registered_lora(config.input_fft._target_)
+        if enc_lora_metadata is not None:
+            config.input_fft._target_ = enc_lora_metadata.lora_class_path
 
-@hydra_runner(config_path="conf", config_name="fastpitch_align_44100")
+        dec_lora_metadata = lora_mixins.get_registered_lora(config.output_fft._target_)
+        if dec_lora_metadata is not None:
+            config.output_fft._target_ = dec_lora_metadata.lora_class_path
+             
+    return config
+
+def update_model_config_to_support_prefix(config) -> DictConfig:
+    with open_dict(config):
+        enc_prefix_metadata = prefix_mixins.get_registered_prefix(config.input_fft._target_)
+        if enc_prefix_metadata is not None:
+            config.input_fft._target_ = enc_prefix_metadata.prefix_class_path
+
+        dec_prefix_metadata = prefix_mixins.get_registered_prefix(config.output_fft._target_)
+        if dec_prefix_metadata is not None:
+            config.output_fft._target_ = dec_prefix_metadata.prefix_class_path
+             
+    return config
+
+
+@hydra_runner(config_path="conf", config_name="fastpitch_align_v1.05")
 def main(cfg):
     if hasattr(cfg.model.optim, 'sched'):
         logging.warning("You are using an optimizer scheduler while finetuning. Are you sure this is intended?")
@@ -61,20 +85,34 @@ def main(cfg):
     exp_manager(trainer, cfg.get("exp_manager", None))   
     n_speakers = cfg.model.n_speakers
     
-    if cfg.finetune.add_random_speaker:
+    if cfg.finetune_multispeaker.add_random_speaker:
         cfg.model.n_speakers += 1
+    
+    if cfg.finetune_multispeaker.add_adapter:
+        model = FastPitchModel(cfg=update_model_config_to_support_adapter(cfg.model), trainer=trainer)
+    
+    elif cfg.finetune_multispeaker.add_lora:
+        model = FastPitchModel(cfg=update_model_config_to_support_lora(cfg.model), trainer=trainer)
+    
+    elif cfg.finetune_multispeaker.add_prefix:
+        model = FastPitchModel(cfg=update_model_config_to_support_prefix(cfg.model), trainer=trainer)
         
-    model = FastPitchModel(cfg=update_model_config_to_support_adapter(cfg.model), trainer=trainer)
+    else:
+        model = FastPitchModel(cfg=cfg.model, trainer=trainer)
+        
     model.fastpitch.speaker_emb = torch.nn.Embedding(n_speakers, model.fastpitch.speaker_emb.embedding_dim)
     model.maybe_init_from_pretrained_checkpoint(cfg=cfg)
     
      # Freeze 
-    if cfg.finetune.freeze_all: model.freeze()
-    if cfg.finetune.freeze_encoder: model.fastpitch.encoder.freeze()
-    if cfg.finetune.freeze_decoder: model.fastpitch.decoder.freeze()
-
+    if cfg.finetune_multispeaker.freeze_all: model.freeze()
+    if cfg.finetune_multispeaker.freeze_encoder: model.fastpitch.encoder.freeze()
+    if cfg.finetune_multispeaker.freeze_decoder: model.fastpitch.decoder.freeze()
+    
+    """
+    Speaker related modules
+    """
     # Add new speaker embedding
-    if cfg.finetune.add_random_speaker and model.fastpitch.speaker_emb is not None:
+    if cfg.finetune_multispeaker.add_random_speaker and model.fastpitch.speaker_emb is not None:
         old_emb = model.fastpitch.speaker_emb
         
         # Choose random
@@ -88,13 +126,29 @@ def main(cfg):
         model.cfg.n_speakers += 1
     
     # Add weighted sum speaker embedding
-    elif cfg.finetune.add_weight_speaker and model.fastpitch.speaker_emb is not None:
+    elif cfg.finetune_multispeaker.add_weight_speaker and model.fastpitch.speaker_emb is not None:
         old_emb = model.fastpitch.speaker_emb
         new_emb = Weighted_SpeakerEmbedding(pretrained_embedding=old_emb)
         model.fastpitch.speaker_emb = new_emb
+    
+    # Add conditional layer normalization
+    if cfg.finetune_multispeaker.add_cln:
+        for name, param in model.named_parameters():
+            if 'weight.weight' in name or 'weight.bias' in name \
+                or 'bias.weight' in name or 'bias.bias' in name:
+                if not param.requires_grad:
+                    param.requires_grad = True 
+    """
+    Parameter-efficient modules
+    """
+    # Add bitfit
+    if cfg.finetune_multispeaker.add_bitfit:
+        for name, param in model.named_parameters():
+            if 'bias' in name and not param.requires_grad:
+                param.requires_grad = True        
 
     # Add adapter
-    if cfg.finetune.add_adapter:
+    if cfg.finetune_multispeaker.add_adapter:
         adapter_cfg = adapter_modules.LinearAdapterConfig(
             in_features=model.cfg.output_fft.d_model,  # conformer specific model dim. Every layer emits this dim at its output.
             dim=256,  # the bottleneck dimension of the adapter
@@ -106,7 +160,34 @@ def main(cfg):
         model.set_enabled_adapters(enabled=False)
         model.set_enabled_adapters('adapter', enabled=True)
         model.unfreeze_enabled_adapters()
-   
+    
+    # Add lora
+    if cfg.finetune_multispeaker.add_lora:
+        lora_cfg = adapter_modules.LoraConfig(
+            in_features=model.cfg.output_fft.d_model, 
+            out_features=model.cfg.output_fft.n_head * model.cfg.output_fft.d_head,
+            r=256, 
+            alpha=8,
+            dropout=0.9,
+        )
+        model.add_lora(name='encoder+decoder:lora', cfg=lora_cfg)
+        model.set_enabled_loras(enabled=False)
+        model.set_enabled_loras('lora', enabled=True)
+        model.unfreeze_enabled_loras()
+        
+    # Add prefix
+    if cfg.finetune_multispeaker.add_prefix:
+        prefix_cfg = adapter_modules.PrefixConfig(
+            in_features=model.cfg.output_fft.n_head * model.cfg.output_fft.d_head, 
+            dim=256,
+            prefix_length=30,
+            dropout=0.9,
+        )
+        model.add_prefix(name='encoder+decoder:prefix', cfg=prefix_cfg)
+        model.set_enabled_prefixs(enabled=False)
+        model.set_enabled_prefixs('prefix', enabled=True)
+        model.unfreeze_enabled_prefixs()
+    
     model.summarize()
     
     lr_logger = pl.callbacks.LearningRateMonitor()

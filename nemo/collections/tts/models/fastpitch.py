@@ -28,7 +28,11 @@ from nemo.collections.tts.losses.fastpitchloss import DurationLoss, MelLoss, Pit
 from nemo.collections.tts.models.base import SpectrogramGenerator
 from nemo.collections.tts.modules.fastpitch import FastPitchModule
 from nemo.collections.tts.torch.tts_data_types import SpeakerID
-from nemo.collections.tts.mixins import FastPitchAdapterModelMixin
+from nemo.collections.tts.mixins import (
+    FastPitchAdapterModelMixin, 
+    FastPitchLoraModelMixin, 
+    FastPitchPrefixModelMixin,
+)
 from nemo.core.classes import Exportable
 from nemo.core.classes.common import PretrainedModelInfo, typecheck
 from nemo.core.neural_types.elements import (
@@ -70,7 +74,8 @@ class TextTokenizerConfig:
     text_tokenizer: TextTokenizer = TextTokenizer()
 
 
-class FastPitchModel(SpectrogramGenerator, Exportable, FastPitchAdapterModelMixin):
+class FastPitchModel(SpectrogramGenerator, Exportable, 
+                     FastPitchAdapterModelMixin, FastPitchLoraModelMixin, FastPitchPrefixModelMixin):
     """FastPitch model (https://arxiv.org/abs/2006.06873) that is used to generate mel spectrogram from text."""
 
     def __init__(self, cfg: DictConfig, trainer: Trainer = None):

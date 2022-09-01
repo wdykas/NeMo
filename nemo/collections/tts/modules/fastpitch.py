@@ -93,7 +93,6 @@ class ConvReLUNorm(torch.nn.Module, adapter_mixins.AdapterModuleMixin):
         out = self.norm(out.transpose(1, 2)).transpose(1, 2)
         out = self.dropout(out)
         
-        # [TODO]
         if self.is_adapter_available():
             out = self.forward_enabled_adapters(out.transpose(1,2)).transpose(1, 2)
             
