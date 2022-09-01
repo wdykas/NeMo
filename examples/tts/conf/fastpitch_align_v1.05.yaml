@@ -35,8 +35,8 @@ finetune:
   freeze_all: false
   freeze_encoder: false
   freeze_decoder: false
-  add_speaker_embedding: true
-  add_speaker_weights: false
+  add_random_speaker: true
+  add_weight_speaker: false
   add_adapter: false
   
 model:
