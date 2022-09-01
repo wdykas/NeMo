@@ -71,8 +71,8 @@ model:
   task_templates: # Add more/replace tasks as needed, these are just examples
   - taskname: "squad" 
     prompt_template: "<|VIRTUAL_PROMPT_0|> {question} {context} answer: {answer}"
-    total_virtual_tokens: 100
-    virtual_token_splits: [100] 
+    total_virtual_tokens: 10 
+    virtual_token_splits: [10] 
     truncate_field: context
     answer_field: answer
 

@@ -44,9 +44,10 @@ from nemo.collections.nlp.modules.common.transformer.text_generation import Leng
 from nemo.collections.nlp.parts.nlp_overrides import NLPSaveRestoreConnector
 from nemo.collections.nlp.parts.utils_funcs import get_last_rank
 from nemo.utils import logging
+from functools import partial
 
 try:
-    from apex.transformer import parallel_state
+    from apex.transformer import parallel_state, tensor_parallel
     from apex.transformer.pipeline_parallel.schedules.fwd_bwd_pipelining_without_interleaving import (
         forward_backward_pipelining_without_interleaving,
     )
@@ -408,6 +409,8 @@ class MegatronGPTPromptLearningModel(MegatronBaseModel, TextGeneration):
             position_embeddings = self.frozen_model.model.language_model.embedding.position_embeddings(position_ids)
             encoder_input = input_embeds + position_embeddings
             encoder_input = encoder_input.transpose(0, 1).contiguous()
+            if self.cfg.sequence_parallel:
+                encoder_input = tensor_parallel.mappings.scatter_to_sequence_parallel_region(encoder_input)
         else:
             encoder_input = None
 
@@ -783,7 +786,7 @@ class MegatronGPTPromptLearningModel(MegatronBaseModel, TextGeneration):
         assert batch_size % data_parallel_size == 0, "Global batch size must be evenly divisible by data parallel size"
 
         if for_train:
-            collate_fn = dataset.collate_fn
+            collate_fn = partial(dataset.collate_fn, tp_workers=parallel_state.get_tensor_model_parallel_world_size())
         else:
             collate_fn = dataset.inference_collate_fn
 
