@@ -81,9 +81,11 @@ model:
     new_prompt_init_text: ['some init text goes here'] # some init text if init method is text, or None if init method is random
 
   p_tuning: # P-tuning specific params
+    type: "tpmlp" # ['tpmlp', 'lstm'] 
     dropout: 0.0
     num_layers: 2
     encoder_hidden: 2048
+    init_std: 0.023  # init std for mlp layers
 
   data:
     train_ds: [data/rte_train.jsonl,]

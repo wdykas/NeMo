@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 import re
 from collections import OrderedDict
 from typing import Any, List, Optional, Union
@@ -33,6 +34,7 @@ from nemo.collections.nlp.modules.common import (
     VirtualPromptStyle,
 )
 from nemo.collections.nlp.modules.common.megatron.utils import average_losses_across_data_parallel_group
+from nemo.collections.nlp.modules.common.prompt_encoder import PromptEncoderMLP, PromptEncoderType
 from nemo.collections.nlp.modules.common.text_generation_utils import (
     get_default_length_params,
     get_default_sampling_params,
@@ -42,7 +44,6 @@ from nemo.collections.nlp.modules.common.transformer.text_generation import Leng
 from nemo.collections.nlp.parts.nlp_overrides import NLPSaveRestoreConnector
 from nemo.collections.nlp.parts.utils_funcs import get_last_rank
 from nemo.utils import logging
-import os
 
 try:
     from apex.transformer import parallel_state
@@ -88,8 +89,10 @@ class MegatronGPTPromptLearningModel(MegatronBaseModel, TextGeneration):
         if os.path.isdir(cfg.get('language_model_path')):
             save_resotre_connector.model_extracted_dir = cfg.get('language_model_path')
         frozen_model_cfg = MegatronGPTModel.restore_from(
-            cfg.get('language_model_path'), trainer=trainer, return_config=True, 
-            save_restore_connector=save_resotre_connector
+            cfg.get('language_model_path'),
+            trainer=trainer,
+            return_config=True,
+            save_restore_connector=save_resotre_connector,
         )
 
         # Need to overwrite some params in frozen model's config before restoring
@@ -247,13 +250,24 @@ class MegatronGPTPromptLearningModel(MegatronBaseModel, TextGeneration):
         new_task = self.new_tasks[0]
         total_virtual_tokens = self.task_templates[new_task]["total_virtual_tokens"]
 
-        self.prompt_encoder = PromptEncoder(
-            total_virtual_tokens=total_virtual_tokens,
-            hidden_size=self.cfg.p_tuning.encoder_hidden,
-            output_size=self.hidden_size,
-            lstm_dropout=self.cfg.p_tuning.dropout,
-            num_layers=self.cfg.p_tuning.num_layers,
-        )
+        encoder_type = PromptEncoderType(self.cfg.p_tuning.get("type", "tpmlp").lower())
+        if encoder_type == PromptEncoderType.TPMLP:
+            self.prompt_encoder = PromptEncoderMLP(
+                total_virtual_tokens=total_virtual_tokens,
+                hidden_size=self.cfg.p_tuning.encoder_hidden,
+                output_size=self.hidden_size,
+                init_std=self.cfg.p_tuning.init_std,
+            )
+        elif encoder_type == PromptEncoderType.LSTM:
+            self.prompt_encoder = PromptEncoder(
+                total_virtual_tokens=total_virtual_tokens,
+                hidden_size=self.cfg.p_tuning.encoder_hidden,
+                output_size=self.hidden_size,
+                lstm_dropout=self.cfg.p_tuning.dropout,
+                num_layers=self.cfg.p_tuning.num_layers,
+            )
+        else:
+            raise ValueError('not supported')
 
     def add_ptuned_prompts_to_prompt_table(self):
         """
