@@ -47,6 +47,7 @@ model:
   use_lookup_speaker: true
   use_gst_speaker: false
   use_sv_speaker: false
+  use_attentron: false
   
   learn_alignment: true
   bin_loss_warmup_epochs: 100
@@ -253,7 +254,18 @@ model:
     n_style_attn_head: 4
     
   sv_model: "titanet_large"
-    
+  
+  attentron_model:
+    _target_: nemo.collections.tts.modules.prosody_modules.Attentron
+    mel_inp_size: ${n_mel_channels}
+    hid_inp_size: ${model.symbols_embedding_dim}  
+    cnn_filters: [512, 512] 
+    kernel_size: 3 
+    stride: 1
+    dropout: 0.2 
+    gru_hidden: ${model.symbols_embedding_dim}
+    gru_layer: 2  
+  
   optim:
     name: adamw
     lr: 1e-3

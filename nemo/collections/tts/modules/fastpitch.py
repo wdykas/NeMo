@@ -193,6 +193,7 @@ class FastPitchModule(NeuralModule):
         
         gst_model: NeuralModule,
         sv_model: str
+        attentron_model: NeuralModule,
         
         n_speakers: int,
         symbols_embedding_dim: int,
@@ -203,6 +204,8 @@ class FastPitchModule(NeuralModule):
         use_lookup_speaker: bool = True,
         use_gst_speaker: bool = False,
         use_sv_speaker: bool = False,
+        
+        use_attentron: bool = False,
     ):
         super().__init__()
 
@@ -226,7 +229,12 @@ class FastPitchModule(NeuralModule):
                 sv_model.setup_test_data(config)
                 self.sv_speaker_emb = sv_model
                 self.sv_linear = torch.nn.Linear(sv_model.cfg.decoder.emb_sizes, symbols_embedding_dim)
-                
+        
+        self.attentron_model = None
+        if use_attentron:
+            self.attentron_model = attentron_model
+        
+        
         self.max_token_duration = max_token_duration
         self.min_token_duration = 0
 
@@ -241,7 +249,7 @@ class FastPitchModule(NeuralModule):
         self.register_buffer('pitch_mean', torch.zeros(1))
         self.register_buffer('pitch_std', torch.zeros(1))
 
-        self.proj = torch.nn.Linear(self.decoder.d_model, n_mel_channels, bias=True)
+        self.proj = torch.nn.Linear(self.decoder.d_model * 2 if use_attentron else self.decoder.d_model, n_mel_channels, bias=True)
         
         
 
@@ -359,6 +367,12 @@ class FastPitchModule(NeuralModule):
 
         # Output FFT
         dec_out, _ = self.decoder(input=len_regulated, seq_lens=dec_lens, conditioning=spk_emb)
+        
+        # [Prosody] Attentron
+        if self.attentron is not None and ref_spec is not None:
+            attentron_out = self.attentron_model(dec_out, ref_spec)
+            dec_out = torch.cat((dec_out, attentron_out), dim=-1)
+        
         spect = self.proj(dec_out).transpose(1, 2)
         return (
             spect,
@@ -417,6 +431,12 @@ class FastPitchModule(NeuralModule):
 
         # Output FFT
         dec_out, _ = self.decoder(input=len_regulated, seq_lens=dec_lens, conditioning=spk_emb)
+        
+        # [Prosody] Attentron
+        if self.attentron is not None and ref_spec is not None:
+            attentron_out = self.attentron_model(dec_out, ref_spec)
+            dec_out = torch.cat((dec_out, attentron_out), dim=-1)
+        
         spect = self.proj(dec_out).transpose(1, 2)
         return (
             spect.to(torch.float),

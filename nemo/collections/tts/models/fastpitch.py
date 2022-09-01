@@ -149,6 +149,7 @@ class FastPitchModel(SpectrogramGenerator, Exportable,
         
         gst_model = instantiate(self._cfg.gst_model)
         sv_model = cfg.sv_model
+        attentron_model = instantiate(self._cfg.attentron_model)
         
         self.fastpitch = FastPitchModule(
             input_fft,
@@ -159,6 +160,7 @@ class FastPitchModel(SpectrogramGenerator, Exportable,
             
             gst_model,
             sv_model,
+            attentron_model,
             
             cfg.n_speakers,
             cfg.symbols_embedding_dim,
@@ -168,6 +170,7 @@ class FastPitchModel(SpectrogramGenerator, Exportable,
             cfg.use_lookup_speaker,
             cfg.use_gst_speaker,
             cfg.use_sv_speaker,
+            cfg.use_attentron,
         )
         self._input_types = self._output_types = None
 
