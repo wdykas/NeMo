@@ -194,6 +194,7 @@ class FastPitchModule(NeuralModule):
         gst_model: NeuralModule,
         sv_model: str
         attentron_model: NeuralModule,
+        reference_prosodyencoder: NeuralModule,
         
         n_speakers: int,
         symbols_embedding_dim: int,
@@ -206,6 +207,7 @@ class FastPitchModule(NeuralModule):
         use_sv_speaker: bool = False,
         
         use_attentron: bool = False,
+        use_reference_prosodyencoder: bool = False,
     ):
         super().__init__()
 
@@ -234,7 +236,11 @@ class FastPitchModule(NeuralModule):
         if use_attentron:
             self.attentron_model = attentron_model
         
-        
+        self.reference_prosodyencoder = None
+        if use_reference_prosodyencoder:
+            self.reference_prosodyencoder = reference_prosodyencoder
+            
+            
         self.max_token_duration = max_token_duration
         self.min_token_duration = 0
 
@@ -334,6 +340,14 @@ class FastPitchModule(NeuralModule):
         # Input FFT
         enc_out, enc_mask = self.encoder(input=text, conditioning=spk_emb)
         
+        # Add Reference Prosody
+        if self.reference_prosodyencoder is not None and ref_spec is not None and ref_spec_lens is not None:
+            # TODO [ref_spec_lens MASK]
+            ref_spec_mask = (torch.arange(ref_spec_lens.max()).to(ref_spec.device).expand(ref_spec_lens.shape[0], ref_spec_lens.max()) < ref_spec_lens.unsqueeze(1)).unsqueeze(2)
+            prosody_ref = self.reference_prosodyencoder(enc_out, enc_mask, ref_spec, ref_spec_mask, conditioning=spk_emb)
+            enc_out = enc_out + prosody_ref
+        
+        
         # Predict duration
         log_durs_predicted = self.duration_predictor(enc_out, enc_mask, conditioning=spk_emb)
         durs_predicted = torch.clamp(torch.exp(log_durs_predicted) - 1, 0, self.max_token_duration)
@@ -412,7 +426,14 @@ class FastPitchModule(NeuralModule):
             
         # Input FFT
         enc_out, enc_mask = self.encoder(input=text, conditioning=spk_emb)
-
+        
+        # Add Reference Prosody
+        if self.reference_prosodyencoder is not None and ref_spec is not None and ref_spec_lens is not None:
+            ref_spec_mask = (torch.arange(ref_spec_lens.max()).to(ref_spec.device).expand(ref_spec_lens.shape[0], ref_spec_lens.max()) < ref_spec_lens.unsqueeze(1)).unsqueeze(2)
+            prosody_ref = self.reference_prosodyencoder(enc_out, enc_mask, ref_spec, ref_spec_mask, conditioning=spk_emb)
+            enc_out = enc_out + prosody_ref
+        
+        
         # Predict duration and pitch
         log_durs_predicted = self.duration_predictor(enc_out, enc_mask, conditioning=spk_emb)
         durs_predicted = torch.clamp(
