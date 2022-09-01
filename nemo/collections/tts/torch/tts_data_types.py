@@ -65,6 +65,9 @@ class P_voiced(TTSDataType):
 
 class LMTokens(TTSDataType):
     name = "lm_tokens"
+    
+class Ref_Audio(TTSDataType, WithLens):
+    name = "ref_audio"
 
 
 MAIN_DATA_TYPES = [Audio, Text]
@@ -78,5 +81,6 @@ VALID_SUPPLEMENTARY_DATA_TYPES = [
     LMTokens,
     Voiced_mask,
     P_voiced,
+    Ref_Audio
 ]
 DATA_STR2DATA_CLASS = {d.name: d for d in MAIN_DATA_TYPES + VALID_SUPPLEMENTARY_DATA_TYPES}

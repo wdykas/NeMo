@@ -189,11 +189,17 @@ class FastPitchModule(NeuralModule):
         duration_predictor: NeuralModule,
         pitch_predictor: NeuralModule,
         aligner: NeuralModule,
+        
+        global_style_token: NeuralModule,
+        
         n_speakers: int,
         symbols_embedding_dim: int,
         pitch_embedding_kernel_size: int,
         n_mel_channels: int = 80,
         max_token_duration: int = 75,
+        
+        use_lookup_speaker: bool = True,
+        use_gst_speaker: bool = False,
     ):
         super().__init__()
 
@@ -206,10 +212,11 @@ class FastPitchModule(NeuralModule):
         self.use_duration_predictor = True
         self.binarize = False
 
+        self.speaker_emb = None
+        self.gst_speaker_emb = None
         if n_speakers > 1:
-            self.speaker_emb = torch.nn.Embedding(n_speakers, symbols_embedding_dim)
-        else:
-            self.speaker_emb = None
+            if use_lookup_speaker: self.speaker_emb = torch.nn.Embedding(n_speakers, symbols_embedding_dim)
+            if use_gst_speaker: self.gst_speaker_emb = global_style_token
 
         self.max_token_duration = max_token_duration
         self.min_token_duration = 0
@@ -226,6 +233,8 @@ class FastPitchModule(NeuralModule):
         self.register_buffer('pitch_std', torch.zeros(1))
 
         self.proj = torch.nn.Linear(self.decoder.d_model, n_mel_channels, bias=True)
+        
+        
 
     @property
     def input_types(self):
@@ -236,6 +245,8 @@ class FastPitchModule(NeuralModule):
             "speaker": NeuralType(('B'), Index(), optional=True),
             "pace": NeuralType(optional=True),
             "spec": NeuralType(('B', 'D', 'T_spec'), MelSpectrogramType(), optional=True),
+            "ref_spec": NeuralType(('B', 'D', 'T_spec'), MelSpectrogramType(), optional=True),
+            "ref_spec_lens": NeuralType(('B'), LengthsType(), optional=True),
             "attn_prior": NeuralType(('B', 'T_spec', 'T_text'), ProbsType(), optional=True),
             "mel_lens": NeuralType(('B'), LengthsType(), optional=True),
             "input_lens": NeuralType(('B'), LengthsType(), optional=True),
@@ -266,6 +277,8 @@ class FastPitchModule(NeuralModule):
         speaker=None,
         pace=1.0,
         spec=None,
+        ref_spec=None,
+        ref_spec_lens=None,
         attn_prior=None,
         mel_lens=None,
         input_lens=None,
@@ -276,12 +289,19 @@ class FastPitchModule(NeuralModule):
             assert pitch is not None
         
         # Calculate speaker embedding
-        if self.speaker_emb is None or speaker is None:
-            spk_emb = 0
-        else:
-            # [TODO]
+        spk_emb = 0
+        
+        # Lookup Speaker Embedding
+        if self.speaker_emb is not None and speaker is not None:
+            assert speaker.max() < self.speaker_emb.num_embeddings
             speaker[(speaker < 0)] += self.speaker_emb.num_embeddings
-            spk_emb = self.speaker_emb(speaker).unsqueeze(1)
+            spk_emb += self.speaker_emb(speaker).unsqueeze(1)
+        
+        # GST Speaker Embedding
+        if self.gst_speaker_emb is not None and ref_spec is not None and ref_spec_lens is not None:     
+            ref_spec_mask = (torch.arange(ref_spec_lens.max()).to(ref_spec.device).expand(ref_spec_lens.shape[0], ref_spec_lens.max()) < ref_spec_lens.unsqueeze(1)).unsqueeze(2)
+            spk_emb += self.gst_speaker_emb(ref_spec, ref_spec_mask).unsqueeze(1)
+        
 
         # Input FFT
         enc_out, enc_mask = self.encoder(input=text, conditioning=spk_emb)
@@ -335,11 +355,18 @@ class FastPitchModule(NeuralModule):
 
     def infer(self, *, text, pitch=None, speaker=None, pace=1.0, volume=None):
         # Calculate speaker embedding
-        if self.speaker_emb is None or speaker is None:
-            spk_emb = 0
-        else:
+        spk_emb = 0
+        
+        # Lookup Speaker Embedding
+        if self.speaker_emb is not None and speaker is not None:
+            assert speaker.max() < self.speaker_emb.num_embeddings
             speaker[(speaker < 0)] += self.speaker_emb.num_embeddings
-            spk_emb = self.speaker_emb(speaker).unsqueeze(1)
+            spk_emb += self.speaker_emb(speaker).unsqueeze(1)
+        
+        # GST Speaker Embedding
+        if self.gst_speaker_emb is not None and ref_spec is not None and ref_spec_lens is not None:     
+            ref_spec_mask = (torch.arange(ref_spec_lens.max()).to(ref_spec.device).expand(ref_spec_lens.shape[0], ref_spec_lens.max()) < ref_spec_lens.unsqueeze(1)).unsqueeze(2)
+            spk_emb += self.gst_speaker_emb(ref_spec, ref_spec_mask).unsqueeze(1)
 
         # Input FFT
         enc_out, enc_mask = self.encoder(input=text, conditioning=spk_emb)

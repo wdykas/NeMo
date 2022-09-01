@@ -44,6 +44,9 @@ finetune_multispeaker:
   add_prefix: false
 
 model:
+  use_lookup_speaker: true
+  use_gst_speaker: false
+  
   learn_alignment: true
   bin_loss_warmup_epochs: 100
 
@@ -236,6 +239,15 @@ model:
     use_add_speaker: false
     use_cat_speaker: false
     use_cln_speaker: false
+  
+  global_style_token:
+    _target_: nemo.collections.tts.modules.speaker_modules.GlobalStyleToken
+    cnn_filters: [32, 32, 64, 64, 128, 128] 
+    dropout: 0.2 
+    gru_hidden: ${model.symbols_embedding_dim}
+    gst_size: ${model.symbols_embedding_dim}
+    n_style_token: 10
+    n_style_attn_head: 4
     
   optim:
     name: adamw
