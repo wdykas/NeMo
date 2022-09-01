@@ -66,11 +66,9 @@ class ConditionalLayerNorm(nn.Module):
             nn.init.constant_(self.bias.bias, 0.0)
 
     def forward(self, inp, conditioning):
-        # Normalize Input Features
-        mean = inp.mean(dim=-1, keepdim=True)
-        var = ((inp - mean) ** 2).mean(dim=-1, keepdim=True)
-        std = (var + self.eps).sqrt()
-        inp = (inp - mean) / std
+        
+        # Normalize along channel for one time
+        inp = F.layer_norm(inp, normalized_shape=(self.normalized_shape,), eps=self.eps)
         
         # Get Scale and Bias
         scale = self.weight(conditioning)
@@ -143,7 +141,7 @@ class PositionwiseConvFF(nn.Module):
 
 
 class MultiHeadAttn(nn.Module):
-    def __init__(self, n_head, d_model, d_head, dropout, dropatt=0.1, pre_lnorm=False, use_pmt_speaker=False):
+    def __init__(self, n_head, d_model, d_head, dropout, dropatt=0.1, pre_lnorm=False, use_cln_speaker=False):
         super(MultiHeadAttn, self).__init__()
 
         self.n_head = n_head
@@ -156,7 +154,12 @@ class MultiHeadAttn(nn.Module):
         self.drop = nn.Dropout(dropout)
         self.dropatt = nn.Dropout(dropatt)
         self.o_net = nn.Linear(n_head * d_head, d_model, bias=False)
-        self.layer_norm = nn.LayerNorm(d_model)
+        
+        if use_cln_speaker:
+            self.layer_norm = ConditionalLayerNorm(d_model, spk_emb_dim=d_model)
+        else:
+            self.layer_norm = nn.LayerNorm(d_model)
+        
 
     def forward(self, inp, attn_mask=None):
         return self._forward(inp, attn_mask)
@@ -166,7 +169,10 @@ class MultiHeadAttn(nn.Module):
 
         if self.pre_lnorm:
             # layer normalization
-            inp = self.layer_norm(inp)
+            if self.use_cln_speaker and conditioning is not None: 
+                inp = self.layer_norm(inp, conditioning)
+            else: 
+                inp = self.layer_norm(inp)
 
         n_head, d_head = self.n_head, self.d_head
 
@@ -204,8 +210,11 @@ class MultiHeadAttn(nn.Module):
             output = residual + attn_out
         else:
             # residual connection + layer normalization
-            output = self.layer_norm(residual + attn_out)
-
+            if self.use_cln_speaker and conditioning is not None: 
+                output = self.layer_norm(residual + attn_out, conditioning)
+            else: 
+                output = self.layer_norm(residual + attn_out)
+            
         return output
 
 
@@ -216,19 +225,18 @@ class TransformerLayer(nn.Module, adapter_mixins.AdapterModuleMixin):
         self.dec_attn = MultiHeadAttn(n_head, d_model, d_head, dropout, 
                                       dropatt=kwargs.get('dropatt'),
                                       pre_lnorm=kwargs.get('pre_lnorm'),
-                                      use_pmt_speaker=kwargs.get('use_pmt_speaker'))
+                                      use_cln_speaker=kwargs.get('use_cln_speaker'))
         
         self.pos_ff = PositionwiseConvFF(d_model, d_inner, kernel_size, dropout, 
                                          pre_lnorm=kwargs.get('pre_lnorm'), 
                                          use_cln_speaker=kwargs.get('use_cln_speaker'))
 
     def forward(self, dec_inp, mask=None, conditioning=None):
-        output = self.dec_attn(dec_inp, attn_mask=~mask.squeeze(2))
+        output = self.dec_attn(dec_inp, attn_mask=~mask.squeeze(2), conditioning=conditioning)
         output *= mask
         output = self.pos_ff(output, conditioning)
         output *= mask
         
-        # [TODO]
         if self.is_adapter_available():
             output = self.forward_enabled_adapters(output)
             
@@ -238,7 +246,7 @@ class TransformerLayer(nn.Module, adapter_mixins.AdapterModuleMixin):
 class FFTransformerDecoder(NeuralModule):
     def __init__(
         self, n_layer, n_head, d_model, d_head, d_inner, kernel_size, dropout, dropatt, dropemb=0.0, pre_lnorm=False, 
-        use_add_speaker=False, use_cat_speaker=False, use_cln_speaker=False, use_pmt_speaker=False,
+        use_add_speaker=False, use_cat_speaker=False, use_cln_speaker=False,
     ):
         super(FFTransformerDecoder, self).__init__()
         self.d_model = d_model
@@ -249,6 +257,7 @@ class FFTransformerDecoder(NeuralModule):
         self.drop = nn.Dropout(dropemb)
         if use_cat_speaker:
             self.speaker_linear = nn.Linear(d_model * 2, d_model) 
+            
         self.layers = nn.ModuleList()
 
         for i in range(n_layer):
@@ -257,7 +266,7 @@ class FFTransformerDecoder(NeuralModule):
                     n_head, 
                     d_model, 
                     d_head, d_inner, kernel_size, dropout, dropatt=dropatt, pre_lnorm=pre_lnorm, 
-                    use_cln_speaker=use_cln_speaker, use_pmt_speaker=use_pmt_speaker,
+                    use_cln_speaker=use_cln_speaker,
                 )
             )
             
@@ -288,7 +297,6 @@ class FFTransformerDecoder(NeuralModule):
         pos_emb = self.pos_emb(pos_seq) * mask
         inp += pos_emb
         
-        # [TODO]
         if self.use_add_speaker:
             inp += conditioning
             
@@ -324,11 +332,10 @@ class FFTransformerEncoder(FFTransformerDecoder):
         use_add_speaker=False,
         use_cat_speaker=False,
         use_cln_speaker=False,
-        use_pmt_speaker=False,
     ):
         super(FFTransformerEncoder, self).__init__(
             n_layer, n_head, d_model, d_head, d_inner, kernel_size, dropout, dropatt, dropemb, pre_lnorm, 
-            use_add_speaker, use_cat_speaker, use_cln_speaker, use_pmt_speaker,
+            use_add_speaker, use_cat_speaker, use_cln_speaker,
         )
 
         self.padding_idx = padding_idx

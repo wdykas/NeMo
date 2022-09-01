@@ -61,7 +61,7 @@ from nemo.core.neural_types.elements import (
     TokenLogDurationType,
 )
 from nemo.core.neural_types.neural_type import NeuralType
-
+from nemo.collections.tts.modules.transformer import ConditionalLayerNorm
 
 def average_pitch(pitch, durs):
     durs_cums_ends = torch.cumsum(durs, dim=1).long()

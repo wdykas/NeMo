@@ -189,7 +189,6 @@ model:
     use_add_speaker: false
     use_cat_speaker: false
     use_cln_speaker: false
-    use_pmt_speaker: false
     
   output_fft:
     _target_: nemo.collections.tts.modules.transformer.FFTransformerDecoder
@@ -205,7 +204,6 @@ model:
     use_add_speaker: false
     use_cat_speaker: false
     use_cln_speaker: false
-    use_pmt_speaker: false
     
   alignment_module:
     _target_: nemo.collections.tts.modules.aligner.AlignmentEncoder
@@ -222,6 +220,7 @@ model:
     n_layers: 2
     use_add_speaker: false
     use_cat_speaker: false
+    use_cln_speaker: false
     
   pitch_predictor:
     _target_: nemo.collections.tts.modules.fastpitch.TemporalPredictor
@@ -232,6 +231,7 @@ model:
     n_layers: 2
     use_add_speaker: false
     use_cat_speaker: false
+    use_cln_speaker: false
     
   optim:
     name: adamw
