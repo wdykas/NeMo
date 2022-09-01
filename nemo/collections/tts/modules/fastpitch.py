@@ -45,6 +45,7 @@ from typing import Optional, List
 from omegaconf import DictConfig
 
 import torch
+from nemo.collections.asr.models.label_models import EncDecSpeakerLabelModel
 from nemo.collections.asr.parts.utils import adapter_utils
 from nemo.collections.tts.helpers.helpers import binarize_attention_parallel, regulate_len
 from nemo.core.classes import NeuralModule, typecheck, adapter_mixins
@@ -190,7 +191,8 @@ class FastPitchModule(NeuralModule):
         pitch_predictor: NeuralModule,
         aligner: NeuralModule,
         
-        global_style_token: NeuralModule,
+        gst_model: NeuralModule,
+        sv_model: str
         
         n_speakers: int,
         symbols_embedding_dim: int,
@@ -200,6 +202,7 @@ class FastPitchModule(NeuralModule):
         
         use_lookup_speaker: bool = True,
         use_gst_speaker: bool = False,
+        use_sv_speaker: bool = False,
     ):
         super().__init__()
 
@@ -216,8 +219,14 @@ class FastPitchModule(NeuralModule):
         self.gst_speaker_emb = None
         if n_speakers > 1:
             if use_lookup_speaker: self.speaker_emb = torch.nn.Embedding(n_speakers, symbols_embedding_dim)
-            if use_gst_speaker: self.gst_speaker_emb = global_style_token
-
+            if use_gst_speaker: self.gst_speaker_emb = gst_model
+            if use_sv_speaker: 
+                sv_model = EncDecSpeakerLabelModel.from_pretrained(model_name=sv_model)
+                config = OmegaConf.create(dict(manifest_filepath=None, labels=None))
+                sv_model.setup_test_data(config)
+                self.sv_speaker_emb = sv_model
+                self.sv_linear = torch.nn.Linear(sv_model.cfg.decoder.emb_sizes, symbols_embedding_dim)
+                
         self.max_token_duration = max_token_duration
         self.min_token_duration = 0
 
@@ -247,6 +256,8 @@ class FastPitchModule(NeuralModule):
             "spec": NeuralType(('B', 'D', 'T_spec'), MelSpectrogramType(), optional=True),
             "ref_spec": NeuralType(('B', 'D', 'T_spec'), MelSpectrogramType(), optional=True),
             "ref_spec_lens": NeuralType(('B'), LengthsType(), optional=True),
+            "ref_audio": NeuralType(('B', 'T_audio'), RegressionValuesType(), optional=True),
+            "ref_audio_lens": NeuralType(('B'), LengthsType(), optional=True),
             "attn_prior": NeuralType(('B', 'T_spec', 'T_text'), ProbsType(), optional=True),
             "mel_lens": NeuralType(('B'), LengthsType(), optional=True),
             "input_lens": NeuralType(('B'), LengthsType(), optional=True),
@@ -279,6 +290,8 @@ class FastPitchModule(NeuralModule):
         spec=None,
         ref_spec=None,
         ref_spec_lens=None,
+        ref_audio=None,
+        ref_audio_lens=None,
         attn_prior=None,
         mel_lens=None,
         input_lens=None,
@@ -302,7 +315,14 @@ class FastPitchModule(NeuralModule):
             ref_spec_mask = (torch.arange(ref_spec_lens.max()).to(ref_spec.device).expand(ref_spec_lens.shape[0], ref_spec_lens.max()) < ref_spec_lens.unsqueeze(1)).unsqueeze(2)
             spk_emb += self.gst_speaker_emb(ref_spec, ref_spec_mask).unsqueeze(1)
         
-
+        # SV Speaker Embedding
+        if self.sv_speaker_emb is not None and ref_audio is not None and ref_audio_lens is not None:
+            with torch.no_grad():
+                _, embs = self.sv_speaker_emb(input_signal=ref_audio, input_signal_length=ref_audio_lens)
+                embs = torch.nn.functional.normalize(embs, p=2, dim=1)
+            embs = self.sv_linear(embs)
+            spk_emb += embs.unsqueeze(1)
+            
         # Input FFT
         enc_out, enc_mask = self.encoder(input=text, conditioning=spk_emb)
         

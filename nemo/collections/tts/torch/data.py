@@ -70,6 +70,7 @@ class TTSDataset(Dataset):
         self,
         manifest_filepath: Union[str, Path, List[str], List[Path]],
         sample_rate: int,
+        sv_sample_rate: int,
         text_tokenizer: Union[BaseTokenizer, Callable[[str], List[int]]],
         tokens: Optional[List[str]] = None,
         text_normalizer: Optional[Union[Normalizer, Callable[[str], str]]] = None,
@@ -238,6 +239,7 @@ class TTSDataset(Dataset):
         # Initialize audio and mel related parameters
         self.sample_rate = sample_rate
         self.featurizer = WaveformFeaturizer(sample_rate=self.sample_rate)
+        self.featurizer_sv = WaveformFeaturizer(sample_rate=self.svsample_rate)
         self.trim = trim
         self.trim_ref = trim_ref if trim_ref is not None else np.max
         self.trim_top_db = trim_top_db if trim_top_db is not None else 60
@@ -589,9 +591,17 @@ class TTSDataset(Dataset):
                 trim_ref=self.trim_ref,
                 trim_top_db=self.trim_top_db,
                 trim_frame_length=self.trim_frame_length,
-                trim_hop_length=self.trim_hop_length)
-            
+                trim_hop_length=self.trim_hop_length)            
             ref_audio, ref_audio_length = ref_features, torch.tensor(ref_features.shape[0]).long()
+            
+            ref_features_sv = self.featurizer_sv.process(
+                ref_sample["audio_filepath"],
+                trim=self.trim,
+                trim_ref=self.trim_ref,
+                trim_top_db=self.trim_top_db,
+                trim_frame_length=self.trim_frame_length,
+                trim_hop_length=self.trim_hop_length)     
+            ref_audio_sv, ref_audio_sv_length = ref_features_sv, torch.tensor(ref_features_sv.shape[0]).long()
 
         return (
             audio,
@@ -611,6 +621,8 @@ class TTSDataset(Dataset):
             p_voiced,
             ref_audio,
             ref_audio_length,
+            ref_audio_sv,
+            ref_audio_sv_length
         )
 
     def __len__(self):
@@ -645,6 +657,8 @@ class TTSDataset(Dataset):
             p_voiceds,
             _,
             ref_audio_lengths,
+            _,
+            ref_audio_sv_lengths,
         ) = zip(*batch)
 
         max_audio_len = max(audio_lengths).item()
@@ -654,6 +668,7 @@ class TTSDataset(Dataset):
         max_pitches_len = max(pitches_lengths).item() if Pitch in self.sup_data_types_set else None
         max_energies_len = max(energies_lengths).item() if Energy in self.sup_data_types_set else None
         max_ref_audio_len = max(ref_audio_lengths).item() if Ref_Audio in self.sup_data_types_set else None
+        max_ref_audio_sv_len = max(ref_audio_sv_lengths).item() if Ref_Audio in self.sup_data_types_set else None
         
         if LogMel in self.sup_data_types_set:
             log_mel_pad = torch.finfo(batch[0][2].dtype).tiny
@@ -667,7 +682,8 @@ class TTSDataset(Dataset):
             if AlignPriorMatrix in self.sup_data_types_set
             else []
         )
-        audios, tokens, log_mels, durations_list, pitches, energies, speaker_ids, voiced_masks, p_voiceds, ref_audios = (
+        audios, tokens, log_mels, durations_list, pitches, energies, speaker_ids, voiced_masks, p_voiceds, ref_audios, ref_audios_sv = (
+            [],
             [],
             [],
             [],
@@ -699,6 +715,8 @@ class TTSDataset(Dataset):
                 p_voiced,
                 ref_audio,
                 ref_audio_len,
+                ref_audio_sv,
+                ref_audio_sv_len,
             ) = sample_tuple
 
             audio = general_padding(audio, audio_len.item(), max_audio_len)
@@ -736,7 +754,10 @@ class TTSDataset(Dataset):
             if Ref_Audio in self.sup_data_types_set:
                 ref_audio = general_padding(ref_audio, ref_audio_len.item(), max_ref_audio_len)
                 ref_audios.append(ref_audio)
-
+                
+                ref_audio_sv = general_padding(ref_audio_sv, ref_audio_sv_len.item(), max_ref_audio_sv_len)
+                ref_audios_sv.append(ref_audio_sv)
+                
         data_dict = {
             "audio": torch.stack(audios),
             "audio_lens": torch.stack(audio_lengths),
@@ -755,7 +776,8 @@ class TTSDataset(Dataset):
             "p_voiced": torch.stack(p_voiceds) if P_voiced in self.sup_data_types_set else None,
             "ref_audio": torch.stack(ref_audios) if Ref_Audio in self.sup_data_types_set else None,
             "ref_audio_lens": torch.stack(ref_audio_lengths) if Ref_Audio in self.sup_data_types_set else None,
-            
+            "ref_audio_sv": torch.stack(ref_audios) if Ref_Audio in self.sup_data_types_set else None,
+            "ref_audio_sv_lens": torch.stack(ref_audio_lengths) if Ref_Audio in self.sup_data_types_set else None,
         }
 
         return data_dict

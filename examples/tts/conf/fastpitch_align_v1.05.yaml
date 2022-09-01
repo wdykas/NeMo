@@ -46,6 +46,7 @@ finetune_multispeaker:
 model:
   use_lookup_speaker: true
   use_gst_speaker: false
+  use_sv_speaker: false
   
   learn_alignment: true
   bin_loss_warmup_epochs: 100
@@ -99,6 +100,7 @@ model:
       _target_: nemo.collections.tts.torch.data.TTSDataset
       manifest_filepath: ${train_dataset}
       sample_rate: ${model.sample_rate}
+      sv_sample_rate: 16000
       sup_data_path: ${sup_data_path}
       sup_data_types: ${sup_data_types}
       n_fft: ${model.n_fft}
@@ -131,6 +133,7 @@ model:
       _target_: nemo.collections.tts.torch.data.TTSDataset
       manifest_filepath: ${validation_datasets}
       sample_rate: ${model.sample_rate}
+      sv_sample_rate: 16000
       sup_data_path: ${sup_data_path}
       sup_data_types: ${sup_data_types}
       n_fft: ${model.n_fft}
@@ -240,7 +243,7 @@ model:
     use_cat_speaker: false
     use_cln_speaker: false
   
-  global_style_token:
+  gst_model:
     _target_: nemo.collections.tts.modules.speaker_modules.GlobalStyleToken
     cnn_filters: [32, 32, 64, 64, 128, 128] 
     dropout: 0.2 
@@ -248,6 +251,8 @@ model:
     gst_size: ${model.symbols_embedding_dim}
     n_style_token: 10
     n_style_attn_head: 4
+    
+  sv_model: "titanet_large"
     
   optim:
     name: adamw
