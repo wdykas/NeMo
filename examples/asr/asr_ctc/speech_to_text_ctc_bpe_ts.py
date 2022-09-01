@@ -86,12 +86,12 @@ def main(cfg):
 
         # Initialize the weights of the model from another model, if provided via config
         # asr_model.maybe_init_from_pretrained_checkpoint(cfg)
-
-        checkpoint = EncDecCTCModelBPE.restore_from(
-            cfg.nemo_checkpoint_path, map_location=torch.device('cpu'), strict=False
-        )
-        asr_model.load_state_dict(checkpoint.state_dict(), strict=False)
-        del checkpoint
+        if cfg.get('nemo_checkpoint_path', None) is not None:
+            checkpoint = EncDecCTCModelBPE.restore_from(
+                cfg.nemo_checkpoint_path, map_location=torch.device('cpu'), strict=False
+            )
+            asr_model.load_state_dict(checkpoint.state_dict(), strict=False)
+            del checkpoint
 
         trainer.fit(asr_model)
     else:

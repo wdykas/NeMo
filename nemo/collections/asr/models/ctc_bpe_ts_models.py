@@ -22,6 +22,7 @@ from typing import Dict, List, Optional, Union
 import torch
 from omegaconf import DictConfig, ListConfig, OmegaConf, open_dict
 from tqdm.auto import tqdm
+import torch
 
 from nemo.collections.asr.data import audio_to_text_dataset, feature
 from nemo.collections.asr.data.audio_to_text_dali import DALIOutputs
@@ -55,6 +56,7 @@ class TSEncDecCTCModelBPE(EncDecCTCModelBPE):
     ):
         super().__init__(*args, **kwargs)
         self.speaker_beam = EncDecCTCModelBPE.from_config_dict(self._cfg.speaker_beam)
+        self.fuse = torch.nn.Linear(self._cfg.speaker_embeddings.feature_dim, self._cfg.speaker_beam.feat_in)
         if self._cfg.speaker_embeddings.model_path:
             self.speaker_model = EncDecSpeakerLabelModel.from_pretrained(self._cfg.speaker_embeddings.model_path)
             if self._cfg.speaker_embeddings.freeze_encoder:
@@ -135,7 +137,10 @@ class TSEncDecCTCModelBPE(EncDecCTCModelBPE):
                 input_signal=speaker_embedding, input_signal_length=embedding_lengths
             )
 
-        mask = self.speaker_beam(audio_signal=processed_signal, features=speaker_embedding)
+        # fuse processed_signal <- processed_signal + speaker_embedding
+        emb_proj = self.fuse(speaker_embedding).unsqueeze(-1)
+        processed_signal = processed_signal + emb_proj
+        mask, mask_len = self.speaker_beam(audio_signal=processed_signal, length=processed_signal_length)
         processed_signal = mask * processed_signal
         encoded, encoded_len = self.encoder(audio_signal=processed_signal, length=processed_signal_length)
         # emb_shape = speaker_embedding.shape[-1]

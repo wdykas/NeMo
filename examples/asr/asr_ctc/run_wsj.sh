@@ -1,11 +1,11 @@
 #!/bin/bash
 python speech_to_text_ctc_bpe_ts.py \
 --config-path=../conf/conformer \
---config-name=conformer_ctc_bpe_ts.yaml \
+--config-name=conformer_ctc_bpe_ts_conformer.yaml \
 model.tokenizer.type=bpe \
 model.tokenizer.dir=/home/yangzhang/code/ts_asr/tokenizer_conformer/ctc_medium/tokenizer_spe_unigram_v128/ \
 model.train_ds.manifest_filepath=/mnt/data/wsj/wsj0-2mix/manifests/train.json \
-trainer.max_epochs=1 \
+trainer.max_epochs=50 \
 model.validation_ds.manifest_filepath=/mnt/data/wsj/wsj0-2mix/manifests/cv.json \
 model.train_ds.max_duration=16 \
 model.train_ds.augmentor.rir_noise_speaker.prob=1.0 \
@@ -32,6 +32,7 @@ model.test_ds.sample_rate=16000 \
 trainer.devices=[0] \
 trainer.log_every_n_steps=50 \
 model.encoder.d_model=256 \
+model.encoder.subsampling_factor=4 \
 model.encoder.n_heads=4 \
 model.encoder.n_layers=18 \
 model.spec_augment.time_masks=5 \
