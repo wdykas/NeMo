@@ -388,6 +388,14 @@ class FastPitchModule(NeuralModule):
             ref_spec_mask = (torch.arange(ref_spec_lens.max()).to(ref_spec.device).expand(ref_spec_lens.shape[0], ref_spec_lens.max()) < ref_spec_lens.unsqueeze(1)).unsqueeze(2)
             spk_emb += self.gst_speaker_emb(ref_spec, ref_spec_mask).unsqueeze(1)
 
+        # SV Speaker Embedding
+        if self.sv_speaker_emb is not None and ref_audio is not None and ref_audio_lens is not None:
+            with torch.no_grad():
+                _, embs = self.sv_speaker_emb(input_signal=ref_audio, input_signal_length=ref_audio_lens)
+                embs = torch.nn.functional.normalize(embs, p=2, dim=1)
+            embs = self.sv_linear(embs)
+            spk_emb += embs.unsqueeze(1)
+            
         # Input FFT
         enc_out, enc_mask = self.encoder(input=text, conditioning=spk_emb)
 
