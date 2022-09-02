@@ -24,7 +24,7 @@ from pytorch_lightning.loggers import LoggerCollection, TensorBoardLogger, Wandb
 from nemo.collections.common.parts.preprocessing import parsers
 from nemo.collections.tts.helpers.helpers import plot_alignment_to_numpy, plot_spectrogram_to_numpy
 from nemo.collections.tts.losses.aligner_loss import BinLoss, ForwardSumLoss
-from nemo.collections.tts.losses.fastpitchloss import DurationLoss, MelLoss, PitchLoss
+from nemo.collections.tts.losses.fastpitchloss import DurationLoss, MelLoss, PitchLoss, ProsodyLoss
 from nemo.collections.tts.models.base import SpectrogramGenerator
 from nemo.collections.tts.modules.fastpitch import FastPitchModule
 from nemo.collections.tts.torch.tts_data_types import SpeakerID
@@ -182,6 +182,7 @@ class FastPitchModel(SpectrogramGenerator, Exportable,
             cfg.pitch_embedding_kernel_size,
             cfg.n_mel_channels,
             cfg.max_token_duration,
+            cfg.sv_sample_rate,
             
             cfg.use_lookup_speaker,
             cfg.use_gst_speaker,
@@ -393,7 +394,7 @@ class FastPitchModel(SpectrogramGenerator, Exportable,
         else:
             audio, audio_lens, text, text_lens, durs, pitch, speaker, ref_audio, ref_audio_lens, ref_audio_sv, ref_audio_sv_lens = batch
 
-        mels, spec_len = self.preprocessor(input_signal=audio, length=audio_lens)
+        mels, spec_lens = self.preprocessor(input_signal=audio, length=audio_lens)
         ref_mels, ref_spec_lens = self.preprocessor(input_signal=ref_audio, length=ref_audio_lens)
 
         mels_pred, _, _, log_durs_pred, pitch_pred, attn_soft, attn_logprob, attn_hard, attn_hard_dur, pitch, prosody_predict, prosody_encode, mu, logvar = self(
@@ -408,7 +409,7 @@ class FastPitchModel(SpectrogramGenerator, Exportable,
             ref_audio=ref_audio_sv,
             ref_audio_lens=ref_audio_sv_lens,
             attn_prior=attn_prior,
-            mel_lens=spec_len,
+            mel_lens=spec_lens,
             input_lens=text_lens,
             learn_prosody_predictor=False if self.current_epoch < (self.trainer.max_epochs // 2) else True,
         )
@@ -419,7 +420,7 @@ class FastPitchModel(SpectrogramGenerator, Exportable,
         dur_loss = self.duration_loss(log_durs_predicted=log_durs_pred, durs_tgt=durs, len=text_lens)
         loss = mel_loss + dur_loss
         if self.learn_alignment:
-            ctc_loss = self.forward_sum_loss(attn_logprob=attn_logprob, in_lens=text_lens, out_lens=spec_len)
+            ctc_loss = self.forward_sum_loss(attn_logprob=attn_logprob, in_lens=text_lens, out_lens=spec_lens)
             bin_loss_weight = min(self.current_epoch / self.bin_loss_warmup_epochs, 1.0) * 1.0
             bin_loss = self.bin_loss(hard_attention=attn_hard, soft_attention=attn_soft) * bin_loss_weight
             loss += ctc_loss + bin_loss
@@ -433,7 +434,7 @@ class FastPitchModel(SpectrogramGenerator, Exportable,
             self.log("t_prosody_loss", prosody_loss)
             
         if mu is not None and logvar is not None:
-            kl_loss = torch.mean((-0.5 * torch.sum(1 + logvar - mu ** 2 - logvar.exp(), dim=2).sum(dim=1) / mel_lens), dim = 0) 
+            kl_loss = torch.mean((-0.5 * torch.sum(1 + logvar - mu ** 2 - logvar.exp(), dim=2).sum(dim=1) / spec_lens), dim = 0) 
             kl_Loss_scale = self.kl_Loss_scale * (self.global_step + 1) / (self.trainer.estimated_stepping_batches // 4) if self.current_epoch < (self.trainer.max_epochs // 4) else self.kl_Loss_scale
             loss += kl_loss * kl_Loss_scale
             self.log("t_kl_loss_scale", kl_Loss_scale)

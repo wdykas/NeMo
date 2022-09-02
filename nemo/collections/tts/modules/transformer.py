@@ -159,12 +159,13 @@ class MultiHeadAttn(nn.Module, lora_mixins.LoraModuleMixin, prefix_mixins.Prefix
             self.layer_norm = ConditionalLayerNorm(d_model, spk_emb_dim=d_model)
         else:
             self.layer_norm = nn.LayerNorm(d_model)
-        
+            
+        self.use_cln_speaker = use_cln_speaker
 
-    def forward(self, inp, attn_mask=None):
-        return self._forward(inp, attn_mask)
+    def forward(self, inp, attn_mask=None, conditioning=None):
+        return self._forward(inp, attn_mask, conditioning=conditioning)
 
-    def _forward(self, inp, attn_mask=None):
+    def _forward(self, inp, attn_mask=None, conditioning=None):
         residual = inp
 
         if self.pre_lnorm:
