@@ -2,7 +2,7 @@ import torch
 
 class Weighted_SpeakerEmbedding(torch.nn.Module):
     def __init__(self, pretrained_embedding):
-        super(SpeakerEmbedding, self).__init__()
+        super(Weighted_SpeakerEmbedding, self).__init__()
         self.pretrained_embedding = torch.nn.Parameter(pretrained_embedding.weight.detach().clone())
         self.pretrained_embedding.requires_grad = False
         self.num_embeddings = pretrained_embedding.num_embeddings
