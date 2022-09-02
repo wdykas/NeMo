@@ -239,7 +239,7 @@ class TTSDataset(Dataset):
 
         # Initialize audio and mel related parameters
         self.sample_rate = sample_rate
-        self.svsample_rate = svsample_rate
+        self.sv_sample_rate = sv_sample_rate
         self.featurizer = WaveformFeaturizer(sample_rate=self.sample_rate)
         self.featurizer_sv = WaveformFeaturizer(sample_rate=self.sv_sample_rate)
         self.trim = trim
