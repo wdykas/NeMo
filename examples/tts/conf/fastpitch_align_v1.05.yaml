@@ -299,7 +299,6 @@ model:
     use_add_speaker: false
     use_cat_speaker: false
     use_cln_speaker: false
-    use_cIn_speaker: false
 
   target_prosodypredictor:
     _target_: nemo.collections.tts.modules.prosody_modules.Target_ProsodyPredictor
@@ -313,7 +312,6 @@ model:
     use_add_speaker: false
     use_cat_speaker: false
     use_cln_speaker: false
-    use_cIn_speaker: false
     
   optim:
     name: adamw
