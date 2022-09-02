@@ -143,7 +143,7 @@ class PositionwiseConvFF(nn.Module):
 
 
 class MultiHeadAttn(nn.Module):
-    def __init__(self, n_head, d_model, d_head, dropout, dropatt=0.1, pre_lnorm=False, use_pmt_speaker=False):
+    def __init__(self, n_head, d_model, d_head, dropout, dropatt=0.1, pre_lnorm=False):
         super(MultiHeadAttn, self).__init__()
 
         self.n_head = n_head
@@ -215,8 +215,7 @@ class TransformerLayer(nn.Module, adapter_mixins.AdapterModuleMixin):
 
         self.dec_attn = MultiHeadAttn(n_head, d_model, d_head, dropout, 
                                       dropatt=kwargs.get('dropatt'),
-                                      pre_lnorm=kwargs.get('pre_lnorm'),
-                                      use_pmt_speaker=kwargs.get('use_pmt_speaker'))
+                                      pre_lnorm=kwargs.get('pre_lnorm'))
         
         self.pos_ff = PositionwiseConvFF(d_model, d_inner, kernel_size, dropout, 
                                          pre_lnorm=kwargs.get('pre_lnorm'), 
@@ -238,7 +237,7 @@ class TransformerLayer(nn.Module, adapter_mixins.AdapterModuleMixin):
 class FFTransformerDecoder(NeuralModule):
     def __init__(
         self, n_layer, n_head, d_model, d_head, d_inner, kernel_size, dropout, dropatt, dropemb=0.0, pre_lnorm=False, 
-        use_add_speaker=False, use_cat_speaker=False, use_cln_speaker=False, use_pmt_speaker=False,
+        use_add_speaker=False, use_cat_speaker=False, use_cln_speaker=False
     ):
         super(FFTransformerDecoder, self).__init__()
         self.d_model = d_model
@@ -257,7 +256,7 @@ class FFTransformerDecoder(NeuralModule):
                     n_head, 
                     d_model, 
                     d_head, d_inner, kernel_size, dropout, dropatt=dropatt, pre_lnorm=pre_lnorm, 
-                    use_cln_speaker=use_cln_speaker, use_pmt_speaker=use_pmt_speaker,
+                    use_cln_speaker=use_cln_speaker,
                 )
             )
             
@@ -324,11 +323,10 @@ class FFTransformerEncoder(FFTransformerDecoder):
         use_add_speaker=False,
         use_cat_speaker=False,
         use_cln_speaker=False,
-        use_pmt_speaker=False,
     ):
         super(FFTransformerEncoder, self).__init__(
             n_layer, n_head, d_model, d_head, d_inner, kernel_size, dropout, dropatt, dropemb, pre_lnorm, 
-            use_add_speaker, use_cat_speaker, use_cln_speaker, use_pmt_speaker,
+            use_add_speaker, use_cat_speaker, use_cln_speaker,
         )
 
         self.padding_idx = padding_idx
