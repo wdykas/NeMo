@@ -82,15 +82,27 @@ def average_pitch(pitch, durs):
 
 
 class ConvReLUNorm(torch.nn.Module, adapter_mixins.AdapterModuleMixin):
-    def __init__(self, in_channels, out_channels, kernel_size=1, dropout=0.0):
+    def __init__(self, in_channels, out_channels, kernel_size=1, dropout=0.0, speaker_size=384, use_cln_speaker=False):
         super(ConvReLUNorm, self).__init__()
         self.conv = torch.nn.Conv1d(in_channels, out_channels, kernel_size=kernel_size, padding=(kernel_size // 2))
-        self.norm = torch.nn.LayerNorm(out_channels)
+        self.use_cln_speaker = use_cln_speaker
+        
+        if use_cln_speaker:
+            self.norm = ConditionalLayerNorm(out_channels, spk_emb_dim=speaker_size)
+        else:
+            self.norm = torch.nn.LayerNorm(out_channels)
+        
         self.dropout = torch.nn.Dropout(dropout)
 
-    def forward(self, signal):
+    def forward(self, signal, conditioning=None):
+        
         out = torch.nn.functional.relu(self.conv(signal))
-        out = self.norm(out.transpose(1, 2)).transpose(1, 2)
+        
+        if (self.use_cln_speaker or self.use_cIn_speaker) and conditioning is not None:
+            out = self.norm(out.transpose(1, 2), conditioning).transpose(1, 2)
+        else:
+            out = self.norm(out.transpose(1, 2)).transpose(1, 2)
+            
         out = self.dropout(out)
         
         if self.is_adapter_available():
@@ -102,17 +114,16 @@ class ConvReLUNorm(torch.nn.Module, adapter_mixins.AdapterModuleMixin):
 class TemporalPredictor(NeuralModule):
     """Predicts a single float per each temporal location"""
 
-    def __init__(self, input_size, filter_size, kernel_size, dropout, use_add_speaker=False, use_cat_speaker=False, n_layers=2):
+    def __init__(self, input_size, filter_size, kernel_size, dropout, use_add_speaker=False, use_cat_speaker=False, use_cln_speaker=False, n_layers=2):
         super(TemporalPredictor, self).__init__()
-        
-        self.layers = torch.nn.Sequential(
-            *[
+        self.layers = torch.nn.ModuleList()
+        for i in range(n_layers):
+            self.layers.append(
                 ConvReLUNorm(
-                    input_size * (2 if use_cat_speaker else 1) if i == 0 else filter_size, filter_size, kernel_size=kernel_size, dropout=dropout
+                    input_size * (2 if use_cat_speaker else 1) if i == 0 else filter_size, filter_size, kernel_size=kernel_size, dropout=dropout, 
+                    speaker_size=input_size, use_cln_speaker=use_cln_speaker, 
                 )
-                for i in range(n_layers)
-            ]
-        )
+            )
         self.fc = torch.nn.Linear(filter_size, 1, bias=True)
         self.use_add_speaker = use_add_speaker
         self.use_cat_speaker = use_cat_speaker
@@ -132,15 +143,20 @@ class TemporalPredictor(NeuralModule):
             "out": NeuralType(('B', 'T'), EncodedRepresentation()),
         }
 
-    def forward(self, enc, enc_mask, conditioning=0):
+    def forward(self, enc, enc_mask, conditioning=None):
         if self.use_add_speaker:
             enc = enc + conditioning
         
         if self.use_cat_speaker:
             enc = torch.cat([enc, conditioning.repeat(1, enc.shape[1], 1)], dim=-1) 
-            
+        
         out = enc * enc_mask
-        out = self.layers(out.transpose(1, 2)).transpose(1, 2)
+        out = out.transpose(1, 2)
+        
+        for layer in self.layers:
+            out = layer(out, conditioning=conditioning)
+            
+        out = out.transpose(1, 2)
         out = self.fc(out) * enc_mask
         return out.squeeze(-1)
     
