@@ -61,7 +61,7 @@ def main(cfg):
     exp_manager(trainer, cfg.get("exp_manager", None))   
     n_speakers = cfg.model.n_speakers
     
-    if cfg.finetune.add_random_speaker:
+    if cfg.finetune_multispeaker.add_random_speaker:
         cfg.model.n_speakers += 1
         
     model = FastPitchModel(cfg=update_model_config_to_support_adapter(cfg.model), trainer=trainer)
@@ -69,12 +69,12 @@ def main(cfg):
     model.maybe_init_from_pretrained_checkpoint(cfg=cfg)
     
      # Freeze 
-    if cfg.finetune.freeze_all: model.freeze()
-    if cfg.finetune.freeze_encoder: model.fastpitch.encoder.freeze()
-    if cfg.finetune.freeze_decoder: model.fastpitch.decoder.freeze()
+    if cfg.finetune_multispeaker.freeze_all: model.freeze()
+    if cfg.finetune_multispeaker.freeze_encoder: model.fastpitch.encoder.freeze()
+    if cfg.finetune_multispeaker.freeze_decoder: model.fastpitch.decoder.freeze()
 
     # Add new speaker embedding
-    if cfg.finetune.add_random_speaker and model.fastpitch.speaker_emb is not None:
+    if cfg.finetune_multispeaker.add_random_speaker and model.fastpitch.speaker_emb is not None:
         old_emb = model.fastpitch.speaker_emb
         
         # Choose random
@@ -88,13 +88,13 @@ def main(cfg):
         model.cfg.n_speakers += 1
     
     # Add weighted sum speaker embedding
-    elif cfg.finetune.add_weight_speaker and model.fastpitch.speaker_emb is not None:
+    elif cfg.finetune_multispeaker.add_weight_speaker and model.fastpitch.speaker_emb is not None:
         old_emb = model.fastpitch.speaker_emb
         new_emb = Weighted_SpeakerEmbedding(pretrained_embedding=old_emb)
         model.fastpitch.speaker_emb = new_emb
 
     # Add adapter
-    if cfg.finetune.add_adapter:
+    if cfg.finetune_multispeaker.add_adapter:
         adapter_cfg = adapter_modules.LinearAdapterConfig(
             in_features=model.cfg.output_fft.d_model,  # conformer specific model dim. Every layer emits this dim at its output.
             dim=256,  # the bottleneck dimension of the adapter
