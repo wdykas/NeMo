@@ -296,7 +296,7 @@ model:
     gru_hidden: ${model.symbols_embedding_dim}
     gru_layer: 1
     use_avg_before: false
-    use_avg_after: false
+    use_avg_after: true
     use_vae: false
     use_add_speaker: false
     use_cat_speaker: false
