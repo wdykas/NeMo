@@ -512,7 +512,7 @@ class FastPitchModule(NeuralModule):
         dec_out, _ = self.decoder(input=len_regulated, seq_lens=dec_lens, conditioning=spk_emb)
         
         # [Prosody] Attentron
-        if self.attentron is not None and ref_spec is not None:
+        if self.attentron_model is not None and ref_spec is not None:
             attentron_out = self.attentron_model(dec_out, ref_spec)
             dec_out = torch.cat((dec_out, attentron_out), dim=-1)
         

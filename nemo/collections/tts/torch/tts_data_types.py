@@ -68,10 +68,9 @@ class LMTokens(TTSDataType):
     
 class Ref_Audio(TTSDataType, WithLens):
     name = "ref_audio"
-    
+
 class Ref_Audio_SV(TTSDataType, WithLens):
     name = "ref_audio_sv"
-
 
 MAIN_DATA_TYPES = [Audio, Text]
 VALID_SUPPLEMENTARY_DATA_TYPES = [

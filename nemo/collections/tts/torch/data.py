@@ -586,8 +586,8 @@ class TTSDataset(Dataset):
             speaker_id = torch.tensor(sample["speaker_id"]).long()
             
         ref_audio, ref_audio_length = None, None
+        ref_audio_sv, ref_audio_sv_length = None, None    
         if speaker_id != None and Ref_Audio in self.sup_data_types_set:
-            
             # [TODO] Maybe not use target audio
             ref_pool = self.speaker_to_index[sample["speaker_id"]] - set([index]) if len(self.speaker_to_index[sample["speaker_id"]]) > 1 else self.speaker_to_index[sample["speaker_id"]]
             ref_sample = self.data[random.sample(ref_pool, 1)[0]]
@@ -599,16 +599,17 @@ class TTSDataset(Dataset):
                 trim_frame_length=self.trim_frame_length,
                 trim_hop_length=self.trim_hop_length)            
             ref_audio, ref_audio_length = ref_features, torch.tensor(ref_features.shape[0]).long()
+            
         
-        if speaker_id != None and Ref_Audio_SV in self.sup_data_types_set:   
-            ref_features_sv = self.featurizer_sv.process(
-                ref_sample["audio_filepath"],
-                trim=self.trim,
-                trim_ref=self.trim_ref,
-                trim_top_db=self.trim_top_db,
-                trim_frame_length=self.trim_frame_length,
-                trim_hop_length=self.trim_hop_length)     
-            ref_audio_sv, ref_audio_sv_length = ref_features_sv, torch.tensor(ref_features_sv.shape[0]).long()
+            if Ref_Audio_SV in self.sup_data_types_set:    
+                ref_features_sv = self.featurizer_sv.process(
+                    ref_sample["audio_filepath"],
+                    trim=self.trim,
+                    trim_ref=self.trim_ref,
+                    trim_top_db=self.trim_top_db,
+                    trim_frame_length=self.trim_frame_length,
+                    trim_hop_length=self.trim_hop_length)     
+                ref_audio_sv, ref_audio_sv_length = ref_features_sv, torch.tensor(ref_features_sv.shape[0]).long()
 
         return (
             audio,
