@@ -42,7 +42,7 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 from typing import Optional, List
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 
 import torch
 from nemo.collections.asr.models.label_models import EncDecSpeakerLabelModel
@@ -209,6 +209,8 @@ class FastPitchModule(NeuralModule):
         sv_model: str
         attentron_model: NeuralModule,
         reference_prosodyencoder: NeuralModule,
+        target_prosodyencoder: NeuralModule,
+        target_prosodypredictor: NeuralModule,
         
         n_speakers: int,
         symbols_embedding_dim: int,
@@ -222,6 +224,7 @@ class FastPitchModule(NeuralModule):
         
         use_attentron: bool = False,
         use_reference_prosodyencoder: bool = False,
+        use_target_prosodyencoder: bool = False,
     ):
         super().__init__()
 
@@ -254,6 +257,11 @@ class FastPitchModule(NeuralModule):
         if use_reference_prosodyencoder:
             self.reference_prosodyencoder = reference_prosodyencoder
             
+        self.target_prosodyencoder = None
+        self.target_prosodypredictor = None
+        if use_target_prosodyencoder:
+            self.target_prosodyencoder = target_prosodyencoder
+            self.target_prosodypredictor = target_prosodypredictor
             
         self.max_token_duration = max_token_duration
         self.min_token_duration = 0
@@ -271,8 +279,6 @@ class FastPitchModule(NeuralModule):
 
         self.proj = torch.nn.Linear(self.decoder.d_model * 2 if use_attentron else self.decoder.d_model, n_mel_channels, bias=True)
         
-        
-
     @property
     def input_types(self):
         return {
@@ -289,6 +295,7 @@ class FastPitchModule(NeuralModule):
             "attn_prior": NeuralType(('B', 'T_spec', 'T_text'), ProbsType(), optional=True),
             "mel_lens": NeuralType(('B'), LengthsType(), optional=True),
             "input_lens": NeuralType(('B'), LengthsType(), optional=True),
+            "learn_prosody_predictor": NeuralType(optional=True),
         }
 
     @property
@@ -304,6 +311,10 @@ class FastPitchModule(NeuralModule):
             "attn_hard": NeuralType(('B', 'S', 'T_spec', 'T_text'), ProbsType()),
             "attn_hard_dur": NeuralType(('B', 'T_text'), TokenDurationType()),
             "pitch": NeuralType(('B', 'T_audio'), RegressionValuesType()),
+            "prosody_predict": NeuralType(('B', 'T', 'D'), EncodedRepresentation(), optional=True),
+            "prosody_encode": NeuralType(('B', 'T', 'D'), EncodedRepresentation(), optional=True),
+            "mu": NeuralType(('B', 'T', 'D'), EncodedRepresentation()),
+            "logvar": NeuralType(('B', 'T', 'D'), EncodedRepresentation()),
         }
 
     @typecheck()
@@ -323,6 +334,7 @@ class FastPitchModule(NeuralModule):
         attn_prior=None,
         mel_lens=None,
         input_lens=None,
+        learn_prosody_predictor=None,
     ):
 
         if not self.learn_alignment and self.training:
@@ -354,6 +366,14 @@ class FastPitchModule(NeuralModule):
         # Input FFT
         enc_out, enc_mask = self.encoder(input=text, conditioning=spk_emb)
         
+        # Alignment
+        attn_soft, attn_hard, attn_hard_dur, attn_logprob = None, None, None, None
+        if self.learn_alignment and spec is not None:
+            text_emb = self.encoder.word_emb(text)
+            attn_soft, attn_logprob = self.aligner(spec, text_emb.permute(0, 2, 1), enc_mask == 0, attn_prior, conditioning=spk_emb)
+            attn_hard = binarize_attention_parallel(attn_soft, input_lens, mel_lens)
+            attn_hard_dur = attn_hard.sum(2)[:, 0, :]
+        
         # Add Reference Prosody
         if self.reference_prosodyencoder is not None and ref_spec is not None and ref_spec_lens is not None:
             # TODO [ref_spec_lens MASK]
@@ -361,17 +381,30 @@ class FastPitchModule(NeuralModule):
             prosody_ref = self.reference_prosodyencoder(enc_out, enc_mask, ref_spec, ref_spec_mask, conditioning=spk_emb)
             enc_out = enc_out + prosody_ref
         
-        
+        # Add Target Encode/Predict prosody 
+        prosody_encode, prosody_predict, mu, logvar = None, None, None, None
+        if self.target_prosodyencoder is not None and self.target_prosodypredictor is not None:
+            if spec is not None and mel_lens is not None:
+                spec_mask = (torch.arange(mel_lens.max()).to(spec.device).expand(mel_lens.shape[0], mel_lens.max()) < mel_lens.unsqueeze(1)).unsqueeze(2)
+                if learn_prosody_predictor:
+                    with torch.no_grad():
+                        prosody_encode, _, _ = self.target_prosodyencoder(spec, spec_mask, durs=attn_hard_dur, conditioning=spk_emb, inference=True) 
+                    prosody_encode = (prosody_encode * enc_mask).detach()
+                    prosody_predict = self.target_prosodypredictor(enc_out, enc_mask, conditioning=spk_emb)
+                else:
+                    prosody_encode, mu, logvar = self.target_prosodyencoder(spec, spec_mask, durs=attn_hard_dur, conditioning=spk_emb)
+                    prosody_encode = (prosody_encode * enc_mask)
+                    
+                prosody_tgt = prosody_encode
+            else:
+                prosody_predict = self.target_prosodypredictor(enc_out, enc_mask, conditioning=spk_emb)
+                prosody_tgt = prosody_predict
+                
+            enc_out = enc_out + prosody_tgt
+            
         # Predict duration
         log_durs_predicted = self.duration_predictor(enc_out, enc_mask, conditioning=spk_emb)
         durs_predicted = torch.clamp(torch.exp(log_durs_predicted) - 1, 0, self.max_token_duration)
-
-        attn_soft, attn_hard, attn_hard_dur, attn_logprob = None, None, None, None
-        if self.learn_alignment and spec is not None:
-            text_emb = self.encoder.word_emb(text)
-            attn_soft, attn_logprob = self.aligner(spec, text_emb.permute(0, 2, 1), enc_mask == 0, attn_prior, conditioning=spk_emb)
-            attn_hard = binarize_attention_parallel(attn_soft, input_lens, mel_lens)
-            attn_hard_dur = attn_hard.sum(2)[:, 0, :]
 
         # Predict pitch
         pitch_predicted = self.pitch_predictor(enc_out, enc_mask, conditioning=spk_emb)
@@ -393,6 +426,7 @@ class FastPitchModule(NeuralModule):
         elif spec is None:
             len_regulated, dec_lens = regulate_len(durs_predicted, enc_out, pace)
 
+        
         # Output FFT
         dec_out, _ = self.decoder(input=len_regulated, seq_lens=dec_lens, conditioning=spk_emb)
         
@@ -413,6 +447,10 @@ class FastPitchModule(NeuralModule):
             attn_hard,
             attn_hard_dur,
             pitch,
+            prosody_predict,
+            prosody_encode,
+            mu,
+            logvar,
         )
 
     def infer(self, *, text, pitch=None, speaker=None, pace=1.0, volume=None):
@@ -446,7 +484,12 @@ class FastPitchModule(NeuralModule):
             ref_spec_mask = (torch.arange(ref_spec_lens.max()).to(ref_spec.device).expand(ref_spec_lens.shape[0], ref_spec_lens.max()) < ref_spec_lens.unsqueeze(1)).unsqueeze(2)
             prosody_ref = self.reference_prosodyencoder(enc_out, enc_mask, ref_spec, ref_spec_mask, conditioning=spk_emb)
             enc_out = enc_out + prosody_ref
-        
+            
+        # Add Target Predict Prosody 
+        prosody_encode, prosody_predict = None, None
+        if self.target_prosodypredictor is not None:
+            prosody_tgt = self.target_prosodypredictor(enc_out, enc_mask, conditioning=spk_emb)
+            enc_out += prosody_tgt
         
         # Predict duration and pitch
         log_durs_predicted = self.duration_predictor(enc_out, enc_mask, conditioning=spk_emb)
@@ -480,6 +523,8 @@ class FastPitchModule(NeuralModule):
             log_durs_predicted,
             pitch_predicted,
             volume_extended,
+            prosody_predict,
+            prosody_encode,
         )
 
     
