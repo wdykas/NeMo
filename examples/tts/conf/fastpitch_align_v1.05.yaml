@@ -49,6 +49,7 @@ model:
   use_sv_speaker: false
   use_attentron: false
   use_reference_prosodyencoder: false
+  use_target_prosodyencoder: false
   
   learn_alignment: true
   bin_loss_warmup_epochs: 100
@@ -280,7 +281,40 @@ model:
     use_add_speaker: false
     use_cat_speaker: false
     use_cln_speaker: false
-  
+
+
+  target_prosodyencoder:
+    _target_: nemo.collections.tts.modules.prosody_modules.Target_ProsodyEncoder
+    mel_inp_size: ${n_mel_channels}
+    hid_inp_size: ${model.symbols_embedding_dim}  
+    filter_size: 256
+    kernel_size: 3 
+    n_layers: 2
+    dropout: 0.2 
+    gru_hidden: ${model.symbols_embedding_dim}
+    gru_layer: 1
+    use_avg_before: false
+    use_avg_after: false
+    use_vae: false
+    use_add_speaker: false
+    use_cat_speaker: false
+    use_cln_speaker: false
+    use_cIn_speaker: false
+
+  target_prosodypredictor:
+    _target_: nemo.collections.tts.modules.prosody_modules.Target_ProsodyPredictor
+    hid_inp_size: ${model.symbols_embedding_dim}  
+    filter_size: 256
+    kernel_size: 3 
+    n_layers: 2
+    dropout: 0.2 
+    gru_hidden: ${model.symbols_embedding_dim}
+    gru_layer: 1
+    use_add_speaker: false
+    use_cat_speaker: false
+    use_cln_speaker: false
+    use_cIn_speaker: false
+    
   optim:
     name: adamw
     lr: 1e-3

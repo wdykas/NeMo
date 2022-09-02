@@ -126,14 +126,23 @@ class FastPitchModel(SpectrogramGenerator, Exportable,
         loss_scale = 0.1 if self.learn_alignment else 1.0
         dur_loss_scale = loss_scale
         pitch_loss_scale = loss_scale
+        prosody_loss_scale = loss_scale
+        kl_Loss_scale = loss_scale
+        
         if "dur_loss_scale" in cfg:
             dur_loss_scale = cfg.dur_loss_scale
         if "pitch_loss_scale" in cfg:
             pitch_loss_scale = cfg.pitch_loss_scale
+        if "prosody_loss_scale" in cfg:
+            prosody_loss_scale = cfg.prosody_loss_scale
+        if "kl_Loss_scale" in cfg:
+            kl_Loss_scale = cfg.kl_Loss_scale
 
         self.mel_loss = MelLoss()
         self.pitch_loss = PitchLoss(loss_scale=pitch_loss_scale)
         self.duration_loss = DurationLoss(loss_scale=dur_loss_scale)
+        self.prosody_loss = ProsodyLoss(loss_scale=prosody_loss_scale)
+        self.kl_Loss_scale = kl_Loss_scale
 
         self.aligner = None
         if self.learn_alignment:
@@ -151,7 +160,9 @@ class FastPitchModel(SpectrogramGenerator, Exportable,
         sv_model = cfg.sv_model
         attentron_model = instantiate(self._cfg.attentron_model)
         reference_prosodyencoder = instantiate(self._cfg.reference_prosodyencoder)
-        
+        target_prosodyencoder = instantiate(self._cfg.target_prosodyencoder)
+        target_prosodypredictor = instantiate(self._cfg.target_prosodypredictor)
+                
         self.fastpitch = FastPitchModule(
             input_fft,
             output_fft,
@@ -163,17 +174,22 @@ class FastPitchModel(SpectrogramGenerator, Exportable,
             sv_model,
             attentron_model,
             reference_prosodyencoder,
+            target_prosodyencoder,
+            target_prosodypredictor,
             
             cfg.n_speakers,
             cfg.symbols_embedding_dim,
             cfg.pitch_embedding_kernel_size,
             cfg.n_mel_channels,
+            cfg.max_token_duration,
             
             cfg.use_lookup_speaker,
             cfg.use_gst_speaker,
             cfg.use_sv_speaker,
+            
             cfg.use_attentron,
             cfg.use_reference_prosodyencoder,
+            cfg.use_target_prosodyencoder,
         )
         self._input_types = self._output_types = None
 
@@ -309,6 +325,7 @@ class FastPitchModel(SpectrogramGenerator, Exportable,
             "attn_prior": NeuralType(('B', 'T_spec', 'T_text'), ProbsType(), optional=True),
             "mel_lens": NeuralType(('B'), LengthsType(), optional=True),
             "input_lens": NeuralType(('B'), LengthsType(), optional=True),
+            "learn_prosody_predictor": NeuralType(optional=True),
         }
     )
     def forward(
@@ -327,6 +344,7 @@ class FastPitchModel(SpectrogramGenerator, Exportable,
         attn_prior=None,
         mel_lens=None,
         input_lens=None,
+        learn_prosody_predictor=None
     ):
         return self.fastpitch(
             text=text,
@@ -342,6 +360,7 @@ class FastPitchModel(SpectrogramGenerator, Exportable,
             attn_prior=attn_prior,
             mel_lens=mel_lens,
             input_lens=input_lens,
+            learn_prosody_predictor=learn_prosody_predictor
         )
 
     @typecheck(output_types={"spect": NeuralType(('B', 'D', 'T_spec'), MelSpectrogramType())})
@@ -377,7 +396,7 @@ class FastPitchModel(SpectrogramGenerator, Exportable,
         mels, spec_len = self.preprocessor(input_signal=audio, length=audio_lens)
         ref_mels, ref_spec_lens = self.preprocessor(input_signal=ref_audio, length=ref_audio_lens)
 
-        mels_pred, _, _, log_durs_pred, pitch_pred, attn_soft, attn_logprob, attn_hard, attn_hard_dur, pitch = self(
+        mels_pred, _, _, log_durs_pred, pitch_pred, attn_soft, attn_logprob, attn_hard, attn_hard_dur, pitch, prosody_predict, prosody_encode, mu, logvar = self(
             text=text,
             durs=durs,
             pitch=pitch,
@@ -391,6 +410,7 @@ class FastPitchModel(SpectrogramGenerator, Exportable,
             attn_prior=attn_prior,
             mel_lens=spec_len,
             input_lens=text_lens,
+            learn_prosody_predictor=False if self.current_epoch < (self.trainer.max_epochs // 2) else True,
         )
         if durs is None:
             durs = attn_hard_dur
@@ -407,6 +427,18 @@ class FastPitchModel(SpectrogramGenerator, Exportable,
         pitch_loss = self.pitch_loss(pitch_predicted=pitch_pred, pitch_tgt=pitch, len=text_lens)
         loss += pitch_loss
 
+        if prosody_predict is not None and prosody_encode is not None:
+            prosody_loss = self.prosody_loss(prosody_predict=prosody_predict, prosody_tgt=prosody_encode)
+            loss += prosody_loss 
+            self.log("t_prosody_loss", prosody_loss)
+            
+        if mu is not None and logvar is not None:
+            kl_loss = torch.mean((-0.5 * torch.sum(1 + logvar - mu ** 2 - logvar.exp(), dim=2).sum(dim=1) / mel_lens), dim = 0) 
+            kl_Loss_scale = self.kl_Loss_scale * (self.global_step + 1) / (self.trainer.estimated_stepping_batches // 4) if self.current_epoch < (self.trainer.max_epochs // 4) else self.kl_Loss_scale
+            loss += kl_loss * kl_Loss_scale
+            self.log("t_kl_loss_scale", kl_Loss_scale)
+            self.log("t_kl_loss", kl_loss)
+        
         self.log("t_loss", loss)
         self.log("t_mel_loss", mel_loss)
         self.log("t_dur_loss", dur_loss)
@@ -458,7 +490,7 @@ class FastPitchModel(SpectrogramGenerator, Exportable,
         ref_mels, ref_spec_lens = self.preprocessor(input_signal=ref_audio, length=ref_audio_lens)
 
         # Calculate val loss on ground truth durations to better align L2 loss in time
-        mels_pred, _, _, log_durs_pred, pitch_pred, _, _, _, attn_hard_dur, pitch = self(
+        mels_pred, _, _, log_durs_pred, pitch_pred, _, _, _, attn_hard_dur, pitch, prosody_predict, prosody_encode, mu, logvar = self(
             text=text,
             durs=durs,
             pitch=pitch,
@@ -472,6 +504,7 @@ class FastPitchModel(SpectrogramGenerator, Exportable,
             attn_prior=attn_prior,
             mel_lens=mel_lens,
             input_lens=text_lens,
+            learn_prosody_predictor=False if self.current_epoch < (self.trainer.max_epochs // 2) else True,
         )
         if durs is None:
             durs = attn_hard_dur
@@ -481,11 +514,24 @@ class FastPitchModel(SpectrogramGenerator, Exportable,
         pitch_loss = self.pitch_loss(pitch_predicted=pitch_pred, pitch_tgt=pitch, len=text_lens)
         loss = mel_loss + dur_loss + pitch_loss
 
+        prosody_loss = torch.tensor([0.])
+        if prosody_predict is not None and prosody_encode is not None:
+            prosody_loss = self.prosody_loss(prosody_predict=prosody_predict, prosody_tgt=prosody_encode)
+            loss += prosody_loss 
+        
+        kl_loss = torch.tensor([0.])
+        if mu is not None and logvar is not None:
+            kl_loss = torch.mean((-0.5 * torch.sum(1 + logvar - mu ** 2 - logvar.exp(), dim=2).sum(dim=1) / mel_lens), dim = 0) 
+            kl_Loss_scale = self.kl_Loss_scale * (self.global_step + 1) / (self.trainer.estimated_stepping_batches // 4) if self.current_epoch < (self.trainer.max_epochs // 4) else self.kl_Loss_scale
+            loss += kl_loss * kl_Loss_scale
+        
         return {
             "val_loss": loss,
             "mel_loss": mel_loss,
             "dur_loss": dur_loss,
             "pitch_loss": pitch_loss,
+            "prosody_loss": prosody_loss,
+            "kl_loss": kl_loss,
             "mel_target": mels if batch_idx == 0 else None,
             "mel_pred": mels_pred if batch_idx == 0 else None,
         }
@@ -497,12 +543,16 @@ class FastPitchModel(SpectrogramGenerator, Exportable,
         mel_loss = collect("mel_loss")
         dur_loss = collect("dur_loss")
         pitch_loss = collect("pitch_loss")
+        prosody_loss = collect("prosody_loss")
+        kl_loss = collect("kl_loss")
         self.log("v_loss", val_loss)
         self.log("v_mel_loss", mel_loss)
         self.log("v_dur_loss", dur_loss)
         self.log("v_pitch_loss", pitch_loss)
+        self.log("v_prosody_loss", prosody_loss)
+        self.log("v_kl_loss", kl_loss)
 
-        _, _, _, _, spec_target, spec_predict = outputs[0].values()
+        _, _, _, _, _, _, spec_target, spec_predict = outputs[0].values()
 
         mel_target = plot_spectrogram_to_numpy(spec_target[0].data.cpu().float().numpy())
         self.tb_logger.add_image("val_mel_target", mel_target, self.global_step, dataformats="HWC")
@@ -510,8 +560,8 @@ class FastPitchModel(SpectrogramGenerator, Exportable,
                           
         mel_predict = plot_spectrogram_to_numpy(spec_predict[0].data.cpu().float().numpy())
         self.tb_logger.add_image("val_mel_predict", mel_predict, self.global_step, dataformats="HWC")
-        self.wdb_logger.log_image(key="val_mel_predict", images=[mel_predict])  
-
+        self.wdb_logger.log_image(key="val_mel_predict", images=[mel_predict])   
+        
     def __setup_dataloader_from_config(self, cfg, shuffle_should_be: bool = True, name: str = "train"):
         if "dataset" not in cfg or not isinstance(cfg.dataset, DictConfig):
             raise ValueError(f"No dataset for {name}")

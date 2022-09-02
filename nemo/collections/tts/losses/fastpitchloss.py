@@ -54,6 +54,7 @@ from nemo.core.neural_types.elements import (
     RegressionValuesType,
     TokenDurationType,
     TokenLogDurationType,
+    EncodedRepresentation,
 )
 from nemo.core.neural_types.neural_type import NeuralType
 
@@ -148,3 +149,33 @@ class MelLoss(Loss):
         mel_loss = (mel_loss * mel_mask).sum() / mel_mask.sum()
 
         return mel_loss
+    
+class ProsodyLoss(Loss):
+    def __init__(self, loss_scale=0.1):
+        super().__init__()
+        self.loss_scale = loss_scale
+
+    @property
+    def input_types(self):
+        return {
+            "prosody_predict": NeuralType(('B', 'T', 'D'), EncodedRepresentation()),
+            "prosody_tgt": NeuralType(('B',  'T', 'D'), EncodedRepresentation()),
+        }
+
+    @property
+    def output_types(self):
+        return {
+            "loss": NeuralType(elements_type=LossType()),
+        }
+
+    @typecheck()
+    def forward(self, prosody_predict, prosody_tgt):
+        ldiff = prosody_tgt.size(1) - prosody_predict.size(1)
+        prosody_predict = F.pad(prosody_predict, (0, 0, 0, ldiff, 0, 0), value=0.0)
+        mask = prosody_tgt.ne(0).float()
+        loss_fn = F.mse_loss
+        prosody_loss = loss_fn(prosody_predict, prosody_tgt, reduction='none')
+        prosody_loss = (prosody_loss * mask).sum() / mask.sum()
+        prosody_loss *= self.loss_scale
+        
+        return prosody_loss
