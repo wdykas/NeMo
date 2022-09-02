@@ -239,6 +239,7 @@ class FastPitchModule(NeuralModule):
 
         self.speaker_emb = None
         self.gst_speaker_emb = None
+        self.sv_speaker_emb = None
         if n_speakers > 1:
             if use_lookup_speaker: self.speaker_emb = torch.nn.Embedding(n_speakers, symbols_embedding_dim)
             if use_gst_speaker: self.gst_speaker_emb = gst_model
