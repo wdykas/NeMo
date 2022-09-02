@@ -217,6 +217,7 @@ class FastPitchModule(NeuralModule):
         pitch_embedding_kernel_size: int,
         n_mel_channels: int = 80,
         max_token_duration: int = 75,
+        sv_sample_rate: int = 16000,
         
         use_lookup_speaker: bool = True,
         use_gst_speaker: bool = False,
@@ -243,7 +244,7 @@ class FastPitchModule(NeuralModule):
             if use_gst_speaker: self.gst_speaker_emb = gst_model
             if use_sv_speaker: 
                 sv_model = EncDecSpeakerLabelModel.from_pretrained(model_name=sv_model)
-                config = OmegaConf.create(dict(manifest_filepath=None, labels=None))
+                config = OmegaConf.create(dict(manifest_filepath=None, sample_rate=sv_sample_rate, labels=None))
                 sv_model.setup_test_data(config)
                 self.sv_speaker_emb = sv_model
                 self.sv_linear = torch.nn.Linear(sv_model.cfg.decoder.emb_sizes, symbols_embedding_dim)
@@ -399,7 +400,7 @@ class FastPitchModule(NeuralModule):
         dec_out, _ = self.decoder(input=len_regulated, seq_lens=dec_lens, conditioning=spk_emb)
         
         # [Prosody] Attentron
-        if self.attentron is not None and ref_spec is not None:
+        if self.attentron_model is not None and ref_spec is not None:
             attentron_out = self.attentron_model(dec_out, ref_spec)
             dec_out = torch.cat((dec_out, attentron_out), dim=-1)
         
@@ -470,7 +471,7 @@ class FastPitchModule(NeuralModule):
         dec_out, _ = self.decoder(input=len_regulated, seq_lens=dec_lens, conditioning=spk_emb)
         
         # [Prosody] Attentron
-        if self.attentron is not None and ref_spec is not None:
+        if self.attentron_model is not None and ref_spec is not None:
             attentron_out = self.attentron_model(dec_out, ref_spec)
             dec_out = torch.cat((dec_out, attentron_out), dim=-1)
         
