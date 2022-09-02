@@ -124,6 +124,8 @@ class ConformerEncoder(NeuralModule, StreamingEncoder, Exportable):
             {
                 "outputs": NeuralType(('B', 'D', 'T'), AcousticEncodedRepresentation()),
                 "encoded_lengths": NeuralType(tuple('B'), LengthsType()),
+                "pre_encoded_outputs": NeuralType(('D', 'B', 'D'), AcousticEncodedRepresentation(), optional=True),
+                "pre_encoded_output_lengths": NeuralType(tuple('B'), LengthsType(), optional=True),
                 "cache_last_channel_next": NeuralType(('D', 'B', 'T', 'D'), ChannelType(), optional=True),
                 "cache_last_time_next": NeuralType(('D', 'B', 'D', 'T'), ChannelType(), optional=True),
             }
@@ -373,6 +375,8 @@ class ConformerEncoder(NeuralModule, StreamingEncoder, Exportable):
                 length = (length - self.streaming_cfg.drop_extra_pre_encoded).float()
                 length = torch.clip(length, min=0).int()
 
+        pre_encoded_audio = audio_signal
+        pre_encoded_audio_length = length
         max_audio_length = audio_signal.size(1)
 
         # Create the self-attention and padding masks
@@ -430,7 +434,7 @@ class ConformerEncoder(NeuralModule, StreamingEncoder, Exportable):
         if cache_last_channel is not None:
             return audio_signal, length, cache_last_channel_next, cache_last_time_next
         else:
-            return audio_signal, length
+            return audio_signal, length, pre_encoded_audio, pre_encoded_audio_length
 
     def update_max_seq_length(self, seq_length: int, device):
         # Find global max audio length across all nodes
