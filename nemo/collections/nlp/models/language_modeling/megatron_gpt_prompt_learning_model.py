@@ -560,6 +560,7 @@ class MegatronGPTPromptLearningModel(MegatronBaseModel, TextGeneration):
                 tensor_shape=tensor_shape,
                 dtype=self.autocast_dtype,
                 grad_scaler=self.trainer.precision_plugin.scaler if self.cfg.precision == 16 else None,
+                sequence_parallel_enabled=self.cfg.sequence_parallel,
             )
         else:
             losses_reduced_per_micro_batch = forward_backward_no_pipelining(
