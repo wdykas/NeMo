@@ -786,7 +786,10 @@ class MegatronGPTPromptLearningModel(MegatronBaseModel, TextGeneration):
         assert batch_size % data_parallel_size == 0, "Global batch size must be evenly divisible by data parallel size"
 
         if for_train:
-            collate_fn = partial(dataset.collate_fn, tp_workers=parallel_state.get_tensor_model_parallel_world_size())
+            if self.cfg.sequence_parallel:
+                collate_fn = partial(dataset.collate_fn, tp_workers=parallel_state.get_tensor_model_parallel_world_size())
+            else:
+                collate_fn = partial(dataset.collate_fn, tp_workers=0)
         else:
             collate_fn = dataset.inference_collate_fn
 
