@@ -98,7 +98,7 @@ class ConvReLUNorm(torch.nn.Module, adapter_mixins.AdapterModuleMixin):
         
         out = torch.nn.functional.relu(self.conv(signal))
         
-        if (self.use_cln_speaker or self.use_cIn_speaker) and conditioning is not None:
+        if self.use_cln_speaker and conditioning is not None:
             out = self.norm(out.transpose(1, 2), conditioning).transpose(1, 2)
         else:
             out = self.norm(out.transpose(1, 2)).transpose(1, 2)
