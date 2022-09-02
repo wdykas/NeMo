@@ -444,7 +444,7 @@ class FastPitchModel(SpectrogramGenerator, Exportable,
             
     def validation_step(self, batch, batch_idx):
         attn_prior, durs, speaker = None, None, None
-                if self.learn_alignment:
+        if self.learn_alignment:
             if self.ds_class_name == "TTSDataset":
                 if SpeakerID in self._train_dl.dataset.sup_data_types_set:
                     audio, audio_lens, text, text_lens, attn_prior, pitch, _, speaker, ref_audio, ref_audio_lens, ref_audio_sv, ref_audio_sv_lens = batch
