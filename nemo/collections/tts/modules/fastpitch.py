@@ -94,7 +94,7 @@ class ConvReLUNorm(torch.nn.Module, adapter_mixins.AdapterModuleMixin):
             
         self.dropout = torch.nn.Dropout(dropout)
 
-    def forward(self, signal):
+    def forward(self, signal, conditioning=None):
         out = torch.nn.functional.relu(self.conv(signal))
         
         if self.use_cln_speaker and conditioning is not None:

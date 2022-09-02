@@ -31,13 +31,14 @@ phoneme_dict_path: "scripts/tts_dataset_files/cmudict-0.7b_nv22.01"
 heteronyms_path: "scripts/tts_dataset_files/heteronyms-030921"
 whitelist_path: "nemo_text_processing/text_normalization/en/data/whitelist/lj_speech.tsv"
 
-finetune:
+finetune_multispeaker:
   freeze_all: false
   freeze_encoder: false
   freeze_decoder: false
   add_random_speaker: true
   add_weight_speaker: false
   add_adapter: false
+  add_cln: false
   
 model:
   learn_alignment: true
