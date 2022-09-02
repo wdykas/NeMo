@@ -208,7 +208,7 @@ class FastPitchModule(NeuralModule):
         aligner: NeuralModule,
         
         gst_model: NeuralModule,
-        sv_model: str
+        sv_model: str,
         attentron_model: NeuralModule,
         reference_prosodyencoder: NeuralModule,
         
