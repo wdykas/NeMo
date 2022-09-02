@@ -19,6 +19,7 @@ pitch_std: 68.52806091308594
 
 # Default values for dataset with sample_rate=22050
 sample_rate: 22050
+sv_sample_rate: 16000
 n_mel_channels: 80
 n_window_size: 1024
 n_window_stride: 256
@@ -63,6 +64,7 @@ model:
   pitch_std: ${pitch_std}
 
   sample_rate: ${sample_rate}
+  sv_sample_rate: ${sv_sample_rate}
   n_mel_channels: ${n_mel_channels}
   n_window_size: ${n_window_size}
   n_window_stride: ${n_window_stride}
@@ -100,7 +102,7 @@ model:
       _target_: nemo.collections.tts.torch.data.TTSDataset
       manifest_filepath: ${train_dataset}
       sample_rate: ${model.sample_rate}
-      sv_sample_rate: 16000
+      sv_sample_rate: ${model.sv_sample_rate}
       sup_data_path: ${sup_data_path}
       sup_data_types: ${sup_data_types}
       n_fft: ${model.n_fft}
@@ -133,7 +135,7 @@ model:
       _target_: nemo.collections.tts.torch.data.TTSDataset
       manifest_filepath: ${validation_datasets}
       sample_rate: ${model.sample_rate}
-      sv_sample_rate: 16000
+      sv_sample_rate: ${model.sv_sample_rate}
       sup_data_path: ${sup_data_path}
       sup_data_types: ${sup_data_types}
       n_fft: ${model.n_fft}
