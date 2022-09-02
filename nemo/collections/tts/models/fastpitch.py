@@ -165,6 +165,7 @@ class FastPitchModel(SpectrogramGenerator, Exportable,
             cfg.pitch_embedding_kernel_size,
             cfg.n_mel_channels,
             cfg.max_token_duration,
+            cfg.sv_sample_rate,
             
             cfg.use_lookup_speaker,
             cfg.use_gst_speaker,
