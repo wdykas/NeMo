@@ -19,7 +19,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from nemo.collections.asr.parts.utils import adapter_utils
-from nemo.core.classes import NeuralModule, typecheck, adapter_mixins
+from nemo.core.classes import NeuralModule, typecheck, adapter_mixins, lora_mixins, prefix_mixins
 from nemo.core.neural_types.elements import EncodedRepresentation, LengthsType, MaskType, TokenIndex
 from nemo.core.neural_types.neural_type import NeuralType
 
@@ -140,7 +140,7 @@ class PositionwiseConvFF(nn.Module):
         return output
 
 
-class MultiHeadAttn(nn.Module):
+class MultiHeadAttn(nn.Module, lora_mixins.LoraModuleMixin, prefix_mixins.PrefixModuleMixin):
     def __init__(self, n_head, d_model, d_head, dropout, dropatt=0.1, pre_lnorm=False, use_cln_speaker=False):
         super(MultiHeadAttn, self).__init__()
 
@@ -159,12 +159,13 @@ class MultiHeadAttn(nn.Module):
             self.layer_norm = ConditionalLayerNorm(d_model, spk_emb_dim=d_model)
         else:
             self.layer_norm = nn.LayerNorm(d_model)
-        
+            
+        self.use_cln_speaker = use_cln_speaker
 
-    def forward(self, inp, attn_mask=None):
-        return self._forward(inp, attn_mask)
+    def forward(self, inp, attn_mask=None, conditioning=None):
+        return self._forward(inp, attn_mask, conditioning=conditioning)
 
-    def _forward(self, inp, attn_mask=None):
+    def _forward(self, inp, attn_mask=None, conditioning=None):
         residual = inp
 
         if self.pre_lnorm:
@@ -177,22 +178,49 @@ class MultiHeadAttn(nn.Module):
         n_head, d_head = self.n_head, self.d_head
 
         head_q, head_k, head_v = torch.chunk(self.qkv_net(inp), 3, dim=2)
+        
+        if self.is_lora_available():
+            head_q_lora, head_k_lora = torch.chunk(self.forward_enabled_loras(inp), 2, dim=2)
+            head_q = head_q + head_q_lora
+            head_k = head_k + head_k_lora
+        
 
-        head_q = head_q.view(inp.size(0), inp.size(1), n_head, d_head)
-        head_k = head_k.view(inp.size(0), inp.size(1), n_head, d_head)
-        head_v = head_v.view(inp.size(0), inp.size(1), n_head, d_head)
+        if self.is_prefix_available():
+            prefix_k, prefix_v = torch.chunk(self.forward_enabled_prefixs(inp), 2, dim=2)
+            head_k = torch.cat([prefix_k, head_k], dim=1)
+            head_v = torch.cat([prefix_v, head_v], dim=1)
+            
+            head_q = head_q.view(inp.size(0), inp.size(1), n_head, d_head)
+            head_k = head_k.view(inp.size(0), inp.size(1) + prefix_k.size(1), n_head, d_head)
+            head_v = head_v.view(inp.size(0), inp.size(1) + prefix_v.size(1), n_head, d_head)
+            q = head_q.permute(0, 2, 1, 3).reshape(-1, inp.size(1), d_head)
+            k = head_k.permute(0, 2, 1, 3).reshape(-1, inp.size(1) + prefix_k.size(1), d_head)
+            v = head_v.permute(0, 2, 1, 3).reshape(-1, inp.size(1) + prefix_v.size(1), d_head)
+            attn_score = torch.bmm(q, k.transpose(1, 2))
+            attn_score.mul_(self.scale)
+            
+            if attn_mask is not None:
+                prefix_mask = torch.ones(inp.size(0), attn_mask.size(1), prefix_k.size(1)).to(attn_mask.device)
+                attn_mask = attn_mask.unsqueeze(1).to(attn_score.dtype)
+                attn_mask = attn_mask.repeat(n_head, attn_mask.size(2), 1)
+                attn_mask = torch.cat([prefix_mask, attn_mask], dim=-1)
+                attn_score.masked_fill_(attn_mask.to(torch.bool), -float('inf'))
+            
+        else:
+            head_q = head_q.view(inp.size(0), inp.size(1), n_head, d_head)
+            head_k = head_k.view(inp.size(0), inp.size(1), n_head, d_head)
+            head_v = head_v.view(inp.size(0), inp.size(1), n_head, d_head)
+            q = head_q.permute(0, 2, 1, 3).reshape(-1, inp.size(1), d_head)
+            k = head_k.permute(0, 2, 1, 3).reshape(-1, inp.size(1), d_head)
+            v = head_v.permute(0, 2, 1, 3).reshape(-1, inp.size(1), d_head)
 
-        q = head_q.permute(0, 2, 1, 3).reshape(-1, inp.size(1), d_head)
-        k = head_k.permute(0, 2, 1, 3).reshape(-1, inp.size(1), d_head)
-        v = head_v.permute(0, 2, 1, 3).reshape(-1, inp.size(1), d_head)
+            attn_score = torch.bmm(q, k.transpose(1, 2))
+            attn_score.mul_(self.scale)
 
-        attn_score = torch.bmm(q, k.transpose(1, 2))
-        attn_score.mul_(self.scale)
-
-        if attn_mask is not None:
-            attn_mask = attn_mask.unsqueeze(1).to(attn_score.dtype)
-            attn_mask = attn_mask.repeat(n_head, attn_mask.size(2), 1)
-            attn_score.masked_fill_(attn_mask.to(torch.bool), -float('inf'))
+            if attn_mask is not None:
+                attn_mask = attn_mask.unsqueeze(1).to(attn_score.dtype)
+                attn_mask = attn_mask.repeat(n_head, attn_mask.size(2), 1)
+                attn_score.masked_fill_(attn_mask.to(torch.bool), -float('inf'))
 
         attn_prob = F.softmax(attn_score, dim=2)
         attn_prob = self.dropatt(attn_prob)
@@ -352,6 +380,12 @@ class FFTransformerEncoder(FFTransformerDecoder):
         
         return self._forward(self.word_emb(input), (input != self.padding_idx).unsqueeze(2), conditioning)  # (B, L, 1)
 
+
+"""
+Adapter
+LoRA
+PrefixTuning
+"""
     
 class FFTransformerDecoderAdapter(FFTransformerDecoder, adapter_mixins.AdapterModuleMixin):
 
@@ -383,6 +417,74 @@ class FFTransformerDecoderAdapter(FFTransformerDecoder, adapter_mixins.AdapterMo
 
 class FFTransformerEncoderAdapter(FFTransformerDecoderAdapter, FFTransformerEncoder, adapter_mixins.AdapterModuleMixin):
     pass
+
+class FFTransformerDecoderLoRA(FFTransformerDecoder, lora_mixins.LoraModuleMixin):
+
+    # Higher level forwarding
+    def add_lora(self, name: str, cfg: dict):
+        cfg = self._update_lora_cfg_input_dim(cfg)
+        cfg = self._update_lora_cfg_output_dim(cfg)
+        
+        for FFT_layer in self.layers:  # type: adapter_mixins.AdapterModuleMixin
+            FFT_layer.dec_attn.add_lora(name, cfg)
+
+    def is_lora_available(self) -> bool:
+        return any([FFT_layer.dec_attn.is_lora_available() for FFT_layer in self.layers])
+
+    def set_enabled_loras(self, name: Optional[str] = None, enabled: bool = True):
+        for FFT_layer in self.layers:  # type: adapter_mixins.AdapterModuleMixin
+            FFT_layer.dec_attn.set_enabled_loras(name=name, enabled=enabled)
+
+    def get_enabled_loras(self) -> List[str]:
+        names = set([])
+        for FFT_layer in self.layers:  # type: adapter_mixins.AdapterModuleMixin
+            names.update(FFT_layer.dec_attn.get_enabled_loras())
+
+        names = sorted(list(names))
+        return names
+
+    def _update_lora_cfg_input_dim(self, cfg: DictConfig):
+        cfg = adapter_utils.update_adapter_cfg_input_dim(self, cfg, module_dim=self.d_model)
+        return cfg
+    
+    def _update_lora_cfg_output_dim(self, cfg: DictConfig):
+        cfg = adapter_utils.update_adapter_cfg_output_dim(self, cfg, module_dim=self.n_head * self.d_head)
+        return cfg
+
+
+class FFTransformerEncoderLoRA(FFTransformerDecoderLoRA, FFTransformerEncoder, lora_mixins.LoraModuleMixin):
+    pass
+    
+    
+class FFTransformerDecoderPrefix(FFTransformerDecoder, prefix_mixins.PrefixModuleMixin):
+
+    # Higher level forwarding
+    def add_prefix(self, name: str, cfg: dict):
+        cfg = self._update_prefix_cfg_input_dim(cfg)
+        for FFT_layer in self.layers:
+            FFT_layer.dec_attn.add_prefix(name, cfg)
+
+    def is_prefix_available(self) -> bool:
+        return any([FFT_layer.dec_attn.is_prefix_available() for FFT_layer in self.layers])
+
+    def set_enabled_prefixs(self, name: Optional[str] = None, enabled: bool = True):
+        for FFT_layer in self.layers:  # type: adapter_mixins.AdapterModuleMixin
+            FFT_layer.dec_attn.set_enabled_prefixs(name=name, enabled=enabled)
+
+    def get_enabled_prefixs(self) -> List[str]:
+        names = set([])
+        for FFT_layer in self.layers:  # type: adapter_mixins.AdapterModuleMixin
+            names.update(FFT_layer.dec_attn.get_enabled_prefixs())
+
+        names = sorted(list(names))
+        return names
+
+    def _update_prefix_cfg_input_dim(self, cfg: DictConfig):
+        cfg = adapter_utils.update_adapter_cfg_input_dim(self, cfg, module_dim=self.n_head * self.d_head)
+        return cfg
+    
+class FFTransformerEncoderPrefix(FFTransformerDecoderPrefix, FFTransformerEncoder, prefix_mixins.PrefixModuleMixin):
+    pass
     
 """
 Register any additional information
@@ -392,3 +494,15 @@ if adapter_mixins.get_registered_adapter(FFTransformerEncoder) is None:
 
 if adapter_mixins.get_registered_adapter(FFTransformerDecoder) is None:
     adapter_mixins.register_adapter(base_class=FFTransformerDecoder, adapter_class=FFTransformerDecoderAdapter)
+    
+if lora_mixins.get_registered_lora(FFTransformerEncoder) is None:
+    lora_mixins.register_lora(base_class=FFTransformerEncoder, lora_class=FFTransformerEncoderLoRA)
+    
+if lora_mixins.get_registered_lora(FFTransformerDecoder) is None:
+    lora_mixins.register_lora(base_class=FFTransformerDecoder, lora_class=FFTransformerDecoderLoRA)
+    
+if prefix_mixins.get_registered_prefix(FFTransformerEncoder) is None:
+    prefix_mixins.register_prefix(base_class=FFTransformerEncoder, prefix_class=FFTransformerEncoderPrefix)
+    
+if prefix_mixins.get_registered_prefix(FFTransformerDecoder) is None:
+    prefix_mixins.register_prefix(base_class=FFTransformerDecoder, prefix_class=FFTransformerDecoderPrefix)
