@@ -107,6 +107,15 @@ class MegatronGPTPromptLearningModel(MegatronBaseModel, TextGeneration):
             frozen_model_cfg.activations_checkpoint_num_layers = self.cfg.activations_checkpoint_num_layers
             frozen_model_cfg.activations_checkpoint_method = self.cfg.activations_checkpoint_method
 
+        if self.trainer.precision == 32:
+            self.autocast_dtype = torch.float
+        elif self.trainer.precision == 16:
+            self.autocast_dtype = torch.half
+        elif self.trainer.precision == 'bf16':
+            self.autocast_dtype = torch.bfloat16
+        else:
+            raise ValueError('precision must be in [32, 16, "bf16"]')
+
         # Load pretrained GPT model and tokenizer, frozen model will have lr=0.0
         if cfg.get('language_model_path', None):
             self.frozen_model = MegatronGPTModel.restore_from(
@@ -114,7 +123,7 @@ class MegatronGPTPromptLearningModel(MegatronBaseModel, TextGeneration):
                 trainer=trainer,
                 save_restore_connector=save_resotre_connector,
                 override_config_path=frozen_model_cfg,
-            )
+            ).to(dtype=self.autocast_dtype)
 
         # TODO: Enable amp_o2 training
         self.megatron_amp_o2 = False
@@ -169,14 +178,6 @@ class MegatronGPTPromptLearningModel(MegatronBaseModel, TextGeneration):
         self._reduced_loss_buffer = []
         self._inference_config = None
 
-        if self.trainer.precision == 32:
-            self.autocast_dtype = torch.float
-        elif self.trainer.precision == 16:
-            self.autocast_dtype = torch.half
-        elif self.trainer.precision == 'bf16':
-            self.autocast_dtype = torch.bfloat16
-        else:
-            raise ValueError('precision must be in [32, 16, "bf16"]')
         # make sure the default pytorch lightning gradient clipping in the basemodel
         self.grad_clip_pl_default = True
 
@@ -258,7 +259,7 @@ class MegatronGPTPromptLearningModel(MegatronBaseModel, TextGeneration):
                 hidden_size=self.cfg.p_tuning.encoder_hidden,
                 output_size=self.hidden_size,
                 init_std=self.cfg.p_tuning.init_std,
-            )
+            ).to(dtype=self.autocast_dtype)
         elif encoder_type == PromptEncoderType.LSTM:
             self.prompt_encoder = PromptEncoder(
                 total_virtual_tokens=total_virtual_tokens,
@@ -266,7 +267,7 @@ class MegatronGPTPromptLearningModel(MegatronBaseModel, TextGeneration):
                 output_size=self.hidden_size,
                 lstm_dropout=self.cfg.p_tuning.dropout,
                 num_layers=self.cfg.p_tuning.num_layers,
-            )
+            ).to(dtype=self.autocast_dtype)
         else:
             raise ValueError('not supported')
 
