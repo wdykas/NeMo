@@ -6,7 +6,7 @@
 #SBATCH --exclusive
 #SBATCH --mem=0
 #SBATCH --gpus-per-node=16
-#SBATCH -J "ent_aiapps_asr:punctuation_capitalization_commercial_checkpoint_steps400k_tokens640k"  # job name (<< CHANGE ! >>)
+#SBATCH -J "ent_aiapps_llm:prompt_tuning_dialog_summarization"  # job name (<< CHANGE ! >>)
 #SBATCH --mail-type=FAIL        # only send email on failure
 #SBATCH --overcommit
 #SBATCH --ntasks-per-node=16     # n tasks per machine (one task per gpu) <required>
@@ -19,13 +19,13 @@ WANDB="${wandb}" # replace with your own WandB API key
 # total_tokens = max_steps * global_batch_size_in_tokens
 # global_batch_size_in_tokens = micro_batch_size * data_parallel_size * accumulate_grad_batches * seq_length
 # data_parallel_size = num_nodes * num_gpus_per_node (no model parallel)
-MAX_STEPS=400000
-VAL_CHECK_INTERVAL=2000
+MAX_STEPS=30000
+VAL_CHECK_INTERVAL=1000
 LOG_EVERY_N_STEPS=100
 
 # Logging
-PROJECT="commercial_P_and_C"
-EXPNAME="steps400k_tokens640k"
+PROJECT="prompt-learning"
+EXPNAME="diag_sum_prompt_learning_5b_30_30"
 
 # Mounts
 SLURM_ACCOUNT='ent_aiapps'
@@ -54,7 +54,7 @@ echo "*******STARTING********" \
 && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 python \
   /code/examples/nlp/language_modeling/megatron_gpt_prompt_learning.py \
 	--config-path=/code/examples/nlp/language_modeling/conf \
-	--config-name=diag_sum_prompt_learning \
+	--config-name=diag_sum_prompt_learning_125m \
 	model.train_ds.ds_item="/data/train_bert_tarred_20000" \
 	model.train_ds.tar_metadata_file="metadata.punctuation_capitalization.tokens20000.max_seq_length512.-home-apeganov-pretrained_tokenizers-bert_large_uncased.json" \
 	model.validation_ds.ds_item=[/data/europarl_segments_dev,\

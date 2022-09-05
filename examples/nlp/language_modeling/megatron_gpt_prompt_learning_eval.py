@@ -180,7 +180,7 @@ def main(cfg) -> None:
                 pred_file.write(sent + "\n")
     print(f"Inference Complete, prediction file saved at {cfg.pred_file_path}")
     with open(cfg.predict_output, 'w') as f:
-        json.dump(response, f, indent=2)
+        json.dump([r['sentences'] for r in response], f, indent=2)
     print(f"Predictions are written to {cfg.predict_output}")
     print("***************************")
 
