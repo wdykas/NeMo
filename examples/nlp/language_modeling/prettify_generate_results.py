@@ -40,10 +40,10 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    with args.generate_predictions.open() as gen_f:
+    with args.generated_predictions.open() as gen_f:
         generated_outputs = json.load(gen_f)
     with args.orig_dataset.open() as orig_f:
-        orig_lines = json.load(orig_f)
+        orig_lines = orig_f.readlines()
     if len(orig_lines) != len(generated_outputs):
         raise ValueError(
             f"Different number of predictions and lines in original dataset. Prediction file "
@@ -51,7 +51,7 @@ def main() -> None:
             f"{args.orig_dataset} contains {len(orig_lines)}."
         )
     answer_key = "model_answer"
-    with args.output.open() as out_f:
+    with args.output.open('w') as out_f:
         for i, (orig_line, generated_output) in enumerate(zip(orig_lines, generated_outputs)):
             orig_datum = json.loads(orig_line)
             if args.answer_start not in generated_output:
@@ -59,17 +59,11 @@ def main() -> None:
                     f"Answer prompt '{args.answer_start}' is not found in generated output number {i}. "
                     f"args.answer_start='{args.answer_start}', generated_output='{generated_output}'."
                 )
-            count = generated_output.count(args.answer_start)
-            if count > 1:
-                raise ValueError(
-                    f"Found {count} answer prompts '{args.answer_start}' in generated output number {i}. "
-                    f"args.answer_start='{args.answer_start}', generated_output='{generated_output}'."
-                )
             if answer_key in orig_datum:
                 raise ValueError(
                     f"Answer key '{answer_key}' is already present in a dataset sample number {i} '{orig_datum}'."
                 )
-            answer = generated_output.split(args.answer_start)[-1]
+            answer = generated_output.split(args.answer_start)[1]
             orig_datum[answer_key] = answer
             out_f.write(json.dumps(orig_datum, indent=2) + '\n')
 
