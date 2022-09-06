@@ -639,6 +639,29 @@ class PolynomialHoldDecayAnnealing(WarmupHoldPolicy):
         return new_lrs
 
 
+class CustomReduceLROnPlateau(pt_scheduler.ReduceLROnPlateau):
+    def __init__(self, optimizer, dont_halve_until_epoch, *args, **kwargs):
+        self.dont_halve_until_epoch = dont_halve_until_epoch
+        super().__init__(optimizer=optimizer, *args, **kwargs)
+    def step(self, metrics, epoch=None):
+        # import ipdb; ipdb.set_trace()
+        # convert `metrics` to float, in case it's a zero-dim Tensor
+        current = float(metrics)
+        if epoch is None:
+            epoch = self.last_epoch + 1
+        else:
+            warnings.warn(pt_scheduler.EPOCH_DEPRECATION_WARNING, UserWarning)
+        self.last_epoch = epoch
+
+        if epoch <= self.dont_halve_until_epoch:
+            self.best = current
+            self._last_lr = [group['lr'] for group in self.optimizer.param_groups]
+        else:
+            super().step(metrics=metrics, epoch=epoch)
+
+        print("LRRR", self._last_lr)
+        
+
 def register_scheduler(name: str, scheduler: _LRScheduler, scheduler_params: SchedulerParams):
     """
     Checks if the scheduler name exists in the registry, and if it doesnt, adds it.
@@ -755,7 +778,7 @@ def prepare_lr_scheduler(
             # Remove extra parameters from scheduler_args nest
             # Assume all other parameters are to be passed into scheduler constructor
 
-            if 'name' in scheduler_args and scheduler_args['name'] == 'ReduceLROnPlateau':
+            if 'name' in scheduler_args and 'ReduceLROnPlateau' in scheduler_args['name']:
                 add_max_args_flag = False
                 interval = 'epoch'
 
@@ -972,4 +995,5 @@ AVAILABLE_SCHEDULERS = {
     'ExponentialLR': pt_scheduler.ExponentialLR,
     'ReduceLROnPlateau': pt_scheduler.ReduceLROnPlateau,
     'CyclicLR': pt_scheduler.CyclicLR,
+    'CustomReduceLROnPlateau': CustomReduceLROnPlateau,
 }

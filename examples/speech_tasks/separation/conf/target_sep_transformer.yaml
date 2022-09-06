@@ -20,7 +20,7 @@ model:
     num_workers: 4
     pin_memory: true
     trim_silence: false
-    max_duration: 20
+    max_duration: 16
     min_duration: 0.1
     # tarred datasets
     is_tarred: false
@@ -151,22 +151,25 @@ model:
     # you may need weight_decay for large models, stable AMP training, small datasets, or when lower augmentations are used
     weight_decay: 0
     sched:
-      name: CosineAnnealing
-      warmup_steps: 10000
+      name: CustomReduceLROnPlateau
+      factor: 0.5
+      patience: 2
+      dont_halve_until_epoch: 85
       min_lr: 1e-6
+      monitor: 'val_loss'
 
 
 trainer:
   devices: -1 # number of GPUs, -1 would use all available GPUs
   num_nodes: 1
-  max_epochs: 100
+  max_epochs: 200
   accelerator: auto
   max_steps: -1 # computed at runtime if not set
   val_check_interval: 1.0 # Set to 0.25 to check 4 times per epoch, or an int for number of iterations
   strategy: ddp
   accumulate_grad_batches: 1
   gradient_clip_val: 5.0
-  precision: 32 # Should be set to 16 for O1 and O2 to enable the AMP.
+  precision: 16 # Should be set to 16 for O1 and O2 to enable the AMP.
   log_every_n_steps: 100  # Interval of logging.
   resume_from_checkpoint: null # The path to a checkpoint file to continue the training, restores the whole state including the epoch, step, LR schedulers, apex, etc.
   num_sanity_val_steps: 0 # number of steps to perform validation steps for sanity check the validation process before starting the training, setting to 0 disables it

@@ -83,12 +83,13 @@ class _AudioDataset(Dataset):
             self.featurizer.process(
                 sample.audio_file[i], offset=sample.offset[i], duration=sample.duration[i], orig_sr=self.orig_sr,
             )
-            * sample.scale_factor[i]
             for i in range(self.num_sources)
         ]
 
+        scale_factors = [sample.scale_factor[i] for i in range(self.num_sources)]
         return {
             'features_list': features_list,
+            'scale_factors':  scale_factors
         }
 
 
@@ -250,11 +251,20 @@ class DynamicTargetAudioToAudioDataset(_AudioDataset):
         enroll_index = np.random.choice(self.collection.speaker2audio[target_speaker])
 
         second_speaker = np.random.choice(list(self.collection.speaker2audio.keys()))
+        idx = 0
+        while second_speaker == target_speaker and idx < 100:
+            second_speaker = np.random.choice(list(self.collection.speaker2audio.keys()))
+            idx +=1
+
 
         second_speaker_index = np.random.choice(self.collection.speaker2audio[second_speaker])
         target_pt = super().__getitem__(index)['features_list'][0]
         second_pt = super().__getitem__(second_speaker_index)['features_list'][0]
         enroll_pt = super().__getitem__(enroll_index)['features_list'][0]
+
+        print("####1", self.collection[index].audio_file)
+        print("####2", self.collection[second_speaker_index].audio_file)
+        print("####3", self.collection[enroll_index].audio_file)
 
         enroll_len = torch.tensor(enroll_pt.shape[0]).long()
 
@@ -342,8 +352,11 @@ class StaticTargetAudioToAudioDataset(_AudioDataset):
         enroll_len = torch.tensor(features_list[-1].shape[0]).long()
 
         features_list = features_list[:-1]
-        features_lengths = [torch.tensor(x.shape[0]).long() for x in features_list]
+        scale_factors = data_pt['scale_factors'][:len(features_list)]
 
+        for i, x in enumerate(features_list):
+            features_list[i] = _rescale(features_list[i], scale_factors[i])
+        features_lengths = [torch.tensor(x.shape[0]).long() for x in features_list]
         min_l = torch.min(torch.stack(features_lengths)).item()
         t1, t2 = [x[:min_l] for x in features_list]
         mix = t1 + t2
