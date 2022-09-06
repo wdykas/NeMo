@@ -50,6 +50,7 @@ Usage:
             trainer.num_nodes=1 \
             tensor_model_parallel_size=1 \
             pipeline_model_parallel_size=1 \
+            pred_file_path=PATH_WHERE_PRED_TEXT_FILE_WILL_BE_WRITTEN \
             prompts=[prompt1,prompt2]
 
     b. run greedy inference from a PTL checkpoint file:
@@ -63,6 +64,7 @@ Usage:
             trainer.num_nodes=1 \
             tensor_model_parallel_size=1 \
             pipeline_model_parallel_size=1 \
+            pred_file_path=PATH_WHERE_PRED_TEXT_FILE_WILL_BE_WRITTEN \
             prompts=[prompt1,prompt2]
 
     c. run top_p inference from a nemo file:
@@ -77,6 +79,7 @@ Usage:
             trainer.num_nodes=1 \
             tensor_model_parallel_size=1 \
             pipeline_model_parallel_size=1 \
+            pred_file_path=PATH_WHERE_PRED_TEXT_FILE_WILL_BE_WRITTEN \
             prompts=[prompt1,prompt2]
 
     d. If you don't need to generate tokens and need model to compute logprobs:
@@ -87,50 +90,8 @@ Usage:
             trainer.num_nodes=1 \
             tensor_model_parallel_size=1 \
             pipeline_model_parallel_size=1 \
+            pred_file_path=PATH_WHERE_PRED_TEXT_FILE_WILL_BE_WRITTEN \
             prompts=[text to get logprob]
-
-    e. Launch the inference server
-         python megatron_gpt_eval.py \
-            gpt_model_file=PATH_TO_MODEL \
-            trainer.devices=1 \
-            trainer.num_nodes=1 \
-            tensor_model_parallel_size=1 \
-            pipeline_model_parallel_size=1 \
-            server=True
-        
-        To send a request to the server, here is one example code:
-        ```python
-        import json
-        import requests
-
-        batch_size = 8
-        port_num = 5555
-        headers = {"Content-Type": "application/json"}
-
-
-        def request_data(data):
-            resp = requests.put('http://localhost:{}/generate'.format(port_num),
-                                data=json.dumps(data),
-                                headers=headers)
-            sentences = resp.json()['sentences']
-            return sentences
-
-
-        data = {
-            "sentences": [""] * batch_size,
-            "tokens_to_generate": 300,
-            "temperature": 1.0,
-            "add_BOS": True,
-            "top_k": 0,
-            "top_p": 0.9,
-            "greedy": False,
-            "all_probs": False,
-            "repetition_penalty": 1.2,
-            "min_tokens_to_generate": 2,
-        }
-
-        sentences = request_data(data)
-        ```
 """
 
 if not torch.cuda.is_available():
@@ -207,15 +168,6 @@ def main(cfg) -> None:
         "compute_logprob": cfg.inference.compute_logprob,
     }
 
-    # First method of running text generation, call model.generate method
-    response = model.generate(
-        inputs=OmegaConf.to_container(cfg.prompts), length_params=length_params, sampling_params=sampling_params
-    )
-
-    print("***************************")
-    print(response)
-    print("***************************")
-
     # Second method of running text generation, call trainer.predict
     ds = RequestDataSet(OmegaConf.to_container(cfg.prompts))
     request_dl = DataLoader(dataset=ds, batch_size=2)
@@ -224,21 +176,14 @@ def main(cfg) -> None:
     response = trainer.predict(model, request_dl)
 
     print("***************************")
-    print(response)
+    with open(cfg.pred_file_path, "w", encoding="utf-8") as pred_file:
+        for i in range(len(response)):
+            for sent in response[i]["sentences"]:
+                sent = sent.strip()
+                sent = sent.replace("\n", " ")
+                pred_file.write(sent + "\n")
+    print(f"Inference Complete, prediction file saved at {cfg.pred_file_path}")
     print("***************************")
-
-    # Third method of running text generation, use inference server
-    if cfg.server:
-        if parallel_state.is_pipeline_first_stage() and parallel_state.get_tensor_model_parallel_rank() == 0:
-            server = MegatronServer(model.cuda())
-            server.run("0.0.0.0", port=cfg.port)
-
-        while True:
-            choice = torch.cuda.LongTensor(1)
-            torch.distributed.broadcast(choice, 0)
-            if choice[0].item() == 0:
-                generate(model.cuda())
-
 
 if __name__ == '__main__':
     main()  # noqa pylint: disable=no-value-for-parameter
