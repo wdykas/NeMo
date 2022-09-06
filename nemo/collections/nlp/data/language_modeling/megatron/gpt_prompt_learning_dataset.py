@@ -300,7 +300,7 @@ class GPTPromptLearningDataset(Dataset):
     def __getitem__(self, idx):
         return self.examples[idx]
 
-    def collate_fn(self, batch):
+    def collate_fn(self, batch, tp_workers=0):
         """ Prepares input_ids, labels, loss mask, attention_mask, and position ids for global batch """
         taskname_ids, input_ids, answer_starts = zip(*batch)
 
@@ -316,8 +316,13 @@ class GPTPromptLearningDataset(Dataset):
 
         # Get max sequence length of batch
         batch_max = max(len(ids) for ids in input_ids)
-        input_ids, loss_mask = self.pad_batch_and_build_loss_mask(input_ids, batch_max, answer_starts)
 
+        if tp_workers > 1:
+            resi_padding = (tp_workers - (batch_max - 1) % tp_workers) % tp_workers
+        else:
+            resi_padding = 0
+        batch_max += resi_padding
+        input_ids, loss_mask = self.pad_batch_and_build_loss_mask(input_ids, batch_max, answer_starts)
         # Should be a label for every token in batch, label is the next token
         labels = input_ids[:, 1:].contiguous()
         input_ids = input_ids[:, :-1].contiguous()

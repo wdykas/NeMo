@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 import re
 from collections import OrderedDict
 from typing import Any, List, Optional, Union
@@ -33,6 +34,7 @@ from nemo.collections.nlp.modules.common import (
     VirtualPromptStyle,
 )
 from nemo.collections.nlp.modules.common.megatron.utils import average_losses_across_data_parallel_group
+from nemo.collections.nlp.modules.common.prompt_encoder import PromptEncoderMLP, PromptEncoderType
 from nemo.collections.nlp.modules.common.text_generation_utils import (
     get_default_length_params,
     get_default_sampling_params,
@@ -42,10 +44,10 @@ from nemo.collections.nlp.modules.common.transformer.text_generation import Leng
 from nemo.collections.nlp.parts.nlp_overrides import NLPSaveRestoreConnector
 from nemo.collections.nlp.parts.utils_funcs import get_last_rank
 from nemo.utils import logging
-import os
+from functools import partial
 
 try:
-    from apex.transformer import parallel_state
+    from apex.transformer import parallel_state, tensor_parallel
     from apex.transformer.pipeline_parallel.schedules.fwd_bwd_pipelining_without_interleaving import (
         forward_backward_pipelining_without_interleaving,
     )
@@ -88,8 +90,10 @@ class MegatronGPTPromptLearningModel(MegatronBaseModel, TextGeneration):
         if os.path.isdir(cfg.get('language_model_path')):
             save_resotre_connector.model_extracted_dir = cfg.get('language_model_path')
         frozen_model_cfg = MegatronGPTModel.restore_from(
-            cfg.get('language_model_path'), trainer=trainer, return_config=True, 
-            save_restore_connector=save_resotre_connector
+            cfg.get('language_model_path'),
+            trainer=trainer,
+            return_config=True,
+            save_restore_connector=save_resotre_connector,
         )
 
         # Need to overwrite some params in frozen model's config before restoring
@@ -105,6 +109,15 @@ class MegatronGPTPromptLearningModel(MegatronBaseModel, TextGeneration):
             frozen_model_cfg.activations_checkpoint_method = self.cfg.activations_checkpoint_method
             frozen_model_cfg.sequence_parallel = False
 
+        if self.trainer.precision == 32:
+            self.autocast_dtype = torch.float
+        elif self.trainer.precision == 16:
+            self.autocast_dtype = torch.half
+        elif self.trainer.precision == 'bf16':
+            self.autocast_dtype = torch.bfloat16
+        else:
+            raise ValueError('precision must be in [32, 16, "bf16"]')
+
         # Load pretrained GPT model and tokenizer, frozen model will have lr=0.0
         if cfg.get('language_model_path', None):
             self.frozen_model = MegatronGPTModel.restore_from(
@@ -112,7 +125,7 @@ class MegatronGPTPromptLearningModel(MegatronBaseModel, TextGeneration):
                 trainer=trainer,
                 save_restore_connector=save_resotre_connector,
                 override_config_path=frozen_model_cfg,
-            )
+            ).to(dtype=self.autocast_dtype)
 
         # TODO: Enable amp_o2 training
         self.megatron_amp_o2 = False
@@ -175,14 +188,6 @@ class MegatronGPTPromptLearningModel(MegatronBaseModel, TextGeneration):
         self._reduced_loss_buffer = []
         self._inference_config = None
 
-        if self.trainer.precision == 32:
-            self.autocast_dtype = torch.float
-        elif self.trainer.precision == 16:
-            self.autocast_dtype = torch.half
-        elif self.trainer.precision == 'bf16':
-            self.autocast_dtype = torch.bfloat16
-        else:
-            raise ValueError('precision must be in [32, 16, "bf16"]')
         # make sure the default pytorch lightning gradient clipping in the basemodel
         self.grad_clip_pl_default = True
 
@@ -257,13 +262,24 @@ class MegatronGPTPromptLearningModel(MegatronBaseModel, TextGeneration):
         new_task = self.new_tasks[0]
         total_virtual_tokens = self.task_templates[new_task]["total_virtual_tokens"]
 
-        self.prompt_encoder = PromptEncoder(
-            total_virtual_tokens=total_virtual_tokens,
-            hidden_size=self.cfg.p_tuning.encoder_hidden,
-            output_size=self.hidden_size,
-            lstm_dropout=self.cfg.p_tuning.dropout,
-            num_layers=self.cfg.p_tuning.num_layers,
-        )
+        encoder_type = PromptEncoderType(self.cfg.p_tuning.get("type", "tpmlp").lower())
+        if encoder_type == PromptEncoderType.TPMLP:
+            self.prompt_encoder = PromptEncoderMLP(
+                total_virtual_tokens=total_virtual_tokens,
+                hidden_size=self.cfg.p_tuning.encoder_hidden,
+                output_size=self.hidden_size,
+                init_std=self.cfg.p_tuning.init_std,
+            ).to(dtype=self.autocast_dtype)
+        elif encoder_type == PromptEncoderType.LSTM:
+            self.prompt_encoder = PromptEncoder(
+                total_virtual_tokens=total_virtual_tokens,
+                hidden_size=self.cfg.p_tuning.encoder_hidden,
+                output_size=self.hidden_size,
+                lstm_dropout=self.cfg.p_tuning.dropout,
+                num_layers=self.cfg.p_tuning.num_layers,
+            ).to(dtype=self.autocast_dtype)
+        else:
+            raise ValueError('not supported')
 
     def add_ptuned_prompts_to_prompt_table(self):
         """
@@ -404,6 +420,8 @@ class MegatronGPTPromptLearningModel(MegatronBaseModel, TextGeneration):
             position_embeddings = self.frozen_model.model.language_model.embedding.position_embeddings(position_ids)
             encoder_input = input_embeds + position_embeddings
             encoder_input = encoder_input.transpose(0, 1).contiguous()
+            if self.cfg.sequence_parallel:
+                encoder_input = tensor_parallel.mappings.scatter_to_sequence_parallel_region(encoder_input)
         else:
             encoder_input = None
 
@@ -553,6 +571,7 @@ class MegatronGPTPromptLearningModel(MegatronBaseModel, TextGeneration):
                 tensor_shape=tensor_shape,
                 dtype=self.autocast_dtype,
                 grad_scaler=self.trainer.precision_plugin.scaler if self.cfg.precision == 16 else None,
+                sequence_parallel_enabled=self.cfg.sequence_parallel,
             )
         else:
             losses_reduced_per_micro_batch = forward_backward_no_pipelining(
@@ -779,7 +798,10 @@ class MegatronGPTPromptLearningModel(MegatronBaseModel, TextGeneration):
         assert batch_size % data_parallel_size == 0, "Global batch size must be evenly divisible by data parallel size"
 
         if for_train:
-            collate_fn = dataset.collate_fn
+            if self.cfg.sequence_parallel:
+                collate_fn = partial(dataset.collate_fn, tp_workers=parallel_state.get_tensor_model_parallel_world_size())
+            else:
+                collate_fn = partial(dataset.collate_fn, tp_workers=0)
         else:
             collate_fn = dataset.inference_collate_fn
 

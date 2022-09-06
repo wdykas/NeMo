@@ -71,8 +71,8 @@ model:
   task_templates: # Add more/replace tasks as needed, these are just examples
   - taskname: "squad" 
     prompt_template: "<|VIRTUAL_PROMPT_0|> {question} {context} answer: {answer}"
-    total_virtual_tokens: 100
-    virtual_token_splits: [100] 
+    total_virtual_tokens: 10 
+    virtual_token_splits: [10] 
     truncate_field: context
     answer_field: answer
 
@@ -81,9 +81,11 @@ model:
     new_prompt_init_text: ['some init text goes here'] # some init text if init method is text, or None if init method is random
 
   p_tuning: # P-tuning specific params
+    type: "tpmlp" # ['tpmlp', 'lstm'] 
     dropout: 0.0
     num_layers: 2
     encoder_hidden: 2048
+    init_std: 0.023  # init std for mlp layers
 
   data:
     train_ds: [data/rte_train.jsonl,]
