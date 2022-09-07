@@ -367,6 +367,8 @@ class MegatronGPTPromptLearningModel(MegatronBaseModel, TextGeneration):
                 and self.virtual_prompt_source == VirtualPromptSource.PROMPT_ENCODER
             ):
                 state_dict_ = state_dict[self._prompt_encoder_key]
+                if not hasattr(self, "prompt_encoder"):
+                   self.init_prompt_encoder()
                 self.prompt_encoder.load_state_dict(state_dict_, strict)
 
     def setup_optimizer_param_groups(self):
