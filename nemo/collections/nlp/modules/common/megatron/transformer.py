@@ -126,7 +126,6 @@ class ParallelMLP(MegatronModule):
         persist_layer_norm=False,
         sequence_parallel=False,
         gradient_accumulation_fusion=False,
-        params_dtype=torch.float32,
     ):
         super(ParallelMLP, self).__init__()
         self.activation = activation
@@ -155,7 +154,6 @@ class ParallelMLP(MegatronModule):
             sequence_parallel_enabled=sequence_parallel,
             no_async_tensor_model_parallel_allreduce=no_async_tensor_model_parallel_allreduce,
             gradient_accumulation_fusion=gradient_accumulation_fusion,
-            params_dtype=params_dtype,
         )
 
         if activation in ['geglu', 'reglu', 'swiglu']:
@@ -172,7 +170,6 @@ class ParallelMLP(MegatronModule):
                 sequence_parallel_enabled=sequence_parallel,
                 no_async_tensor_model_parallel_allreduce=no_async_tensor_model_parallel_allreduce,
                 gradient_accumulation_fusion=gradient_accumulation_fusion,
-                params_dtype=params_dtype,
             )
 
         self.glu_activation_family = activation in ['geglu', 'reglu', 'swiglu']
@@ -223,8 +220,7 @@ class ParallelMLP(MegatronModule):
             bias=bias,
             sequence_parallel_enabled=sequence_parallel,
             gradient_accumulation_fusion=gradient_accumulation_fusion,
-            params_dtype=params_dtype,
-     )
+        )
 
         # Normformer normalization
         if transformer_block_type == 'normformer':
@@ -547,12 +543,6 @@ class ParallelAttention(MegatronModule):
             parallel_state.get_tensor_model_parallel_world_size() == 1 or sequence_parallel
         )
 
-        param_dtype = torch.float32
-        if precision == '16':
-            param_dtype = torch.float16
-        elif precision == 'bf16':
-            param_dtype = torch.bfloat16
-
         # Strided linear layer.
         if attention_type == AttnType.self_attn:
             self.query_key_value = ColumnLinear(
@@ -565,7 +555,6 @@ class ParallelAttention(MegatronModule):
                 sequence_parallel_enabled=sequence_parallel,
                 no_async_tensor_model_parallel_allreduce=no_async_tensor_model_parallel_allreduce,
                 gradient_accumulation_fusion=gradient_accumulation_fusion,
-                params_dtype=param_dtype,
             )
         else:
             assert attention_type == AttnType.cross_attn
@@ -578,7 +567,6 @@ class ParallelAttention(MegatronModule):
                 sequence_parallel_enabled=sequence_parallel,
                 no_async_tensor_model_parallel_allreduce=no_async_tensor_model_parallel_allreduce,
                 gradient_accumulation_fusion=gradient_accumulation_fusion,
-                params_dtype=param_dtype,
             )
 
             self.key_value = ColumnLinear(
@@ -590,7 +578,6 @@ class ParallelAttention(MegatronModule):
                 sequence_parallel_enabled=sequence_parallel,
                 no_async_tensor_model_parallel_allreduce=no_async_tensor_model_parallel_allreduce,
                 gradient_accumulation_fusion=gradient_accumulation_fusion,
-                params_dtype=param_dtype,
             )
 
         self.core_attention = CoreAttention(
@@ -619,7 +606,6 @@ class ParallelAttention(MegatronModule):
             bias=bias,
             sequence_parallel_enabled=sequence_parallel,
             gradient_accumulation_fusion=gradient_accumulation_fusion,
-            params_dtype=param_dtype,
         )
 
         self.headscale = headscale
@@ -1089,11 +1075,6 @@ class ParallelTransformerLayer_(MegatronModule):
         gradient_accumulation_fusion=False,
     ):
         super(ParallelTransformerLayer_, self).__init__()
-        param_dtype = torch.float32
-        if precision == '16':
-            param_dtype = torch.float16
-        elif precision == 'bf16':
-            param_dtype = torch.bfloat16
 
         if kv_channels is None:
             assert (
@@ -1315,7 +1296,6 @@ class ParallelTransformerLayer_(MegatronModule):
             persist_layer_norm=persist_layer_norm,
             sequence_parallel=sequence_parallel,
             gradient_accumulation_fusion=gradient_accumulation_fusion,
-            params_dtype=param_dtype,
         )
 
     def _get_bias_droput_add_func(self, transformer_block_type='pre_ln', position_after='attention'):

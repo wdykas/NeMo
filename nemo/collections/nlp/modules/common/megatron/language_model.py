@@ -193,7 +193,6 @@ class Embedding(MegatronModule):
         sequence_parallel=False,
         position_embedding_type='learned_absolute',
         transpose_batch_sequence=True,
-        param_dtype=torch.float16,
     ):
         super(Embedding, self).__init__()
 
@@ -205,13 +204,13 @@ class Embedding(MegatronModule):
 
         # Word embeddings (parallel).
         self.word_embeddings = tensor_parallel.VocabParallelEmbedding(
-            vocab_size, self.hidden_size, init_method=self.init_method, use_cpu_initialization=use_cpu_initialization, params_dtype=param_dtype,
+            vocab_size, self.hidden_size, init_method=self.init_method, use_cpu_initialization=use_cpu_initialization,
         )
         self._word_embeddings_key = 'word_embeddings'
 
         if self.position_embedding_type == 'learned_absolute':
             # Position embedding (serial).
-            self.position_embeddings = torch.nn.Embedding(max_sequence_length, self.hidden_size, dtype=param_dtype)
+            self.position_embeddings = torch.nn.Embedding(max_sequence_length, self.hidden_size)
             self._position_embeddings_key = 'position_embeddings'
             # Initialize the position embeddings.
             self.init_method(self.position_embeddings.weight)
@@ -222,7 +221,7 @@ class Embedding(MegatronModule):
         # token types and add them as needed.
         self._tokentype_embeddings_key = 'tokentype_embeddings'
         if self.num_tokentypes > 0:
-            self.tokentype_embeddings = torch.nn.Embedding(self.num_tokentypes, self.hidden_size, dtype=param_dtype)
+            self.tokentype_embeddings = torch.nn.Embedding(self.num_tokentypes, self.hidden_size)
             # Initialize the token-type embeddings.
             self.init_method(self.tokentype_embeddings.weight)
         else:
@@ -425,13 +424,6 @@ class TransformerLanguageModel(MegatronModule):
                 hidden_size % num_attention_heads == 0
             ), 'hidden_size must be divisible by num_attention_heads if kv_channels is None'
             kv_channels = hidden_size // num_attention_heads
-        
-        embedding_type = torch.float32
-
-        if precision == '16':
-            embedding_type = torch.float16
-        elif precision == 'bf16':
-            embedding_type = torch.bfloat16
 
         # Embeddings.
         if self.pre_process:
@@ -445,7 +437,6 @@ class TransformerLanguageModel(MegatronModule):
                 embedding_dropout_prob=self.hidden_dropout,
                 sequence_parallel=sequence_parallel,
                 fp32_residual_connection=fp32_residual_connection,
-                param_dtype=embedding_type,
             )
             self._embedding_key = 'embedding'
 
