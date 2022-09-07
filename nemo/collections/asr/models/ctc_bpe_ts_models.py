@@ -56,15 +56,13 @@ class TSEncDecCTCModelBPE(EncDecCTCModelBPE):
     ):
         super().__init__(*args, **kwargs)
         self.speaker_beam = EncDecCTCModelBPE.from_config_dict(self._cfg.speaker_beam)
-        self.fuse = torch.nn.Linear(self._cfg.speaker_embeddings.feature_dim, self._cfg.speaker_beam.feat_in)
+        # self.fuse = torch.nn.Linear(self._cfg.speaker_embeddings.feature_dim, self._cfg.speaker_beam.feat_in)
         if self._cfg.speaker_embeddings.model_path:
             self.speaker_model = EncDecSpeakerLabelModel.from_pretrained(self._cfg.speaker_embeddings.model_path)
             if self._cfg.speaker_embeddings.freeze_encoder:
                 self.speaker_model.encoder.freeze()
-                self.speaker_model.encoder.eval()
             if self._cfg.speaker_embeddings.freeze_decoder:
                 self.speaker_model.decoder.freeze()
-                self.speaker_model.decoder.eval()
         if self._cfg.freeze_asr_encoder:
             self.encoder.freeze()
         if self._cfg.freeze_asr_decoder:
@@ -140,9 +138,9 @@ class TSEncDecCTCModelBPE(EncDecCTCModelBPE):
             )
 
         # fuse processed_signal <- processed_signal + speaker_embedding
-        emb_proj = self.fuse(speaker_embedding).unsqueeze(-1)
-        processed_signal = processed_signal + emb_proj
-        mask, mask_len, pre_encoded_audio, pre_encoded_audio_lengths = self.speaker_beam(audio_signal=processed_signal, length=processed_signal_length)
+        # emb_proj = self.fuse(speaker_embedding).unsqueeze(-1)
+        # processed_signal = processed_signal + emb_proj
+        mask, mask_len, pre_encoded_audio, pre_encoded_audio_lengths = self.speaker_beam(audio_signal=processed_signal, length=processed_signal_length, emb=speaker_embedding)
         processed_signal = mask * pre_encoded_audio.permute(0, 2, 1)
         encoded, encoded_len, _, _ = self.encoder(audio_signal=processed_signal, length=pre_encoded_audio_lengths)
         log_probs = self.decoder(encoder_output=encoded)

@@ -90,7 +90,15 @@ def main(cfg):
             checkpoint = EncDecCTCModelBPE.restore_from(
                 cfg.nemo_checkpoint_path, map_location=torch.device('cpu'), strict=False
             )
-            asr_model.load_state_dict(checkpoint.state_dict(), strict=False)
+            d = checkpoint.state_dict()
+            d_new = {}
+            for k, v in d.items():
+                if k.startswith("encoder.pre_encode"):
+                    d_new[k.replace("encoder", "speaker_beam")] = v
+                # elif k.startswith("encoder"):
+                #     d_new[k.replace("encoder", "speaker_beam")] = v
+            d.update(d_new)
+            asr_model.load_state_dict(d, strict=False)
             del checkpoint
 
         trainer.fit(asr_model)

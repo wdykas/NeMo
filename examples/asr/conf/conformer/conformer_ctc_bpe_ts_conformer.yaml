@@ -25,9 +25,9 @@
 # The checkpoint of the large model trained on LibriSpeech with this recipe can be found here: https://ngc.nvidia.com/catalog/models/nvidia:nemo:stt_en_conformer_ctc_large_ls
 
 name: "Conformer-CTC-BPE"
-
 do_training: True
 model:
+  d_model: 256
   freeze_asr_encoder: false
   freeze_asr_decoder: false 
   speaker_embeddings:
@@ -132,8 +132,8 @@ model:
     _target_: nemo.collections.asr.modules.ConformerEncoder
     feat_in: ${model.preprocessor.features}
     feat_out: -1 # you may set it if you need different output size other than the default d_model
-    n_layers: 32
-    d_model: 80
+    n_layers: 18
+    d_model: ${model.d_model}
 
     # Sub-sampling params
     subsampling: striding # vggnet or striding, vggnet may give better results but needs more memory
@@ -161,12 +161,17 @@ model:
     dropout_emb: 0.0 # The dropout used for embeddings
     dropout_att: 0.1 # The dropout for multi-headed attention modules
 
+
+    use_target_embed: True
+    emb_dim: ${model.speaker_embeddings.feature_dim}
+    fusion_type: 'add'
+
   encoder:
     _target_: nemo.collections.asr.modules.ConformerEncoder
-    feat_in: ${model.preprocessor.features}
+    feat_in: ${model.d_model}
     feat_out: -1 # you may set it if you need different output size other than the default d_model
     n_layers: 18
-    d_model: 512
+    d_model: ${model.d_model}
 
     # Sub-sampling params
     subsampling: striding # vggnet or striding, vggnet may give better results but needs more memory
