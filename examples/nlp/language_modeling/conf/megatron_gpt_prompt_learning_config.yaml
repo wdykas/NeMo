@@ -63,7 +63,7 @@ model:
   # 'block' checkpoints the specified number of layers per pipeline stage at the specified granularity
   activations_checkpoint_num_layers: null # not used with 'selective'
 
-    task_templates: # Add more/replace tasks as needed, these are just examples
+  task_templates: # Add more/replace tasks as needed, these are just examples
   - taskname: "squad" 
     prompt_template: "<|VIRTUAL_PROMPT_0|> {question} {context} answer: {answer}"
     total_virtual_tokens: 10 
