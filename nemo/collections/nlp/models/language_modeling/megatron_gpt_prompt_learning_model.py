@@ -12,7 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 import re
+import tempfile
+import warnings
 from collections import OrderedDict
 from typing import Any, List, Optional, Union
 
@@ -41,6 +44,7 @@ from nemo.collections.nlp.modules.common.text_generation_utils import (
 from nemo.collections.nlp.modules.common.transformer.text_generation import LengthParam, SamplingParam, TextGeneration
 from nemo.collections.nlp.parts.nlp_overrides import NLPSaveRestoreConnector
 from nemo.collections.nlp.parts.utils_funcs import get_last_rank
+from nemo.core.connectors.save_restore_connector import SaveRestoreConnector
 from nemo.utils import logging
 
 try:
@@ -240,18 +244,82 @@ class MegatronGPTPromptLearningModel(MegatronBaseModel, TextGeneration):
 
     def init_prompt_encoder(self):
         """
-        Init the prompt encoder needed for p-tuning on a new task
+        Init the prompt encoder needed for p-tuning on a new task. Can also init 
+        from existing task tokens if a task name or .nemo path is given in the model 
+        config at p_tuning.finetune_from_task
         """
         # Total virtual tokens should be the same across all new tasks, so just need one
         new_task = self.new_tasks[0]
-        total_virtual_tokens = self.task_templates[new_task]["total_virtual_tokens"]
+        num_new_task_tokens = self.task_templates[new_task]["total_virtual_tokens"]
+        existing_task_tokens = None
 
+        if self.cfg.p_tuning.get("finetune_from_task", None) is not None:
+            existing_task_name, existing_task_tokens = self.get_existing_task_tokens(self.cfg.p_tuning.finetune_from_task)
+            num_existing_task_tokens = len(existing_task_tokens)
+
+            if num_existing_task_tokens != num_new_task_tokens:
+                for new_task in self.new_tasks:
+                    self._resolve_new_and_existing_task_token_count_mismatch(new_task, existing_task_name, num_existing_task_tokens)
+            
         self.prompt_encoder = PromptEncoder(
-            total_virtual_tokens=total_virtual_tokens,
+            total_virtual_tokens=num_new_task_tokens,
             hidden_size=self.hidden_size,
             lstm_dropout=self.cfg.p_tuning.dropout,
             num_layers=self.cfg.p_tuning.num_layers,
+            existing_task_tokens=existing_task_tokens,
         )
+
+    def get_existing_task_tokens(self, existing_task):
+        # Get existing task tokens straight from the prompt table
+        if not existing_task.endswith(".nemo") and existing_task in self.existing_tasks:
+            existing_task_name = existing_task
+            existing_task_id_num = self.task_templates[existing_task_name]["task_id_num"]
+            existing_task_tokens = self.prompt_table(existing_task_id_num)
+
+        # Load existing task tokens from external prompt table provided by the user
+        else:
+            # Untar .nemo prompt table checkpoint for existing task and load weights
+            with tempfile.TemporaryDirectory() as tmpdir:
+                save_restore_connector = SaveRestoreConnector()
+                save_restore_connector._unpack_nemo_file(path2file=existing_task, out_folder=tmpdir)
+                existing_task_prompt_table_ckpt = os.path.join(tmpdir, save_restore_connector._model_weights_ckpt)
+                existing_task_prompt_table = torch.load(existing_task_prompt_table_ckpt)
+
+                # Infers the task name for prompt table weight lookup, assumes there is only 1 task in the prompt table
+                existing_task_name = list(existing_task_prompt_table["prompt_table"].keys())
+                existing_task_name = existing_task_name[0].split(".")[1]
+                existing_task_tokens = existing_task_prompt_table["prompt_table"][f"prompt_table.{existing_task_name}.prompt_embeddings.weight"]
+
+        return existing_task_name, existing_task_tokens
+
+    def _resolve_new_and_existing_task_token_count_mismatch(self, new_task, existing_task_name, num_existing_task_tokens):
+        logging.warning(f"\nThe number of virtual tokens for the new {new_task} task must match the number " +
+                        f"of tokens used for the existing task {existing_task_name}, which has " +
+                        f"{num_existing_task_tokens} total tokens. Attempting to set the number of virtual prompt tokens " +
+                        f"for the new {new_task} task equal to {num_existing_task_tokens} automatically.\n")
+
+        self.task_templates[new_task]["total_virtual_tokens"] = num_existing_task_tokens
+        last_token_split_count = self.task_templates[new_task]["virtual_token_splits"][-1]
+
+        if num_existing_task_tokens > num_new_task_tokens:
+            token_count_difference = num_existing_task_tokens - num_new_task_tokens
+            self.task_templates[new_task]["virtual_token_splits"][-1] = last_token_split_count + token_count_difference
+
+        # Try and reduce num tokens in last split to account for difference between new and existing task token counts
+        else:
+            token_count_difference = num_new_task_tokens - num_existing_task_tokens
+
+            if token_count_difference >= last_token_split_count and len(self.task_templates[new_task]["virtual_token_splits"]) > 1:
+                raise ValueError(f"Could not automatically reset num virtual tokens for the new task {new_task}. " +
+                                    f"Please set the number of tokens for the new {new_task} task to {num_existing_task_tokens} " +
+                                    f"manually and reformate your prompt template and virtual token splits for the new {new_task} task accordingly.\n\n")
+
+            elif len(self.task_templates[new_task]["virtual_token_splits"]) == 1:
+                self.task_templates[new_task]["virtual_token_splits"][-1] = num_existing_task_tokens
+            else:
+                self.task_templates[new_task]["virtual_token_splits"][-1] = last_token_split_count - token_count_difference
+
+        num_new_task_tokens = num_existing_task_tokens
 
     def add_ptuned_prompts_to_prompt_table(self):
         """

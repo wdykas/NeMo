@@ -40,7 +40,7 @@ class PromptEncoder(NeuralModule, Exportable):
     def output_types(self) -> Optional[Dict[str, NeuralType]]:
         return {"output_embeds": NeuralType(('B', 'T', 'C'), ChannelType())}
 
-    def __init__(self, total_virtual_tokens: int, hidden_size: int, lstm_dropout: float, num_layers: int):
+    def __init__(self, total_virtual_tokens: int, hidden_size: int, lstm_dropout: float, num_layers: int, existing_task_tokens=None):
         """
         Initializes the PromptEncoder module.
         Args:
@@ -58,6 +58,10 @@ class PromptEncoder(NeuralModule, Exportable):
 
         # embedding
         self.embedding = torch.nn.Embedding(self.total_virtual_tokens, self.hidden_size)
+
+        # Set embedding weights to be embeddings from prompt tokens
+        if existing_task_tokens is not None:
+            self.embeddings.weight = nn.Parameter(existing_task_tokens)
 
         # LSTM
         self.lstm_head = torch.nn.LSTM(
