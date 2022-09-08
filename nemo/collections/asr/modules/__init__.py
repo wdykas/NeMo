@@ -37,4 +37,4 @@ from nemo.collections.asr.modules.msdd_diarizer import MSDD_module
 from nemo.collections.asr.modules.rnn_encoder import RNNEncoder
 from nemo.collections.asr.modules.rnnt import RNNTDecoder, RNNTDecoderJointSSL, RNNTJoint, StatelessTransducerDecoder
 from nemo.collections.asr.modules.squeezeformer_encoder import SqueezeformerEncoder, SqueezeformerEncoderAdapter
-from nemo.collections.asr.modules.speaker_beam import SpeakerBeam
+from nemo.nemo.collections.asr.modules.masking_network import SpeakerBeam
