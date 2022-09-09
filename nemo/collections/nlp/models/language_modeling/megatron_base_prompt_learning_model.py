@@ -30,6 +30,7 @@ from nemo.collections.nlp.modules.common import (
     VirtualPromptStyle,
 )
 from nemo.collections.nlp.modules.common.transformer.text_generation import TextGeneration
+from nemo.collections.nlp.modules.common.prompt_encoder import PromptEncoderMLP, PromptEncoderType
 from nemo.utils import logging
 
 __all__ = ['MegatronBasePromptLearningModel']
@@ -188,12 +189,24 @@ class MegatronBasePromptLearningModel(MegatronBaseModel, TextGeneration):
         new_task = self.new_tasks[0]
         total_virtual_tokens = self.task_templates[new_task]["total_virtual_tokens"]
 
-        self.prompt_encoder = PromptEncoder(
-            total_virtual_tokens=total_virtual_tokens,
-            hidden_size=self.hidden_size,
-            lstm_dropout=self.cfg.p_tuning.dropout,
-            num_layers=self.cfg.p_tuning.num_layers,
-        )
+        encoder_type = PromptEncoderType(self.cfg.p_tuning.get("type", "tpmlp").lower())
+        if encoder_type == PromptEncoderType.TPMLP:
+            self.prompt_encoder = PromptEncoderMLP(
+                total_virtual_tokens=total_virtual_tokens,
+                hidden_size=self.cfg.p_tuning.encoder_hidden,
+                output_size=self.hidden_size,
+                init_std=self.cfg.p_tuning.init_std,
+            ).to(dtype=self.autocast_dtype)
+        elif encoder_type == PromptEncoderType.LSTM:
+            self.prompt_encoder = PromptEncoder(
+                total_virtual_tokens=total_virtual_tokens,
+                hidden_size=self.cfg.p_tuning.encoder_hidden,
+                output_size=self.hidden_size,
+                lstm_dropout=self.cfg.p_tuning.dropout,
+                num_layers=self.cfg.p_tuning.num_layers,
+            ).to(dtype=self.autocast_dtype)
+        else:
+            raise ValueError('not supported')
 
     def add_ptuned_prompts_to_prompt_table(self):
         """
