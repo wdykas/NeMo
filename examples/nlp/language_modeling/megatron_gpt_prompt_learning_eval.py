@@ -25,6 +25,12 @@ from nemo.collections.nlp.models.language_modeling.megatron_gpt_prompt_learning_
 from nemo.collections.nlp.modules.common.transformer.text_generation import LengthParam, SamplingParam
 from nemo.collections.nlp.parts.nlp_overrides import NLPDDPStrategy, NLPSaveRestoreConnector
 from nemo.core.config import hydra_runner
+try:
+    from apex.transformer import parallel_state
+    HAVE_APEX = True
+
+except (ImportError, ModuleNotFoundError):
+    HAVE_APEX = False
 
 
 """
@@ -85,28 +91,21 @@ def main(cfg) -> None:
 
     # Load prompt tuned model, virtual_prompt_model_file must be provided in config
     # Update frozen GPT model path in case it has changed
-    save_resotre_connector = NLPSaveRestoreConnector()
-    if os.path.isdir(cfg.gpt_model_file):
-        save_resotre_connector.model_extracted_dir = cfg.gpt_model_file
-
     prompt_learning_cfg = MegatronGPTPromptLearningModel.restore_from(
         cfg.virtual_prompt_model_file,
         trainer=trainer,
         return_config=True,
-        save_restore_connector=save_resotre_connector,
     )
+
     with open_dict(prompt_learning_cfg):
         prompt_learning_cfg.language_model_path = cfg.gpt_model_file
-        # turn off the sequence parallel
-        prompt_learning_cfg.sequence_parallel = False
 
     # Now load prompt learning model with frozen gpt model base
     model = MegatronGPTPromptLearningModel.restore_from(
         restore_path=cfg.virtual_prompt_model_file,
         trainer=trainer,
         override_config_path=prompt_learning_cfg,
-        save_restore_connector=save_resotre_connector,
-    )
+    ).to(dtype=torch.bfloat16)
 
     model.freeze()
 
@@ -132,16 +131,26 @@ def main(cfg) -> None:
         "compute_logprob": cfg.inference.compute_logprob,
     }
 
-    # First method of running text generation, call model.generate method
-    # Input into generate method should be either list of string prompts or list of dicts
-    datapaths_dict = [{"data_path": path} for path in cfg.data_paths]
+    # check whether the DDP is initialized
+    if parallel_state.is_unitialized():
+ 
+        def dummy():
+            return
+ 
+        if trainer.strategy.launcher is not None:
+            trainer.strategy.launcher.launch(dummy, trainer=trainer)
+        trainer.strategy.setup_environment() 
 
-    # Use for inference on a few examples
-    response = model.generate(inputs=datapaths_dict, length_params=length_params, sampling_params=sampling_params)
+#    # # First method of running text generation, call model.generate method
+#    # # Input into generate method should be either list of string prompts or list of dicts
+#    datapaths_dict = [{"data_path": path} for path in cfg.data_paths]
+#
+#    # # Use for inference on a few examples
+#    response = model.generate(inputs=datapaths_dict, length_params=length_params, sampling_params=sampling_params)
 
-    print("***************************")
-    print(response)
-    print("***************************")
+#    print("***************************")
+#    print(response)
+#    print("***************************")
 
     # Second method of running text generation, call trainer.predict
     # Use for batched inference on larger test sets
@@ -149,7 +158,7 @@ def main(cfg) -> None:
 
     _, dataloader = model.build_virtual_prompt_dataset(
         data=cfg.data_paths,
-        batch_size=64,
+        batch_size=8,
         max_seq_length=max_input_length,
         min_seq_length=model.cfg.data.get('min_seq_length', 1),
         add_bos=sampling_params["add_BOS"],
@@ -165,7 +174,13 @@ def main(cfg) -> None:
     response = trainer.predict(model, dataloader)
 
     print("***************************")
-    print(response)
+    with open("/results/530b_xsum_preds.txt", "w", encoding="utf-8") as pred_file:
+        for i in range(len(response)):
+            for sent in response[i]["sentences"]:
+                summary = sent.split("Summary:")[-1]
+                summary = summary.strip()
+                print(summary)
+                pred_file.write(summary + "\n")
     print("***************************")
 
 
