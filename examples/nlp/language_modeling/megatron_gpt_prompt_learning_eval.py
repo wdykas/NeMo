@@ -25,6 +25,7 @@ from nemo.collections.nlp.models.language_modeling.megatron_gpt_prompt_learning_
 from nemo.collections.nlp.modules.common.transformer.text_generation import LengthParam, SamplingParam
 from nemo.collections.nlp.parts.nlp_overrides import NLPDDPStrategy, NLPSaveRestoreConnector
 from nemo.core.config import hydra_runner
+from nemo.utils import logging
 try:
     from apex.transformer import parallel_state
     HAVE_APEX = True
@@ -105,7 +106,7 @@ def main(cfg) -> None:
         restore_path=cfg.virtual_prompt_model_file,
         trainer=trainer,
         override_config_path=prompt_learning_cfg,
-    ).to(dtype=torch.bfloat16)
+    )
 
     model.freeze()
 
@@ -158,7 +159,7 @@ def main(cfg) -> None:
 
     _, dataloader = model.build_virtual_prompt_dataset(
         data=cfg.data_paths,
-        batch_size=8,
+        batch_size=4,
         max_seq_length=max_input_length,
         min_seq_length=model.cfg.data.get('min_seq_length', 1),
         add_bos=sampling_params["add_BOS"],
@@ -171,17 +172,18 @@ def main(cfg) -> None:
 
     config = OmegaConf.to_container(cfg.inference)
     model.set_inference_config(config)
+    logging.info("start to predict ***************************")
     response = trainer.predict(model, dataloader)
 
-    print("***************************")
-    with open("/results/530b_xsum_preds.txt", "w", encoding="utf-8") as pred_file:
+    logging.info("predict ***************************")
+    with open("/results/530b_xsum_preds2.txt", "w", encoding="utf-8") as pred_file:
         for i in range(len(response)):
             for sent in response[i]["sentences"]:
                 summary = sent.split("Summary:")[-1]
                 summary = summary.strip()
-                print(summary)
+                logging.info(summary)
                 pred_file.write(summary + "\n")
-    print("***************************")
+    logging.info("***************************")
 
 
 if __name__ == '__main__':
