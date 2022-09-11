@@ -105,7 +105,6 @@ import pytorch_lightning as pl
 from omegaconf import DictConfig, OmegaConf
 
 from nemo.collections.nlp.models.text_classification import TextClassificationModel
-from nemo.collections.nlp.parts.nlp_overrides import NLPDDPStrategy
 from nemo.core.config import hydra_runner
 from nemo.utils import logging
 from nemo.utils.exp_manager import exp_manager
@@ -134,10 +133,7 @@ def save_predictions(
 @hydra_runner(config_path="conf", config_name="text_classification_config")
 def main(cfg: DictConfig) -> None:
     logging.info(f'\nConfig Params:\n{OmegaConf.to_yaml(cfg)}')
-    try:
-        strategy = NLPDDPStrategy()
-    except (ImportError, ModuleNotFoundError):
-        strategy = None
+    strategy = None
 
     trainer = pl.Trainer(strategy=strategy, **cfg.trainer)
     exp_manager(trainer, cfg.get("exp_manager", None))
