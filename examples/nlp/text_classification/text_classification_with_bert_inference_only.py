@@ -170,7 +170,7 @@ def main(cfg: DictConfig) -> None:
         sentences = []
         gt_labels = []
         for line in lines:
-            elements = line.split("\t")
+            elements = line.strip().split("\t")
             if len(elements) == 2:
                 sentence, gt_label = elements
             else:

@@ -19,6 +19,7 @@ from typing import Dict, List, Optional
 import torch
 from omegaconf import DictConfig
 from pytorch_lightning import Trainer
+from tqdm import tqdm 
 
 from nemo.collections.common.losses import CrossEntropyLoss
 from nemo.collections.nlp.data.text_classification import TextClassificationDataset, calc_class_weights
@@ -252,8 +253,8 @@ class TextClassificationModel(NLPModel, Exportable):
             logging.set_verbosity(logging.WARNING)
             dataloader_cfg = {"batch_size": batch_size, "num_workers": 3, "pin_memory": False}
             infer_datalayer = self._setup_infer_dataloader(dataloader_cfg, queries, max_seq_length)
-
-            for i, batch in enumerate(infer_datalayer):
+            softmax_layer = torch.nn.Softmax(dim=-1)
+            for i, batch in tqdm(enumerate(infer_datalayer)):
                 input_ids, input_type_ids, input_mask, subtokens_mask = batch
 
                 logits = self.forward(
@@ -261,8 +262,16 @@ class TextClassificationModel(NLPModel, Exportable):
                     token_type_ids=input_type_ids.to(device),
                     attention_mask=input_mask.to(device),
                 )
+                logits_softmax = softmax_layer(logits)
+                toxic_prob = logits_softmax[:, 1]
 
-                preds = tensor2list(torch.argmax(logits, axis=-1))
+                # print("logits_softmax.size()", logits_softmax.size())
+                # print("logits_softmax", logits_softmax)
+                # print("toxic_prob:", toxic_prob)
+                # print("torch.argmax(logits, axis=-1): ", torch.argmax(logits, axis=-1))
+                # raise ValueError
+                #preds = tensor2list(torch.argmax(logits, axis=-1))
+                preds = tensor2list(toxic_prob)
                 all_preds.extend(preds)
         finally:
             # set mode back to its original value
