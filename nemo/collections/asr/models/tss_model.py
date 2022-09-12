@@ -329,7 +329,7 @@ class TargetEncDecSpeechSeparationModel(SeparationModel):
     @torch.no_grad()
     def extract_sources(
         self,
-        paths2audio_files: List[str],
+        manifest: str,
         save_dir: str = None,
         orig_sr: int = 16000,
         num_sources: int = 2,
@@ -343,8 +343,21 @@ class TargetEncDecSpeechSeparationModel(SeparationModel):
             save_dir: where to save the sources
         """
 
-        if paths2audio_files is None or len(paths2audio_files) == 0:
-            raise ValueError(f"zero files received in extract_sources fn")
+        # if paths2audio_files is None or len(paths2audio_files) == 0:
+        #     raise ValueError(f"zero files received in extract_sources fn")
+
+        # if isinstance(paths2audio_files, list):
+        #     # work in temp directory for manifest creation
+        #     with tempfile.TemporaryDirectory() as tmp_dir:
+        #         with open(os.path.join(tmp_dir, 'manifest.json'), 'w', encoding='utf-8') as fp:
+        #             for audio_file in paths2audio_files:
+        #                 entry = {
+        #                     'audio_filepath': [audio_file, audio_file, audio_file],
+        #                     'scale_factor': [0, 0, 0],
+        #                     'duration': [0, 0, 0],
+        #                 }
+        #                 fp.write(json.dumps(entry) + '\n')
+        #     os.path.join(tmp_dir, 'manifest.json')
 
         if not self.num_sources == num_sources:
             raise ValueError(f"model trained for {self.num_sources} sources, but got {num_sources} sources")
@@ -371,40 +384,33 @@ class TargetEncDecSpeechSeparationModel(SeparationModel):
             self.preprocessor.freeze()
             self.encoder.freeze()
             self.decoder.freeze()
+            self.speaker_model.freeze()
             logging_level = logging.get_verbosity()
             logging.set_verbosity(logging.WARNING)
 
-            # work in temp directory for manifest creation
-            with tempfile.TemporaryDirectory() as tmp_dir:
-                with open(os.path.join(tmp_dir, 'manifest.json'), 'w', encoding='utf-8') as fp:
-                    for audio_file in paths2audio_files:
-                        entry = {
-                            'audio_filepath': [audio_file, audio_file],
-                            'duration': [10000, 10000],
-                        }
-                        fp.write(json.dumps(entry) + '\n')
 
-                config = {
-                    'manifest_filepath': os.path.join(tmp_dir, 'manifest.json'),
-                    'batch_size': batch_size,
-                    'shuffle': False,
-                    'num_workers': num_workers,
-                    'num_sources': self.num_sources,
-                    'orig_sr': orig_sr,
-                    'sample_rate': self._cfg.sample_rate,
-                }
+            config = {
+                'manifest_filepath': manifest,
+                'batch_size': batch_size,
+                'shuffle': False,
+                'num_workers': num_workers,
+                'num_sources': self.num_sources,
+                'orig_sr': orig_sr,
+                'sample_rate': self._cfg.sample_rate,
+                'mode': 'max'
+            }
 
-                extract_dataloader = self._setup_dataloader_from_config(config)
-                for batch in tqdm.tqdm(extract_dataloader, desc="Extracting sources"):
-                    target_estimate = self.forward(batch[0].to(device))
+            extract_dataloader = self._setup_dataloader_from_config(config)
+            for id, batch in tqdm.tqdm(enumerate(extract_dataloader), desc="Extracting sources"):
+                target_estimate = self.forward(batch[0].to(device), batch[-2].to(device), batch[-1].to(device))
 
-                    self._save_audio(
-                        id=batch[-1].cpu().item(),
-                        mixture=batch[0].cpu().numpy(),
-                        target_estimate=target_estimate.cpu().numpy(),
-                        save_dir=save_dir,
-                        sample_rate=self._cfg.sample_rate,
-                    )
+                self._save_audio(
+                    id=id,
+                    mixture=batch[0].cpu().numpy(),
+                    target_estimate=target_estimate.cpu().numpy(),
+                    save_dir=save_dir,
+                    sample_rate=self._cfg.sample_rate,
+                )
 
         finally:
             # set modes
@@ -425,7 +431,6 @@ class TargetEncDecSpeechSeparationModel(SeparationModel):
 
         # save mixture
         samples = mixture[0, :]
-        samples = samples / np.abs(samples).max() * 0.9
         save_path = os.path.join(save_dir, f"item{id}_mix.wav")
         sf.write(
             save_path, np.expand_dims(samples, -1), sample_rate, 'PCM_16',
@@ -434,7 +439,6 @@ class TargetEncDecSpeechSeparationModel(SeparationModel):
         # save estimated sources
         for n_src in range(self.num_sources):
             samples = target_estimate[0, :, n_src]
-            samples = samples / np.abs(samples).max() * 0.9  # 0.9 is to avoid boundary value of 1
             save_path = os.path.join(save_dir, f"item{id}_source{n_src+1}hat.wav")
             sf.write(
                 save_path, np.expand_dims(samples, -1), sample_rate, 'PCM_16',

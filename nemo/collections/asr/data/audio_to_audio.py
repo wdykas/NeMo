@@ -262,10 +262,6 @@ class DynamicTargetAudioToAudioDataset(_AudioDataset):
         second_pt = super().__getitem__(second_speaker_index)['features_list'][0]
         enroll_pt = super().__getitem__(enroll_index)['features_list'][0]
 
-        print("####1", self.collection[index].audio_file)
-        print("####2", self.collection[second_speaker_index].audio_file)
-        print("####3", self.collection[enroll_index].audio_file)
-
         enroll_len = torch.tensor(enroll_pt.shape[0]).long()
 
         features_list = [target_pt, second_pt]
@@ -331,6 +327,7 @@ class StaticTargetAudioToAudioDataset(_AudioDataset):
         max_duration: Optional[float] = None,
         min_duration: Optional[float] = None,
         max_utts: Optional[int] = None,
+        mode: str = 'min',
         *args,
         **kwargs,
     ):
@@ -343,6 +340,8 @@ class StaticTargetAudioToAudioDataset(_AudioDataset):
             max_utts=max_utts,
             **kwargs,
         )
+
+        self.mode = mode
 
     def __getitem__(self, index):
 
@@ -357,19 +356,31 @@ class StaticTargetAudioToAudioDataset(_AudioDataset):
         for i, x in enumerate(features_list):
             features_list[i] = _rescale(features_list[i], scale_factors[i])
         features_lengths = [torch.tensor(x.shape[0]).long() for x in features_list]
-        min_l = torch.min(torch.stack(features_lengths)).item()
-        t1, t2 = [x[:min_l] for x in features_list]
+
+        if self.mode == 'min':
+            ll = torch.min(torch.stack(features_lengths)).item()
+            t1, t2 = [x[:ll] for x in features_list]
+        elif self.mode == 'max':
+            ll = torch.max(torch.stack(features_lengths)).item()
+            t1 = torch.zeros(ll, device=features_list[0].device)
+            t2 = torch.zeros(ll, device=features_list[1].device)
+            rand_idx = random.randint(0, ll - features_list[0].shape[0])
+            t1[rand_idx: rand_idx + features_list[0].shape[0]] = features_list[0]
+            rand_idx = random.randint(0, ll - features_list[1].shape[0])
+            t2[rand_idx: rand_idx + features_list[1].shape[0]] = features_list[1]
         mix = t1 + t2
 
         sources = torch.stack([t1, t2], dim=0)
         max_amp = max(torch.abs(mix).max().item(), *[x.item() for x in torch.abs(sources).max(dim=-1)[0]],)
+
+
 
         mix_scaling = 1 / max_amp * 0.9
         t1 = mix_scaling * t1
         t2 = mix_scaling * t2
         mix = mix_scaling * mix
 
-        output = [mix, torch.tensor(min_l).long(), t1, t2, enroll_pt, enroll_len]
+        output = [mix, torch.tensor(ll).long(), t1, t2, enroll_pt, enroll_len]
         return output
 
     def _collate_fn(self, batch):
