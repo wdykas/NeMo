@@ -67,6 +67,7 @@ def get_dynamic_target_audio_to_audio_dataset(
         max_utts=config.get('max_utts', 0),
         trim=config.get('trim_silence', False),
         orig_sr=config.get('orig_sr', None),
+        num_sources=config['num_sources'],
     )
     return dataset
 
@@ -91,5 +92,6 @@ def get_static_target_audio_to_audio_dataset(
         trim=config.get('trim_silence', False),
         orig_sr=config.get('orig_sr', None),
         mode=config.get('mode', 'min'),
+        num_sources=config['num_sources'],
     )
     return dataset

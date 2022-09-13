@@ -232,6 +232,7 @@ class DynamicTargetAudioToAudioDataset(_AudioDataset):
         max_duration: Optional[float] = None,
         min_duration: Optional[float] = None,
         max_utts: Optional[int] = None,
+        num_sources: int = 2,
         *args,
         **kwargs,
     ):
@@ -245,36 +246,46 @@ class DynamicTargetAudioToAudioDataset(_AudioDataset):
             **kwargs,
         )
 
+        self.num_speakers = num_sources
+
     def __getitem__(self, index):
         sample = self.collection[index]
         target_speaker = sample.speaker[0]
         enroll_index = np.random.choice(self.collection.speaker2audio[target_speaker])
 
-        second_speaker = np.random.choice(list(self.collection.speaker2audio.keys()))
+        overlapping_speakers = np.random.choice(list(self.collection.speaker2audio.keys()), self.num_speakers-1, replace=False)
+
         idx = 0
-        while second_speaker == target_speaker and idx < 100:
-            second_speaker = np.random.choice(list(self.collection.speaker2audio.keys()))
+        while target_speaker in overlapping_speakers and idx < 100:
+            overlapping_speakers = np.random.choice(list(self.collection.speaker2audio.keys()), self.num_speakers-1, replace=False)
             idx +=1
 
+        overlapping_speakers = overlapping_speakers.tolist()
 
-        second_speaker_index = np.random.choice(self.collection.speaker2audio[second_speaker])
+        overlapping_pts = []
+        for overlapping_speaker in overlapping_speakers:
+            overlapping_speakers_index = np.random.choice(self.collection.speaker2audio[overlapping_speaker])
+            tmp = super().__getitem__(overlapping_speakers_index)['features_list'][0]
+            overlapping_pts.append(tmp)
         target_pt = super().__getitem__(index)['features_list'][0]
-        second_pt = super().__getitem__(second_speaker_index)['features_list'][0]
         enroll_pt = super().__getitem__(enroll_index)['features_list'][0]
 
         enroll_len = torch.tensor(enroll_pt.shape[0]).long()
 
-        features_list = [target_pt, second_pt]
+        features_list = [target_pt] + overlapping_pts
         features_lengths = [torch.tensor(x.shape[0]).long() for x in features_list]
 
         min_l = torch.min(torch.stack(features_lengths)).item()
 
-        t1, t2 = [x[:min_l] for x in features_list]
+        t1 = features_list[0][:min_l]
+        t_others = [x[:min_l] for x in features_list[1:]]
 
         t1_gain = np.clip(random.normalvariate(-27.43, 2.57), -45, 0)
         t1 = _rescale(t1, t1_gain)
-        t2_gain = np.clip(t1_gain + random.normalvariate(-2.51, 2.66), -45, 0)
-        t2 = _rescale(t2, t2_gain)
+        for i in range(len(t_others)):
+            t2_gain = np.clip(t1_gain + random.normalvariate(-2.51, 2.66), -45, 0)
+            t_others[i] = _rescale(t_others[i], t2_gain)
+        t2 = torch.sum(torch.stack(t_others), 0)
         mix = t1 + t2
 
         sources = torch.stack([t1, t2], dim=0)
@@ -328,12 +339,13 @@ class StaticTargetAudioToAudioDataset(_AudioDataset):
         min_duration: Optional[float] = None,
         max_utts: Optional[int] = None,
         mode: str = 'min',
+        num_sources: int = 2,
         *args,
         **kwargs,
     ):
         super().__init__(
             manifest_filepath=manifest_filepath,
-            num_sources=3,
+            num_sources=num_sources + 1,
             featurizer=featurizer,
             max_duration=max_duration,
             min_duration=min_duration,
@@ -342,6 +354,7 @@ class StaticTargetAudioToAudioDataset(_AudioDataset):
         )
 
         self.mode = mode
+        self.num_speakers = num_sources
 
     def __getitem__(self, index):
 
@@ -356,18 +369,20 @@ class StaticTargetAudioToAudioDataset(_AudioDataset):
         for i, x in enumerate(features_list):
             features_list[i] = _rescale(features_list[i], scale_factors[i])
         features_lengths = [torch.tensor(x.shape[0]).long() for x in features_list]
-
         if self.mode == 'min':
             ll = torch.min(torch.stack(features_lengths)).item()
-            t1, t2 = [x[:ll] for x in features_list]
+            t1 = features_list[0][:ll]
+            t2 = torch.sum(torch.stack([x[:ll] for x in features_list[1:]]), dim=0)
         elif self.mode == 'max':
             ll = torch.max(torch.stack(features_lengths)).item()
             t1 = torch.zeros(ll, device=features_list[0].device)
             t2 = torch.zeros(ll, device=features_list[1].device)
             rand_idx = random.randint(0, ll - features_list[0].shape[0])
             t1[rand_idx: rand_idx + features_list[0].shape[0]] = features_list[0]
-            rand_idx = random.randint(0, ll - features_list[1].shape[0])
-            t2[rand_idx: rand_idx + features_list[1].shape[0]] = features_list[1]
+
+            for x in features_list[1:]:
+                rand_idx = random.randint(0, ll - x.shape[0])
+                t2[rand_idx: rand_idx + x.shape[0]] += x
         mix = t1 + t2
 
         sources = torch.stack([t1, t2], dim=0)

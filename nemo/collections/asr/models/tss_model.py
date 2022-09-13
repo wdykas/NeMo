@@ -82,7 +82,7 @@ class TargetEncDecSpeechSeparationModel(SeparationModel):
         else:
             self.loss_clamp = [None, None]
 
-        self.num_sources = self._cfg.train_ds.num_sources
+        self.num_outputs = self._cfg.num_outputs
 
         # for future purposes
         # self.spec_augmentation = EncDecSpeechSeparationModel.from_config_dict(self._cfg.spec_augment)
@@ -260,12 +260,12 @@ class TargetEncDecSpeechSeparationModel(SeparationModel):
         _, enroll_emb = self.speaker_model.forward(input_signal=enrollment, input_signal_length=enroll_len)
         mask_estimate = self.encoder(mix_feat, enroll_emb)
 
-        mix_feat = torch.stack([mix_feat] * self.num_sources)
+        mix_feat = torch.stack([mix_feat] * self.num_outputs)
         sep_feat = mix_feat * mask_estimate
 
         # decode
         target_estimate = torch.cat(
-            [self.decoder(sep_feat[i]).unsqueeze(-1) for i in range(self.num_sources)], dim=-1,
+            [self.decoder(sep_feat[i]).unsqueeze(-1) for i in range(self.num_outputs)], dim=-1,
         )
 
         T_original = mix_audio.size(1)
@@ -280,14 +280,11 @@ class TargetEncDecSpeechSeparationModel(SeparationModel):
 
     # PTL-specific methods
     def training_step(self, batch, batch_nb):
-        if self.num_sources == 2:
-            input, input_len, target1, target2, enrollment, enroll_len = batch
-        else:
-            logging.info(f"current support is only for 2 sources")
+        input, input_len, target1, target2, enrollment, enroll_len = batch
 
         target_estimate = self.forward(input, enrollment, enroll_len)
         target = [target1, target2]
-        target = torch.cat([target[i].unsqueeze(-1) for i in range(self.num_sources)], dim=-1,)
+        target = torch.cat([target[i].unsqueeze(-1) for i in range(self.num_outputs)], dim=-1,)
 
         loss = self.train_loss(target_estimate, target)
         loss = loss.clamp(*self.loss_clamp)
@@ -296,13 +293,10 @@ class TargetEncDecSpeechSeparationModel(SeparationModel):
         return {'loss': loss, 'log': tensorboard_logs}
 
     def validation_step(self, batch, batch_idx, dataloader_idx=0):
-        if self.num_sources == 2:
-            input, input_len, target1, target2, enrollment, enroll_len = batch
-        else:
-            logging.info(f"current support is only for 2 sources")
+        input, input_len, target1, target2, enrollment, enroll_len = batch
         target_estimate = self.forward(input, enrollment, enroll_len)
         target = [target1, target2]
-        target = torch.cat([target[i].unsqueeze(-1) for i in range(self.num_sources)], dim=-1,)
+        target = torch.cat([target[i].unsqueeze(-1) for i in range(self.num_outputs)], dim=-1,)
 
         loss = self.val_loss(target_estimate, target)
 
@@ -437,7 +431,7 @@ class TargetEncDecSpeechSeparationModel(SeparationModel):
         )
 
         # save estimated sources
-        for n_src in range(self.num_sources):
+        for n_src in range(self.num_outputs):
             samples = target_estimate[0, :, n_src]
             save_path = os.path.join(save_dir, f"item{id}_source{n_src+1}hat.wav")
             sf.write(

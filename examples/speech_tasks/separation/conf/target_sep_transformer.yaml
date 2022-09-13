@@ -7,6 +7,7 @@ num_sources: 2
 
 model:
   sample_rate: 8000
+  num_outputs: 2
   original_sample_rate: 16000
   skip_nan_grad: false
   train_ds:
@@ -74,7 +75,7 @@ model:
       
   encoder:
     _target_: nemo.collections.asr.modules.DualPathModel
-    num_speakers: ${num_sources}
+    num_speakers: ${model.num_outputs}
     feat_in: ${model.d_model}
     feat_out: ${model.d_model} # you may set it if you need different output size other than the default d_model
     num_layers: 2
