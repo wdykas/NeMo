@@ -120,8 +120,9 @@ def __parse_item(line: str, manifest_file: str) -> Dict[str, Any]:
     elif 'normalized_text' in item:
         item['text'] = item['normalized_text']
 
-    if 'other_audio_filepath' in item:
-        item['other_audio_filepath'] = expanduser(item['other_audio_filepath'])
+    if 'other_audio_filepaths' in item:
+        item['other_audio_files'] = [expanduser(x) for x in item['other_audio_filepaths']]
+        
     item = dict(
         audio_file=item['audio_file'],
         duration=item['duration'],
@@ -131,15 +132,10 @@ def __parse_item(line: str, manifest_file: str) -> Dict[str, Any]:
         orig_sr=item.get('orig_sample_rate', None),
         token_labels=item.get('token_labels', None),
         lang=item.get('lang', None),
-        other_audio_filepath=item.get('other_audio_filepath', None),
-        other_duration=item.get('other_duration', None),
-        other_offset=item.get('other_offset', None),
-        scale_factor=item.get('scale_factor', None),
-        scale_factor2=item.get('scale_factor2', None),
-        duration2=item.get('duration2', None),
-        duration_adapt=item.get('duration_adapt', None),
-        audio_filepath2=item.get('audio_filepath2', None),
-        audio_filepath_adapt=item.get('audio_filepath_adapt', None),
+        other_audio_files=item.get('other_audio_files', None),
+        other_durations=item.get('other_durations', None),
+        scale_factors=item.get('scale_factors', None),
     )
+    
 
     return item

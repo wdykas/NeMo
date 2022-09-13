@@ -154,6 +154,7 @@ class AudioText(_Collection):
         fields = [ids, audio_files, durations, offsets, texts, speakers, orig_sampling_rates, token_labels, langs]
         if "keep_fields" in kwargs:
             fields.extend([kwargs[x] for x in kwargs['keep_fields']])
+            
         for x in zip(*fields):
             id_, audio_file, duration, offset, text, speaker, orig_sr, token_label, lang = x[0:9]
             # Duration filters.
@@ -252,6 +253,7 @@ class ASRAudioText(AudioText):
             token_labels.append(item['token_labels'])
             langs.append(item['lang'])
             if "keep_fields" in kwargs:
+                
                 fields = kwargs["keep_fields"]
                 for field in fields:
                     if field not in kwargs:

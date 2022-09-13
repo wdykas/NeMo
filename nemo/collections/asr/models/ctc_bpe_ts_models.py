@@ -15,6 +15,7 @@
 import copy
 import json
 import os
+from selectors import EpollSelector
 import tempfile
 from copyreg import dispatch_table
 from typing import Dict, List, Optional, Union
@@ -265,12 +266,19 @@ class TSEncDecCTCModelBPE(EncDecCTCModelBPE):
                 logging.warning(f"Could not load dataset as `manifest_filepath` was None. Provided config : {config}")
                 return None
 
-            dataset = audio_to_text_dataset.get_audio_embedding_bpe_dataset(
-                config=config,
-                tokenizer=self.tokenizer,
-                augmentor=augmentor,
-                synthetic_generation=config.get('synthetic_generation', False),
-            )
+            if config['synthetic_generation'] == True:
+                dataset = audio_to_text_dataset.get_dynamic_target_audio_bpe_dataset(
+                    config=config,
+                    tokenizer=self.tokenizer,
+                    augmentor=augmentor,
+                )
+            else:
+                dataset = audio_to_text_dataset.get_static_target_audio_bpe_dataset(
+                    config=config,
+                    tokenizer=self.tokenizer,
+                    augmentor=augmentor,
+                )
+
 
         loader = torch.utils.data.DataLoader(
             dataset=dataset,

@@ -16,7 +16,7 @@ import json
 import math
 import os
 from typing import Callable, Dict, Iterable, List, Optional, Union
-
+import random
 import braceexpand
 import numpy as np
 import soundfile as sf
@@ -577,7 +577,175 @@ class AudioToBPEDataset(_AudioTextDataset):
         )
 
 
-class AudioAndEmbeddingToBPEDataset(AudioToBPEDataset):
+class DynamicTargetAudioToBPEDataset(AudioToBPEDataset):
+    """
+    """
+
+    @property
+    def output_types(self) -> Optional[Dict[str, NeuralType]]:
+        """Returns definitions of module output ports.
+               """
+        output = super().output_types
+        sample_id = output.pop('sample_id')
+        output['speaker_features'] = NeuralType(('B', 'T'), AudioSignal())
+        output['features_lengths'] = NeuralType(tuple('B'), LengthsType())
+        output['sample_id'] = sample_id
+        return output
+
+    def __init__(
+        self,
+        manifest_filepath: str,
+        tokenizer: 'nemo.collections.common.tokenizers.TokenizerSpec',
+        sample_rate: int,
+        int_values: bool = False,
+        augmentor: 'nemo.collections.asr.parts.perturb.AudioAugmentor' = None,
+        max_duration: Optional[int] = None,
+        min_duration: Optional[int] = None,
+        max_utts: int = 0,
+        trim: bool = False,
+        num_sources=2, 
+        mixing_portion=1.0,
+        use_start_end_token: bool = True,
+        return_sample_id: bool = False,
+    ):
+
+        super().__init__(
+            manifest_filepath=manifest_filepath,
+            tokenizer=tokenizer,
+            sample_rate=sample_rate,
+            int_values=int_values,
+            augmentor=augmentor,
+            max_duration=max_duration,
+            min_duration=min_duration,
+            max_utts=max_utts,
+            trim=trim,
+            use_start_end_token=use_start_end_token,
+            return_sample_id=return_sample_id,
+            index_by_speaker_id=True,
+        )  # inits  ASRManifestProcessor
+
+
+        # self.eval_dir= '/home/yangzhang/code/ts_asr/data/wsj_cv_mixed'
+        # self.manifest_eval= self.eval_dir + '/manifest.json'
+        # os.makedirs(self.eval_dir, exist_ok=True)
+        # with open(self.manifest_eval, 'w') as fp:
+        #     pass
+
+        
+        self.manifest_filepath = manifest_filepath
+        self.num_sources = num_sources
+        self.mixing_portion = mixing_portion
+
+    def __getitem__(self, index):
+
+        target_pt, target_pt_len, text, text_len = super().__getitem__(index)[:4]
+        sample = self.manifest_processor.collection[index]
+
+        target_speaker = sample.speaker
+        if len(self.manifest_processor.collection.speaker_mapping[target_speaker]) == 1:
+            raise ValueError("target speaker only has one utterance")
+
+        enrollment_index = np.random.choice(
+            self.manifest_processor.collection.speaker_mapping[target_speaker]
+        )
+        i = 0
+        while enrollment_index == index and i < 100:
+            enrollment_index = np.random.choice(
+                self.manifest_processor.collection.speaker_mapping[target_speaker]
+            )
+            i += 1
+
+
+        enroll_pt, enroll_pt_len = super().__getitem__(enrollment_index)[:2]
+
+        t1_gain = np.clip(random.normalvariate(-27.43, 2.57), -45, 0)
+        target_pt = _rescale(target_pt, t1_gain)
+
+        if np.random.rand() > self.mixing_portion: # no mixing, just clean data
+            max_amp = torch.abs(target_pt).max().item()
+            target_pt *= (1 / max_amp * 0.9)
+
+
+            if self.return_sample_id:
+                output = target_pt, target_pt_len, text, text_len, enroll_pt, enroll_pt_len, index
+            else:
+                output = target_pt, target_pt_len, text, text_len, enroll_pt, enroll_pt_len
+            return output
+
+
+        i = 0
+        overlapping_speakers = np.random.choice(
+            list(self.manifest_processor.collection.speaker_mapping.keys()), self.num_sources-1, replace=False
+        )
+        while target_speaker in overlapping_speakers and i < 100:
+            overlapping_speakers = np.random.choice(
+                list(self.manifest_processor.collection.speaker_mapping.keys()), self.num_sources-1, replace=False
+            )
+            i += 0
+        overlapping_speakers = overlapping_speakers.tolist()
+
+        overlapping_pts = []
+        for overlapping_speaker in overlapping_speakers:
+            overlapping_speaker_index = np.random.choice(self.manifest_processor.collection.speaker_mapping[overlapping_speaker])
+            overlapping_pt = super().__getitem__(overlapping_speaker_index)[0]
+            overlapping_pts.append(overlapping_pt)
+
+
+
+        for i in range(len(overlapping_pts)):
+            t2_gain = np.clip(t1_gain + random.normalvariate(-2.51, 2.66), -45, 0)
+            overlapping_pts[i] = _rescale(overlapping_pts[i], t2_gain)
+        
+        features_list = [target_pt] + overlapping_pts
+        features_lengths = [torch.tensor(x.shape[0]).long() for x in features_list]
+        ll = torch.max(torch.stack(features_lengths)).item()
+        mix_len = torch.tensor(ll).long()
+
+
+        mix = torch.zeros(ll, device=features_list[0].device)
+        rand_idx = random.randint(0, ll - features_list[0].shape[0])
+        mix[rand_idx: rand_idx + features_list[0].shape[0]] = features_list[0]
+
+        for x in features_list[1:]:
+            rand_idx = random.randint(0, ll - x.shape[0])
+            mix[rand_idx: rand_idx + x.shape[0]] += x
+
+        max_amp = torch.abs(mix).max().item()
+
+        mix_scaling = 1 / max_amp * 0.9
+        mix = mix_scaling * mix
+
+
+
+        # f = f"{self.eval_dir}/{index}.wav"
+        # sf.write(f, mix, 16000)
+        # with open(self.manifest_eval, 'a') as fp:
+        #     tmp = {"audio_filepath": f, "speaker": target_speaker, "duration": mix_len.item()/16000, "text": sample.text_raw, "enrollment": self.manifest_processor.collection[enrollment_index].audio_file}
+        #     print(tmp)
+        #     fp.write(json.dumps(tmp) + "\n")
+
+
+        if self.return_sample_id:
+            output = mix, mix_len, text, text_len, enroll_pt, enroll_pt_len, index
+        else:
+            output = mix, mix_len, text, text_len, enroll_pt, enroll_pt_len
+
+        return output
+
+    def _collate_fn(self, batch):
+        # to change
+        return _speech_embedding_collate_fn(batch, pad_id=self.manifest_processor.pad_id)
+
+def _rescale(x, gain):
+    x = x.unsqueeze(0)
+    EPS = 1e-14
+    avg_amplitude = torch.mean(torch.abs(x), dim=1, keepdim=True)
+    normalized = x / (avg_amplitude + EPS)
+    out = 10 ** (gain / 20) * normalized
+    out = out.squeeze(0)
+    return out
+
+class StaticTargetAudioToBPEDataset(AudioToBPEDataset):
     """
     """
 
@@ -605,15 +773,12 @@ class AudioAndEmbeddingToBPEDataset(AudioToBPEDataset):
         trim: bool = False,
         use_start_end_token: bool = True,
         return_sample_id: bool = False,
-        synthetic_generation: bool = False,
+        num_sources: int = 2,
     ):
         keep_fields = [
-            "audio_filepath2",
-            "duration2",
-            "scale_factor2",
-            "scale_factor",
-            "audio_filepath_adapt",
-            "duration_adapt",
+            "other_audio_files",
+            "other_durations",
+            "scale_factors",
         ]
         super().__init__(
             manifest_filepath=manifest_filepath,
@@ -627,14 +792,10 @@ class AudioAndEmbeddingToBPEDataset(AudioToBPEDataset):
             trim=trim,
             use_start_end_token=use_start_end_token,
             return_sample_id=return_sample_id,
-            index_by_speaker_id=synthetic_generation == True,
+            index_by_speaker_id=False,
             keep_fields=keep_fields,
         )  # inits  ASRManifestProcessor
 
-        self.featurizer = WaveformFeaturizerAndEmbedding(
-            sample_rate=sample_rate, int_values=int_values, augmentor=augmentor
-        )
-        self.synthetic_generation = synthetic_generation
 
         # self.eval_dir= '/home/yangzhang/code/ts_asr/data/wsj_cv_mixed'
         # self.manifest_eval= self.eval_dir + '/manifest.json'
@@ -648,104 +809,69 @@ class AudioAndEmbeddingToBPEDataset(AudioToBPEDataset):
         # with open(self.manifest_eval_aux_utterance, 'w') as fp:
         #     pass
         self.manifest_filepath = manifest_filepath
+        self.num_sources = num_sources
 
     def __getitem__(self, index):
         sample = self.manifest_processor.collection[index]
-        offset = sample.offset
 
-        if offset is None:
-            offset = 0
+        # for generating eval data
+        # if "cv" in self.manifest_filepath:
+        # f = f"{self.eval_dir}/{index}.wav"
+        # sf.write(f, features, 16000)
+        # with open(self.manifest_eval, 'a') as fp:
+        #     tmp = {"audio_filepath": f, "individual_audio_file": sample.audio_file, "speaker": target_speaker, "duration": len(features)/16000, "scale_factor": sample.scale_factor, "scale_factor2": sample.scale_factor2, "text": sample.text_raw, "audio_filepath2": second_speaker_file, "audio_filepath_adapt": other_utterance_file, "duration2": second_speaker_duration, "duration_adapt": other_utterance_duration }
+        #     print(tmp)
+        #     fp.write(json.dumps(tmp) + "\n")
 
-        if self.synthetic_generation:
-            target_speaker = sample.speaker
-            if len(self.manifest_processor.collection.speaker_mapping[target_speaker]) == 1:
-                raise ValueError("target speaker only has one utterance")
+        
+        other_audio_files = sample.other_audio_files
+        other_durations = sample.other_durations
+        scale_factors = sample.scale_factors
 
-            other_utterance_index = np.random.choice(
-                self.manifest_processor.collection.speaker_mapping[target_speaker]
-            )
-            i = 0
-            while other_utterance_index == index and i < 100:
-                other_utterance_index = np.random.choice(
-                    self.manifest_processor.collection.speaker_mapping[target_speaker]
-                )
-                i += 1
-            other_utterance = self.manifest_processor.collection[other_utterance_index]
-            other_utterance_duration = other_utterance.duration
-            other_utterance_file = other_utterance.audio_file
+        target_pt, target_pt_len, text, text_len = super().__getitem__(index)[:4]
 
-            second_speaker_duration = sample.duration2
-            second_speaker_file = sample.audio_filepath2
+        overlap_audio_files = other_audio_files[:-1]
+        enrollment_audio_file = other_audio_files[-1]
+        overlap_durations = other_durations[:-1]
+        enrollment_duration = other_durations[-1]
 
-            features, speaker_features = self.featurizer.process(
-                sample.audio_file,
-                duration=sample.duration,
-                other_utterance_file=other_utterance_file,
-                other_utterance_duration=other_utterance_duration,
-                second_speaker_file=second_speaker_file,
-                second_speaker_duration=second_speaker_duration,
-                scale_factor=sample.scale_factor,
-                scale_factor2=sample.scale_factor2,
-                offset=offset,
-                trim=self.trim,
-                orig_sr=sample.orig_sr,
-            )
-            # for generating eval data
-            # if "train" in self.manifest_filepath:
-            #     f = f"{self.eval_dir}/{index}.wav"
-            #     sf.write(f, features, 16000)
-            #     with open(self.manifest_eval, 'a') as fp:
-            #         tmp = {"audio_filepath": f, "individual_audio_file": sample.audio_file, "speaker": target_speaker, "duration": len(f)/16000, "text": sample.text_raw, "overlap_audio_filepath_1": second_speaker_file, "other_utterance_file": other_utterance_file}
-            #         print(tmp)
-            #         fp.write(json.dumps(tmp) + "\n")
+        overlapping_pts = [self.featurizer.process(
+            x, duration=y, trim=self.trim, orig_sr=sample.orig_sr) for x, y in zip(overlap_audio_files, overlap_durations)]
+        
+        enroll_pt = self.featurizer.process(
+            enrollment_audio_file, duration=enrollment_duration, trim=self.trim, orig_sr=sample.orig_sr)
 
-            # f = f"{self.eval_individual_dir}/{index}.wav"
-            # sf.write(f, speaker_features, 16000)
-            # with open(self.manifest_eval_aux_utterance, 'a') as fp:
-            #     tmp = {"audio_filepath": f, "individual_audio_file": other_utterance.audio_file, "speaker": target_speaker, "duration": other_utterance.duration, "text": other_utterance.text_raw}
-            #     fp.write(json.dumps(tmp) + "\n")
+        enroll_pt_len = torch.tensor(enroll_pt.shape[0]).long()
 
-        else:
-            target_speaker = sample.speaker
+        target_pt *= scale_factors[0]
+        for i in range(len(overlapping_pts)):
+            overlapping_pts[i] *= scale_factors[1:][i]
+        
 
-            other_utterance_duration = sample.duration_adapt
-            other_utterance_file = sample.audio_filepath_adapt
 
-            second_speaker_duration = sample.duration2
-            second_speaker_file = sample.audio_filepath2
+        features_list = [target_pt] + overlapping_pts
+        features_lengths = [torch.tensor(x.shape[0]).long() for x in features_list]
+        ll = torch.max(torch.stack(features_lengths)).item()
+        mix_len = torch.tensor(ll).long()
 
-            features, speaker_features = self.featurizer.process(
-                sample.audio_file,
-                duration=sample.duration,
-                other_utterance_file=other_utterance_file,
-                other_utterance_duration=other_utterance_duration,
-                second_speaker_file=second_speaker_file,
-                second_speaker_duration=second_speaker_duration,
-                scale_factor=sample.scale_factor,
-                scale_factor2=sample.scale_factor2,
-                offset=offset,
-                trim=self.trim,
-                orig_sr=sample.orig_sr,
-            )
 
-            # for generating eval data
-            # if "cv" in self.manifest_filepath:
-            # f = f"{self.eval_dir}/{index}.wav"
-            # sf.write(f, features, 16000)
-            # with open(self.manifest_eval, 'a') as fp:
-            #     tmp = {"audio_filepath": f, "individual_audio_file": sample.audio_file, "speaker": target_speaker, "duration": len(features)/16000, "scale_factor": sample.scale_factor, "scale_factor2": sample.scale_factor2, "text": sample.text_raw, "audio_filepath2": second_speaker_file, "audio_filepath_adapt": other_utterance_file, "duration2": second_speaker_duration, "duration_adapt": other_utterance_duration }
-            #     print(tmp)
-            #     fp.write(json.dumps(tmp) + "\n")
+        mix = torch.zeros(ll, device=features_list[0].device)
+        rand_idx = random.randint(0, ll - features_list[0].shape[0])
+        mix[rand_idx: rand_idx + features_list[0].shape[0]] = features_list[0]
 
-        embed_len = torch.tensor(speaker_features.shape[0]).long()
+        for x in features_list[1:]:
+            rand_idx = random.randint(0, ll - x.shape[0])
+            mix[rand_idx: rand_idx + x.shape[0]] += x
 
-        f, fl = features, torch.tensor(features.shape[0]).long()
-        t, tl = self.manifest_processor.process_text_by_id(index)
+        max_amp = torch.abs(mix).max().item()
+
+        mix_scaling = 1 / max_amp * 0.9
+        mix = mix_scaling * mix
 
         if self.return_sample_id:
-            output = f, fl, torch.tensor(t).long(), torch.tensor(tl).long(), speaker_features, embed_len, index
+            output = mix, mix_len, text, text_len, enroll_pt, enroll_pt_len, index
         else:
-            output = f, fl, torch.tensor(t).long(), torch.tensor(tl).long(), speaker_features, embed_len
+            output = mix, mix_len, text, text_len, enroll_pt, enroll_pt_len 
 
         return output
 
