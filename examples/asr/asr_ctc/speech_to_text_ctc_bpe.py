@@ -71,6 +71,7 @@ from nemo.collections.asr.models.ctc_bpe_models import EncDecCTCModelBPE
 from nemo.core.config import hydra_runner
 from nemo.utils import logging
 from nemo.utils.exp_manager import exp_manager
+import torch
 
 
 @hydra_runner(config_path="../conf/citrinet/", config_name="config_bpe")

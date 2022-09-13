@@ -55,17 +55,20 @@ class TSEncDecCTCModelBPE(EncDecCTCModelBPE):
         self, *args, **kwargs,
     ):
         super().__init__(*args, **kwargs)
-        self.speaker_beam = EncDecCTCModelBPE.from_config_dict(self._cfg.speaker_beam)
+        if hasattr(self._cfg, 'speaker_beam') and self._cfg.speaker_beam is not None:
+            self.speaker_beam = EncDecCTCModelBPE.from_config_dict(self._cfg.speaker_beam)
         # self.fuse = torch.nn.Linear(self._cfg.speaker_embeddings.feature_dim, self._cfg.speaker_beam.feat_in)
-        if self._cfg.speaker_embeddings.model_path:
-            self.speaker_model = EncDecSpeakerLabelModel.from_pretrained(self._cfg.speaker_embeddings.model_path)
-            if self._cfg.speaker_embeddings.freeze_encoder:
-                self.speaker_model.encoder.freeze()
-            if self._cfg.speaker_embeddings.freeze_decoder:
-                self.speaker_model.decoder.freeze()
-        if self._cfg.freeze_asr_encoder:
+
+        if hasattr(self._cfg, 'speaker_embeddings') and self._cfg.speaker_embeddings is not None:
+            if self._cfg.speaker_embeddings.model_path:
+                self.speaker_model = EncDecSpeakerLabelModel.from_pretrained(self._cfg.speaker_embeddings.model_path)
+                if self._cfg.speaker_embeddings.freeze_encoder:
+                    self.speaker_model.encoder.freeze()
+                if self._cfg.speaker_embeddings.freeze_decoder:
+                    self.speaker_model.decoder.freeze()
+        if hasattr(self._cfg, 'freeze_asr_encoder') and self._cfg.freeze_asr_encoder:
             self.encoder.freeze()
-        if self._cfg.freeze_asr_decoder:
+        if hasattr(self._cfg, 'freeze_asr_decoder') and self._cfg.freeze_asr_decoder:
             self.decoder.freeze()
 
     @classmethod
@@ -396,9 +399,9 @@ class TSEncDecCTCModelBPE(EncDecCTCModelBPE):
                         lg = logits[idx][: logits_len[idx]]
                         hypotheses.append(lg.cpu().numpy())
                 else:
-                    current_hypotheses = self._wer.ctc_decoder_predictions_tensor(
-                        greedy_predictions, predictions_len=logits_len, return_hypotheses=return_hypotheses,
-                    )
+                    current_hypotheses , all_hyp = self.decoding.ctc_decoder_predictions_tensor(
+                            logits, decoder_lengths=logits_len, return_hypotheses=return_hypotheses,
+                        )
 
                     if return_hypotheses:
                         # dump log probs per file
