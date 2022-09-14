@@ -53,8 +53,8 @@ class CrossEntropyLoss(nn.CrossEntropyLoss, Serialization, Typing):
         if weight is not None:
             if not torch.is_tensor(weight):
                 weight = torch.FloatTensor(weight)
-            weight = weight / sum(weight) # manual rescale weight given to each class
-            logging.info(f"Use cross_entropy loss with weight {weight} for labels")
+            # weight = weight / sum(weight) # manual rescale weight given to each class
+            # logging.info(f"Use cross_entropy loss with weight {weight} for labels")
 
         super().__init__(weight=weight, reduction=reduction, ignore_index=ignore_index)
         self._logits_dim = logits_ndim
