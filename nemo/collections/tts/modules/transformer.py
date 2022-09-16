@@ -49,41 +49,8 @@ class PositionalEmbedding(nn.Module):
             return pos_emb[None, :, :]
 
 
-class ConditionalLayerNorm(nn.Module):
-    def __init__(self, normalized_shape, spk_emb_dim, eps=1e-5, bias=True):
-        super(ConditionalLayerNorm, self).__init__()
-        self.normalized_shape = normalized_shape
-        self.eps = eps
-        self.spk_emb_dim = spk_emb_dim
-        
-        self.weight = nn.Linear(spk_emb_dim, normalized_shape, bias=bias)
-        self.bias = nn.Linear(spk_emb_dim, normalized_shape, bias=bias)
-        
-        nn.init.constant_(self.weight.weight, 0.0)
-        nn.init.constant_(self.bias.weight, 0.0)
-        if bias:
-            nn.init.constant_(self.weight.bias, 1.0)
-            nn.init.constant_(self.bias.bias, 0.0)
-
-    def forward(self, inp, conditioning):
-        # Normalize Input Features
-        mean = inp.mean(dim=-1, keepdim=True)
-        var = ((inp - mean) ** 2).mean(dim=-1, keepdim=True)
-        std = (var + self.eps).sqrt()
-        inp = (inp - mean) / std
-        
-        # Get Scale and Bias
-        scale = self.weight(conditioning)
-        bias = self.bias(conditioning)
-        
-        # Perform Scailing and Shifting
-        inp *= scale
-        inp += bias
-        
-        return inp
-        
 class PositionwiseConvFF(nn.Module):
-    def __init__(self, d_model, d_inner, kernel_size, dropout, pre_lnorm=False, use_cln_speaker=False):
+    def __init__(self, d_model, d_inner, kernel_size, dropout, pre_lnorm=False):
         super(PositionwiseConvFF, self).__init__()
 
         self.d_model = d_model
@@ -101,11 +68,7 @@ class PositionwiseConvFF(nn.Module):
             nn.Dropout(dropout),
         )
         
-        if use_cln_speaker:
-            self.layer_norm = ConditionalLayerNorm(d_model, d_model)
-        else:
-            self.layer_norm = nn.LayerNorm(d_model)
-        
+        self.layer_norm = nn.LayerNorm(d_model)
         self.pre_lnorm = pre_lnorm
         self.use_cln_speaker = use_cln_speaker
 

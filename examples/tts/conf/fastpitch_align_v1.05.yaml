@@ -188,7 +188,6 @@ model:
     d_embed: ${model.symbols_embedding_dim}
     use_add_speaker: false
     use_cat_speaker: false
-    use_cln_speaker: false
     
   output_fft:
     _target_: nemo.collections.tts.modules.transformer.FFTransformerDecoder
@@ -203,7 +202,6 @@ model:
     dropemb: 0.0
     use_add_speaker: false
     use_cat_speaker: false
-    use_cln_speaker: false
     
   alignment_module:
     _target_: nemo.collections.tts.modules.aligner.AlignmentEncoder
