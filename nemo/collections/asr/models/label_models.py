@@ -93,13 +93,15 @@ class EncDecSpeakerLabelModel(ModelPT, ExportableEncDecModel):
         # self.cal_labels_occurrence = False
         if trainer is not None:
             self.world_size = trainer.num_nodes * trainer.num_devices
-
+        self.cal_labels_occurrence_train=False
+        
         super().__init__(cfg=cfg, trainer=trainer)
 
         self.preprocessor = EncDecSpeakerLabelModel.from_config_dict(cfg.preprocessor)
         self.encoder = EncDecSpeakerLabelModel.from_config_dict(cfg.encoder)
         self.decoder = EncDecSpeakerLabelModel.from_config_dict(cfg.decoder)
         self.labels_occurrence = None  # TODO
+        
 
         if 'angular' in cfg.decoder and cfg.decoder['angular']:
             logging.info("loss is Angular Softmax")
@@ -108,20 +110,24 @@ class EncDecSpeakerLabelModel(ModelPT, ExportableEncDecModel):
             self.loss = AngularSoftmaxLoss(scale=scale, margin=margin)
         else:
             logging.info("loss is Softmax-CrossEntropy")
-            if 'label_weight' in cfg.loss and cfg.loss.label_weight:
-                if cfg.loss.label_weight == 'auto':
-                    self.cal_labels_occurrence = True
+            if 'weight' in cfg.loss and cfg.loss.weight:
+                if cfg.loss.weight == 'auto':
+                    self.cal_labels_occurrence_train = True
                     # Goal is to give more weight to the classes with less samples so as to match the ones with the higher frequencies
                     if self.labels_occurrence:
                         weight = [sum(self.labels_occurrence) / (len(self.labels_occurrence) * i) for i in self.labels_occurrence]
                     else:
                         weight = None
                 else:
-                    weight = cfg.loss.label_weight
+                    weight = cfg.loss.weight
 
                 self.loss = CELoss(weight=weight)
+                
             else:
                 self.loss = CELoss()
+
+        self.eval_loss = CELoss()
+
         self.task = None
         self._accuracy = TopKClassificationAccuracy(top_k=[1])
         self._auroc = AUROC(num_classes=107) # todo
@@ -196,7 +202,7 @@ class EncDecSpeakerLabelModel(ModelPT, ExportableEncDecModel):
                 min_duration=config.get('min_duration', None),
                 trim=config.get('trim_silence', False),
                 normalize_audio=config.get('normalize_audio', False),
-                cal_labels_occurrence=True, 
+                cal_labels_occurrence=config.get('cal_labels_occurrence', False), 
             )
             self.labels_occurrence = dataset.labels_occurrence
 
@@ -217,10 +223,17 @@ class EncDecSpeakerLabelModel(ModelPT, ExportableEncDecModel):
         )
 
     def setup_training_data(self, train_data_layer_config: Optional[Union[DictConfig, Dict]]):
+
+        if self.cal_labels_occurrence_train:
+            OmegaConf.set_struct(train_data_layer_config, True)
+            with open_dict(train_data_layer_config):
+                train_data_layer_config['cal_labels_occurrence'] = True
+
         self.labels = self.extract_labels(train_data_layer_config)
         train_data_layer_config['labels'] = self.labels
         if 'shuffle' not in train_data_layer_config:
             train_data_layer_config['shuffle'] = True
+
         self._train_dl = self.__setup_dataloader_from_config(config=train_data_layer_config)
         # Need to set this because if using an IterableDataset, the length of the dataloader is the total number
         # of samples rather than the number of batches, and this messes up the tqdm progress bar.
@@ -312,7 +325,7 @@ class EncDecSpeakerLabelModel(ModelPT, ExportableEncDecModel):
     def validation_step(self, batch, batch_idx, dataloader_idx: int = 0):
         audio_signal, audio_signal_len, labels, _ = batch
         logits, _ = self.forward(input_signal=audio_signal, input_signal_length=audio_signal_len)
-        loss_value = self.loss(logits=logits, labels=labels)
+        loss_value = self.eval_loss(logits=logits, labels=labels)
         acc_top_k = self._accuracy(logits=logits, labels=labels)
         correct_counts, total_counts = self._accuracy.correct_counts_k, self._accuracy.total_counts_k
         self._auroc.update(preds=logits, target=labels)
