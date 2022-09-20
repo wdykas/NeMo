@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-ARG BASE_IMAGE=nvcr.io/nvidia/pytorch:22.07-py3
+ARG BASE_IMAGE=nvcr.io/nvidia/pytorch:22.08-py3
 
 
 # build an image that includes only the nemo dependencies, ensures that dependencies
@@ -35,9 +35,9 @@ RUN apt-get update && \
 
 # FIXME a workaround to update apex. Remove when base image is updated
 WORKDIR /tmp/
-RUN git clone https://github.com/yidong72/apex.git  && \
+RUN git clone https://github.com/NVIDIA/apex.git && \
     cd apex && \
-    git checkout ptune_hack && \
+    git checkout 3c19f1061879394f28272a99a7ea26d58f72dace && \
     pip install -v --disable-pip-version-check --no-cache-dir --global-option="--cpp_ext" --global-option="--cuda_ext" --global-option="--fast_layer_norm" ./
 
 # uninstall stuff from base container
@@ -68,6 +68,19 @@ RUN /bin/bash /tmp/nemo/install_pynini.sh
 # install k2, skip if installation fails
 COPY scripts /tmp/nemo/scripts/
 RUN /bin/bash /tmp/nemo/scripts/speech_recognition/k2/setup.sh || exit 0
+
+# install open MPI
+RUN wget https://download.open-mpi.org/release/open-mpi/v3.0/openmpi-3.0.6.tar.gz && \
+    gunzip -c openmpi-3.0.6.tar.gz | tar xf - && \
+    cd openmpi-3.0.6 && \
+    ./configure --prefix=/usr/local && \
+    make all install
+
+# install Horovod
+RUN HOROVOD_WITH_MPI=1 pip install horovod[pytorch] 
+
+# install Azure CLI
+RUN pip install azure-cli
 
 # copy nemo source into a scratch image
 FROM scratch as nemo-src
