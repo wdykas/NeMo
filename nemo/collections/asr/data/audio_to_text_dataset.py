@@ -193,6 +193,7 @@ def get_static_target_audio_bpe_dataset(
         min_duration=config.get('min_duration', None),
         max_utts=config.get('max_utts', 0),
         trim=config.get('trim_silence', False),
+        num_sources = config['num_sources'],
         use_start_end_token=config.get('use_start_end_token', True),
         return_sample_id=config.get('return_sample_id', False),
     )

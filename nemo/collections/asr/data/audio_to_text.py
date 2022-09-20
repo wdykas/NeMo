@@ -780,6 +780,7 @@ class StaticTargetAudioToBPEDataset(AudioToBPEDataset):
             "other_durations",
             "scale_factors",
         ]
+        
         super().__init__(
             manifest_filepath=manifest_filepath,
             tokenizer=tokenizer,
@@ -808,8 +809,10 @@ class StaticTargetAudioToBPEDataset(AudioToBPEDataset):
         # os.makedirs(self.eval_individual_dir, exist_ok=True)
         # with open(self.manifest_eval_aux_utterance, 'w') as fp:
         #     pass
+        
         self.manifest_filepath = manifest_filepath
         self.num_sources = num_sources
+
 
     def __getitem__(self, index):
         sample = self.manifest_processor.collection[index]
@@ -827,6 +830,7 @@ class StaticTargetAudioToBPEDataset(AudioToBPEDataset):
         other_audio_files = sample.other_audio_files
         other_durations = sample.other_durations
         scale_factors = sample.scale_factors
+        
 
         target_pt, target_pt_len, text, text_len = super().__getitem__(index)[:4]
 

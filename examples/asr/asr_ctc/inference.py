@@ -37,6 +37,7 @@ from nemo.utils.exp_manager import exp_manager
 input_manifest = sys.argv[1]
 new_manifest_path = sys.argv[2]
 ckpt = sys.argv[3]
+num_sources = 1
 bs = 1
 data = []
 with open(input_manifest, 'r') as fp:
@@ -48,7 +49,7 @@ model = nemo_asr.models.TSEncDecCTCModelBPE.restore_from(ckpt)
 # model = nemo_asr.models.EncDecCTCModelBPE.restore_from('/home/yangzhang/code/NeMo/examples/asr/asr_ctc/ngc_ckpt/2820728/Conformer-CTC-BPE/2022-04-21_20-26-13/checkpoints/Conformer-CTC-BPE.nemo')
 predictions = []
 
-pred = model.transcribe(input_manifest, batch_size=bs)
+pred = model.transcribe(input_manifest, batch_size=bs, num_sources=num_sources)
 predictions.extend(pred)
 
 with open(new_manifest_path, 'w', encoding='utf8') as fp:

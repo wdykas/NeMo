@@ -273,6 +273,7 @@ class TSEncDecCTCModelBPE(EncDecCTCModelBPE):
                     augmentor=augmentor,
                 )
             else:
+                
                 dataset = audio_to_text_dataset.get_static_target_audio_bpe_dataset(
                     config=config,
                     tokenizer=self.tokenizer,
@@ -318,8 +319,10 @@ class TSEncDecCTCModelBPE(EncDecCTCModelBPE):
             'batch_size': batch_size,
             'shuffle': False,
             'augmentor': config.get('augmentor', None),
+            'synthetic_generation': config['synthetic_generation'],
             'num_workers': config.get('num_workers', min(batch_size, os.cpu_count() - 1)),
             'pin_memory': True,
+            'num_sources': config["num_sources"]
         }
 
         temporary_datalayer = self._setup_dataloader_from_config(config=DictConfig(dl_config))
@@ -333,6 +336,7 @@ class TSEncDecCTCModelBPE(EncDecCTCModelBPE):
         logprobs: bool = False,
         return_hypotheses: bool = False,
         num_workers: int = None,
+        num_sources = None,
     ) -> List[str]:
         """
         Uses greedy decoding to transcribe audio files. Use this method for debugging and prototyping.
@@ -385,10 +389,14 @@ class TSEncDecCTCModelBPE(EncDecCTCModelBPE):
             logging.set_verbosity(logging.WARNING)
             # Work in tmp directory - will store manifest file there
 
+            if not num_sources:
+                num_sources = self._cfg.test_ds.num_sources
             config = {
                 'manifest_filepath': manifest_filepath,
                 'batch_size': batch_size,
                 'num_workers': num_workers,
+                'synthetic_generation': False,
+                'num_sources': num_sources
             }
 
             temporary_datalayer = self._setup_transcribe_dataloader(config)
