@@ -20,6 +20,7 @@ from typing import Dict, List, Optional, Union
 import librosa
 import numpy as np
 import torch
+from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf, open_dict
 from pytorch_lightning import Trainer
 from tqdm import tqdm
