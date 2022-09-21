@@ -89,14 +89,15 @@ class EncDecSpeakerLabelModel(ModelPT, ExportableEncDecModel):
 
     def __init__(self, cfg: DictConfig, trainer: Trainer = None):
         self.world_size = 1
-        # self.cal_labels_occurrence = False
         if trainer is not None:
             self.world_size = trainer.num_nodes * trainer.num_devices
         self.cal_labels_occurrence_train=False
+        self.labels_occurrence = None
         
         if 'loss' in cfg:
             if 'weight' in cfg.loss:
                 if cfg.loss.weight == 'auto':
+                    weight = num_classes * [1]
                     self.cal_labels_occurrence_train = True
                 else:
                     weight = cfg.loss.weight
@@ -107,19 +108,17 @@ class EncDecSpeakerLabelModel(ModelPT, ExportableEncDecModel):
         if trainer is not None:
             self.world_size = trainer.num_nodes * trainer.num_devices
 
-
         super().__init__(cfg=cfg, trainer=trainer)
 
-    
         if self.labels_occurrence:
             weight = [sum(self.labels_occurrence) / (len(self.labels_occurrence) * i) for i in self.labels_occurrence]
-
+        
         cfg_eval_loss = copy.deepcopy(cfg.loss)
 
         if 'weight' in cfg.loss:
             cfg.loss.weight = weight
             cfg_eval_loss.weight = None
-
+       
         self.loss = instantiate(cfg.loss)
         self.eval_loss = instantiate(cfg_eval_loss)
 
