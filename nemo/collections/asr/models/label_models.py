@@ -118,7 +118,6 @@ class EncDecSpeakerLabelModel(ModelPT, ExportableEncDecModel):
             self.world_size = trainer.num_nodes * trainer.num_devices
 
         super().__init__(cfg=cfg, trainer=trainer)
-
         if self.labels_occurrence:
             weight = [sum(self.labels_occurrence) / (len(self.labels_occurrence) * i) for i in self.labels_occurrence]
         
@@ -135,7 +134,6 @@ class EncDecSpeakerLabelModel(ModelPT, ExportableEncDecModel):
         self.preprocessor = EncDecSpeakerLabelModel.from_config_dict(cfg.preprocessor)
         self.encoder = EncDecSpeakerLabelModel.from_config_dict(cfg.encoder)
         self.decoder = EncDecSpeakerLabelModel.from_config_dict(cfg.decoder)
-        self.labels_occurrence = None  # TODO
 
         self.task = None
         self._accuracy = TopKClassificationAccuracy(top_k=[1])
@@ -213,7 +211,9 @@ class EncDecSpeakerLabelModel(ModelPT, ExportableEncDecModel):
                 normalize_audio=config.get('normalize_audio', False),
                 cal_labels_occurrence=config.get('cal_labels_occurrence', False), 
             )
-            self.labels_occurrence = dataset.labels_occurrence
+
+            if dataset.labels_occurrence:
+                self.labels_occurrence = dataset.labels_occurrence
 
         if hasattr(dataset, 'fixed_seq_collate_fn'):
             collate_fn = dataset.fixed_seq_collate_fn
