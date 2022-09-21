@@ -94,6 +94,14 @@ class EncDecSpeakerLabelModel(ModelPT, ExportableEncDecModel):
         self.cal_labels_occurrence_train=False
         self.labels_occurrence = None
         
+
+
+        if 'num_classes' in cfg.decoder:
+            num_classes = cfg.decoder.num_classes
+        else:
+            num_classes = cfg.decoder.params.num_classes  # to pass test
+
+
         if 'loss' in cfg:
             if 'weight' in cfg.loss:
                 if cfg.loss.weight == 'auto':
@@ -122,10 +130,6 @@ class EncDecSpeakerLabelModel(ModelPT, ExportableEncDecModel):
         self.loss = instantiate(cfg.loss)
         self.eval_loss = instantiate(cfg_eval_loss)
 
-        if 'num_classes' in cfg.decoder:
-            num_classes = cfg.decoder.num_classes
-        else:
-            num_classes = cfg.decoder.params.num_classes  # to pass test
 
         self.preprocessor = EncDecSpeakerLabelModel.from_config_dict(cfg.preprocessor)
         self.encoder = EncDecSpeakerLabelModel.from_config_dict(cfg.encoder)
@@ -134,8 +138,8 @@ class EncDecSpeakerLabelModel(ModelPT, ExportableEncDecModel):
 
         self.task = None
         self._accuracy = TopKClassificationAccuracy(top_k=[1])
-        self._auroc = AUROC(num_classes=107) # todo
-        self._acc = Accuracy(num_classes=107, average='macro')
+        self._auroc = AUROC(num_classes=num_classes) # todo
+        self._acc = Accuracy(num_classes=num_classes, average='macro')
 
         self.labels = None
         if hasattr(self._cfg, 'spec_augment') and self._cfg.spec_augment is not None:
