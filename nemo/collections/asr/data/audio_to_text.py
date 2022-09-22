@@ -13,6 +13,7 @@
 # limitations under the License.
 import io
 import json
+import librosa
 import math
 import os
 from typing import Callable, Dict, Iterable, List, Optional, Union
@@ -658,10 +659,10 @@ class DynamicTargetAudioToBPEDataset(AudioToBPEDataset):
 
         enroll_pt, enroll_pt_len = super().__getitem__(enrollment_index)[:2]
 
-        t1_gain = np.clip(random.normalvariate(-27.43, 2.57), -45, 0)
-        target_pt = _rescale(target_pt, t1_gain)
 
-        if np.random.rand() > self.mixing_portion: # no mixing, just clean data
+        num_overlapping_sources = np.random.randint(1,self.num_sources )
+        target_pt *= np.random.uniform(0.125, 2.0)
+        if np.random.rand() > (1/self.num_sources): # no mixing, just clean data
             max_amp = torch.abs(target_pt).max().item()
             target_pt *= (1 / max_amp * 0.9)
 
@@ -676,7 +677,6 @@ class DynamicTargetAudioToBPEDataset(AudioToBPEDataset):
         i = 0
 
 
-        num_overlapping_sources = np.random.randint(1,self.num_sources )
         overlapping_speakers = np.random.choice(
             list(self.manifest_processor.collection.speaker_mapping.keys()), num_overlapping_sources, replace=False
         )
@@ -696,22 +696,36 @@ class DynamicTargetAudioToBPEDataset(AudioToBPEDataset):
 
 
         for i in range(len(overlapping_pts)):
-            t2_gain = np.clip(t1_gain + random.normalvariate(-2.51, 2.66), -45, 0)
-            overlapping_pts[i] = _rescale(overlapping_pts[i], t2_gain)
+            scale = np.random.uniform(0.125, 2.0)
+            overlapping_pts[i] *=scale
         
+
+
         features_list = [target_pt] + overlapping_pts
-        features_lengths = [torch.tensor(x.shape[0]).long() for x in features_list]
-        ll = torch.max(torch.stack(features_lengths)).item()
-        mix_len = torch.tensor(ll).long()
+
+        def get_delayed_audio(audio, delay):
+            if delay != 0:
+                audio = np.append(np.zeros(delay), audio)
+            return audio
 
 
-        mix = torch.zeros(ll, device=features_list[0].device)
-        rand_idx = random.randint(0, ll - features_list[0].shape[0])
-        mix[rand_idx: rand_idx + features_list[0].shape[0]] = features_list[0]
+        # mix with overlap
+        random.shuffle(features_list)
 
-        for x in features_list[1:]:
-            rand_idx = random.randint(0, ll - x.shape[0])
-            mix[rand_idx: rand_idx + x.shape[0]] += x
+        mix = features_list[0].numpy()
+        for i, x in enumerate(features_list):
+            delay = np.random.uniform(0.5*sample.orig_sr, len(mix) - 0.5*sample.orig_sr)
+            next_audio = x.numpy()
+            next_audio = get_delayed_audio(next_audio, delay)
+            target_length = max(len(mix), len(next_audio))
+            audio = librosa.util.fix_length(mix, target_length)
+            additional_audio = librosa.util.fix_length(next_audio, target_length)
+            mix = mix + additional_audio
+
+
+
+        mix = torch.tensor(mix, dtype=torch.float)
+        mix_len = torch.tensor(len(mix)).long()
 
         max_amp = torch.abs(mix).max().item()
 
