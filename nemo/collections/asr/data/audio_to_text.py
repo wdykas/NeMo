@@ -625,7 +625,7 @@ class DynamicTargetAudioToBPEDataset(AudioToBPEDataset):
         )  # inits  ASRManifestProcessor
 
 
-        # self.eval_dir= '/home/yangzhang/code/ts_asr/data/wsj_cv_mixed'
+        # self.eval_dir= '/home/yangzhang/code/ts_asr/data/wsj_train_mixed'
         # self.manifest_eval= self.eval_dir + '/manifest.json'
         # os.makedirs(self.eval_dir, exist_ok=True)
         # with open(self.manifest_eval, 'w') as fp:
@@ -674,12 +674,15 @@ class DynamicTargetAudioToBPEDataset(AudioToBPEDataset):
 
 
         i = 0
+
+
+        num_overlapping_sources = np.random.randint(1,self.num_sources )
         overlapping_speakers = np.random.choice(
-            list(self.manifest_processor.collection.speaker_mapping.keys()), self.num_sources-1, replace=False
+            list(self.manifest_processor.collection.speaker_mapping.keys()), num_overlapping_sources, replace=False
         )
         while target_speaker in overlapping_speakers and i < 100:
             overlapping_speakers = np.random.choice(
-                list(self.manifest_processor.collection.speaker_mapping.keys()), self.num_sources-1, replace=False
+                list(self.manifest_processor.collection.speaker_mapping.keys()), num_overlapping_sources, replace=False
             )
             i += 0
         overlapping_speakers = overlapping_speakers.tolist()
@@ -798,10 +801,14 @@ class StaticTargetAudioToBPEDataset(AudioToBPEDataset):
         )  # inits  ASRManifestProcessor
 
 
-        # self.eval_dir= '/home/yangzhang/code/ts_asr/data/wsj_cv_mixed'
-        # self.manifest_eval= self.eval_dir + '/manifest.json'
-        # os.makedirs(self.eval_dir, exist_ok=True)
-        # with open(self.manifest_eval, 'w') as fp:
+        # self.tmp_dir= '/home/yangzhang/code/ts_asr/data/'
+        # if "train" in manifest_filepath:
+        #     self.tmp_dir += "train/"
+        # else:
+        #     self.tmp_dir += "eval/"
+        # self.manifest_tmp= self.tmp_dir + '/manifest.json'
+        # os.makedirs(self.tmp_dir, exist_ok=True)
+        # with open(self.manifest_tmp, 'w') as fp:
         #     pass
         # import ipdb; ipdb.set_trace()
         # self.eval_individual_dir= '/home/yangzhang/code/ts_asr/data/ls_train_clean_aux_utterance'
@@ -816,15 +823,6 @@ class StaticTargetAudioToBPEDataset(AudioToBPEDataset):
 
     def __getitem__(self, index):
         sample = self.manifest_processor.collection[index]
-
-        # for generating eval data
-        # if "cv" in self.manifest_filepath:
-        # f = f"{self.eval_dir}/{index}.wav"
-        # sf.write(f, features, 16000)
-        # with open(self.manifest_eval, 'a') as fp:
-        #     tmp = {"audio_filepath": f, "individual_audio_file": sample.audio_file, "speaker": target_speaker, "duration": len(features)/16000, "scale_factor": sample.scale_factor, "scale_factor2": sample.scale_factor2, "text": sample.text_raw, "audio_filepath2": second_speaker_file, "audio_filepath_adapt": other_utterance_file, "duration2": second_speaker_duration, "duration_adapt": other_utterance_duration }
-        #     print(tmp)
-        #     fp.write(json.dumps(tmp) + "\n")
 
         
         other_audio_files = sample.other_audio_files
@@ -871,6 +869,15 @@ class StaticTargetAudioToBPEDataset(AudioToBPEDataset):
 
         mix_scaling = 1 / max_amp * 0.9
         mix = mix_scaling * mix
+
+
+                # for generating eval data
+        # f = f"{self.tmp_dir}/{index}.wav"
+        # sf.write(f, mix, 16000)
+        # with open(self.manifest_tmp, 'a') as fp:
+        #     tmp = {"audio_filepath": f, "duration": len(mix)/16000, "text": sample.text_raw, "enroll": enrollment_audio_file}
+        #     print(tmp)
+        #     fp.write(json.dumps(tmp) + "\n")
 
         if self.return_sample_id:
             output = mix, mix_len, text, text_len, enroll_pt, enroll_pt_len, index
