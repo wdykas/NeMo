@@ -713,14 +713,15 @@ class DynamicTargetAudioToBPEDataset(AudioToBPEDataset):
         random.shuffle(features_list)
 
         mix = features_list[0].numpy()
-        for i, x in enumerate(features_list):
-            delay = np.random.uniform(0.5*sample.orig_sr, len(mix) - 0.5*sample.orig_sr)
+        for i, x in enumerate(features_list[1:]):
+            
+            delay = int(np.random.uniform(0.5*16000, len(mix) - 0.5*16000))
             next_audio = x.numpy()
             next_audio = get_delayed_audio(next_audio, delay)
             target_length = max(len(mix), len(next_audio))
-            audio = librosa.util.fix_length(mix, target_length)
-            additional_audio = librosa.util.fix_length(next_audio, target_length)
-            mix = mix + additional_audio
+            mix = librosa.util.fix_length(mix, target_length)
+            next_audio = librosa.util.fix_length(next_audio, target_length)
+            mix = mix + next_audio
 
 
 
