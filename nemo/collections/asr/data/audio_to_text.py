@@ -626,7 +626,7 @@ class DynamicTargetAudioToBPEDataset(AudioToBPEDataset):
         )  # inits  ASRManifestProcessor
 
 
-        # self.tmp_dir= '/home/yangzhang/code/ts_asr/data/wsj_train_mixed'
+        # self.tmp_dir= '/home/yangzhang/code/ts_asr/data/train_mixed'
         # self.manifest_tmp= self.tmp_dir + '/manifest.json'
         # os.makedirs(self.tmp_dir, exist_ok=True)
         # with open(self.manifest_tmp, 'w') as fp:
@@ -660,7 +660,7 @@ class DynamicTargetAudioToBPEDataset(AudioToBPEDataset):
         enroll_pt, enroll_pt_len = super().__getitem__(enrollment_index)[:2]
 
 
-        target_pt *= np.random.uniform(0.125, 2.0) # volumne scaling
+        # target_pt *= np.random.uniform(0.125, 2.0) # volumne scaling
         if np.random.rand() > (1/self.num_sources): # no mixing, just clean data
             max_amp = torch.abs(target_pt).max().item()
             target_pt *= (1 / max_amp * 0.9)
@@ -695,9 +695,9 @@ class DynamicTargetAudioToBPEDataset(AudioToBPEDataset):
 
 
 
-        for i in range(len(overlapping_pts)):
-            scale = np.random.uniform(0.125, 2.0) # volume scaling 
-            overlapping_pts[i] *=scale
+        # for i in range(len(overlapping_pts)):
+        #     scale = np.random.uniform(0.125, 2.0) # volume scaling 
+        #     overlapping_pts[i] *=scale
         
 
 
@@ -719,9 +719,11 @@ class DynamicTargetAudioToBPEDataset(AudioToBPEDataset):
         random.shuffle(features_list)
 
         mix = features_list[0].numpy()
+        last_start = 0
         for i, x in enumerate(features_list[1:]):
             
-            delay = int(np.random.uniform(0.5*16000, len(mix)))
+            delay = int(np.random.uniform(0.5*16000 + last_start, len(mix)))
+            last_start = delay
             next_audio = x.numpy()
             next_audio = get_delayed_audio(next_audio, delay)
             target_length = max(len(mix), len(next_audio))
@@ -833,12 +835,6 @@ class StaticTargetAudioToBPEDataset(AudioToBPEDataset):
         # os.makedirs(self.tmp_dir, exist_ok=True)
         # with open(self.manifest_tmp, 'w') as fp:
         #     pass
-        # import ipdb; ipdb.set_trace()
-        # self.eval_individual_dir= '/home/yangzhang/code/ts_asr/data/ls_train_clean_aux_utterance'
-        # self.manifest_eval_aux_utterance= self.eval_individual_dir + '/manifest.json'
-        # os.makedirs(self.eval_individual_dir, exist_ok=True)
-        # with open(self.manifest_eval_aux_utterance, 'w') as fp:
-        #     pass
         
         self.manifest_filepath = manifest_filepath
         self.num_sources = num_sources
@@ -905,7 +901,7 @@ class StaticTargetAudioToBPEDataset(AudioToBPEDataset):
         mix = mix_scaling * mix
 
 
-                # for generating eval data
+        # for generating eval data
         # f = f"{self.tmp_dir}/{index}.wav"
         # sf.write(f, mix, 16000)
         # with open(self.manifest_tmp, 'a') as fp:
