@@ -626,10 +626,10 @@ class DynamicTargetAudioToBPEDataset(AudioToBPEDataset):
         )  # inits  ASRManifestProcessor
 
 
-        # self.eval_dir= '/home/yangzhang/code/ts_asr/data/wsj_train_mixed'
-        # self.manifest_eval= self.eval_dir + '/manifest.json'
-        # os.makedirs(self.eval_dir, exist_ok=True)
-        # with open(self.manifest_eval, 'w') as fp:
+        # self.tmp_dir= '/home/yangzhang/code/ts_asr/data/wsj_train_mixed'
+        # self.manifest_tmp= self.tmp_dir + '/manifest.json'
+        # os.makedirs(self.tmp_dir, exist_ok=True)
+        # with open(self.manifest_tmp, 'w') as fp:
         #     pass
 
         
@@ -660,8 +660,7 @@ class DynamicTargetAudioToBPEDataset(AudioToBPEDataset):
         enroll_pt, enroll_pt_len = super().__getitem__(enrollment_index)[:2]
 
 
-        num_overlapping_sources = np.random.randint(1,self.num_sources )
-        target_pt *= np.random.uniform(0.125, 2.0)
+        target_pt *= np.random.uniform(0.125, 2.0) # volumne scaling
         if np.random.rand() > (1/self.num_sources): # no mixing, just clean data
             max_amp = torch.abs(target_pt).max().item()
             target_pt *= (1 / max_amp * 0.9)
@@ -677,6 +676,7 @@ class DynamicTargetAudioToBPEDataset(AudioToBPEDataset):
         i = 0
 
 
+        num_overlapping_sources = np.random.randint(1,self.num_sources ) # if overlap then at least one at most num_sources - 1 other sources
         overlapping_speakers = np.random.choice(
             list(self.manifest_processor.collection.speaker_mapping.keys()), num_overlapping_sources, replace=False
         )
@@ -696,35 +696,43 @@ class DynamicTargetAudioToBPEDataset(AudioToBPEDataset):
 
 
         for i in range(len(overlapping_pts)):
-            scale = np.random.uniform(0.125, 2.0)
+            scale = np.random.uniform(0.125, 2.0) # volume scaling 
             overlapping_pts[i] *=scale
         
 
 
         features_list = [target_pt] + overlapping_pts
 
-        def get_delayed_audio(audio, delay):
+        def get_delayed_audio(audio, delay): # delay in samples
             if delay != 0:
                 audio = np.append(np.zeros(delay), audio)
             return audio
+        
+        def pad_audio_to_length(audio, target_len): # target_len in samples 
+            if target_len <= len(audio):
+                return audio
+            audio = np.append(audio, np.zeros(target_len - len(audio)))
+            return audio
 
 
-        # mix with overlap
+        # shuffle so target speaker appears at random position in mixed speech
         random.shuffle(features_list)
 
         mix = features_list[0].numpy()
         for i, x in enumerate(features_list[1:]):
             
-            delay = int(np.random.uniform(0.5*16000, len(mix) - 0.5*16000))
+            delay = int(np.random.uniform(0.5*16000, len(mix)))
             next_audio = x.numpy()
             next_audio = get_delayed_audio(next_audio, delay)
             target_length = max(len(mix), len(next_audio))
-            mix = librosa.util.fix_length(mix, target_length)
-            next_audio = librosa.util.fix_length(next_audio, target_length)
+            mix = pad_audio_to_length(mix, target_length)
+            next_audio = pad_audio_to_length(next_audio, target_length)
             mix = mix + next_audio
 
 
 
+        # mix = pad_audio_to_length(mix, 46 * 16000)
+        
         mix = torch.tensor(mix, dtype=torch.float)
         mix_len = torch.tensor(len(mix)).long()
 
@@ -735,9 +743,9 @@ class DynamicTargetAudioToBPEDataset(AudioToBPEDataset):
 
 
 
-        # f = f"{self.eval_dir}/{index}.wav"
+        # f = f"{self.tmp_dir}/{index}.wav"
         # sf.write(f, mix, 16000)
-        # with open(self.manifest_eval, 'a') as fp:
+        # with open(self.manifest_tmp, 'a') as fp:
         #     tmp = {"audio_filepath": f, "speaker": target_speaker, "duration": mix_len.item()/16000, "text": sample.text_raw, "enrollment": self.manifest_processor.collection[enrollment_index].audio_file}
         #     print(tmp)
         #     fp.write(json.dumps(tmp) + "\n")
@@ -880,6 +888,17 @@ class StaticTargetAudioToBPEDataset(AudioToBPEDataset):
             rand_idx = random.randint(0, ll - x.shape[0])
             mix[rand_idx: rand_idx + x.shape[0]] += x
 
+
+        def pad_audio_to_length(audio, target_len): # target_len in samples 
+            if target_len <= len(audio):
+                return audio
+            audio = np.append(audio, np.zeros(target_len - len(audio)))
+            return audio
+
+        
+        # mix = pad_audio_to_length(mix.numpy(), 46 * 16000)
+        # mix = torch.tensor(mix, dtype=torch.float)
+        # mix_len = torch.tensor(len(mix)).long()
         max_amp = torch.abs(mix).max().item()
 
         mix_scaling = 1 / max_amp * 0.9

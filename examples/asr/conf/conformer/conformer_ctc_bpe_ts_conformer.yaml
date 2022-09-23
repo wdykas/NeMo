@@ -46,6 +46,13 @@ model:
   ctc_reduction: 'mean_batch'
   skip_nan_grad: false
   train_ds:
+    augmentor:
+      speed:
+        sr: ${model.sample_rate}
+        resample_type: 'kaiser_fast'
+        min_speed_rate: 0.95
+        max_speed_rate: 1.05
+        prob: 0.3
     num_sources: ${num_sources}
     mixing_portion: 0.7
     manifest_filepath: ???
