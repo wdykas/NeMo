@@ -181,6 +181,7 @@ class TTSDataset(Dataset):
         self.manifest_filepath = manifest_filepath
 
         data = []
+        self.emotions = set()
         total_duration = 0
         for manifest_file in self.manifest_filepath:
             with open(Path(manifest_file).expanduser(), 'r') as f:
@@ -219,6 +220,9 @@ class TTSDataset(Dataset):
 
                     if total_duration is not None:
                         total_duration += item["duration"]
+
+                    if file_info["emotion_id"] is not None:
+                        self.emotions.add(file_info["emotion_id"])
 
         logging.info(f"Loaded dataset with {len(data)} files.")
         if total_duration is not None:
@@ -527,9 +531,15 @@ class TTSDataset(Dataset):
         # normalize pitch if requested.
         if pitch is not None:
             if self.pitch_mean is not None and self.pitch_std is not None and self.pitch_norm:
-                pitch -= self.pitch_mean
-                pitch[pitch == -self.pitch_mean] = 0.0  # Zero out values that were previously zero
-                pitch /= self.pitch_std
+                if len(self.emotions) > 1:
+                    p_mean = self.pitch_mean[sample["emotion_id"]-1]
+                    p_std = self.pitch_std[sample["emotion_id"]-1]
+                else:
+                    p_mean = self.pitch_mean
+                    p_std = self.pitch_std
+                pitch -= p_mean
+                pitch[pitch == -p_mean] = 0.0  # Zero out values that were previously zero
+                pitch /= p_std
 
             pitch_length = torch.tensor(len(pitch)).long()
 

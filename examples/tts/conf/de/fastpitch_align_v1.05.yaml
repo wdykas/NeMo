@@ -12,11 +12,14 @@ sup_data_types: [ "align_prior_matrix", "pitch", "emotion_id" ]
 # Default values from librosa.pyin
 pitch_fmin: 65.40639132514966
 pitch_fmax: 2093.004638671875
+n_emotions: 9
 
 # Stats (per frame), train (these values depend on pitch_fmin and pitch_fmax)
 # For example, on Thorsten Muller (German Emotional-TTS dataset): http://www.openslr.org/110/
-pitch_mean: 169.59390258789062
-pitch_std: 103.64842224121094
+# make sure these have 1-1 mapping with emotions
+# ideally, store it in a static file pth (pytorch tensor)
+pitch_mean: [178.7041778564453, 224.8560028076172, 174.06405639648438, 166.42800903320312, 135.488037109375, 140.9545135498047, 958.2921752929688, 132.7225341796875]
+pitch_std: [63.29555892944336, 62.71169662475586, 46.19647216796875, 63.60173034667969, 40.35115432739258, 35.95205307006836, 757.2545166015625, 35.86360168457031]
 
 # Default values for dataset with sample_rate=22050
 sample_rate: 22050
@@ -35,7 +38,7 @@ model:
   bin_loss_warmup_epochs: 100
 
   n_speakers: 1
-  n_emotions: 9
+  n_emotions: ${n_emotions}
   max_token_duration: 75
   symbols_embedding_dim: 384
   pitch_embedding_kernel_size: 3
