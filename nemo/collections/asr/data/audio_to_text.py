@@ -131,6 +131,7 @@ def _speech_embedding_collate_fn(batch, pad_id):
             if sig_len < max_audio_len:
                 pad = (0, max_audio_len - sig_len)
                 sig = torch.nn.functional.pad(sig, pad)
+                    
             embed_len = embedding_len.item()
             if embed_len < max_embedding_len:
                 pad = (0, max_embedding_len - embed_len)
@@ -667,7 +668,7 @@ class DynamicTargetAudioToBPEDataset(AudioToBPEDataset):
             target_pt, target_pt_len, text, text_len = super().__getitem__(index)[:4]
             
             max_amp = torch.abs(target_pt).max().item()
-            target_pt = 1 / max_amp * 0.9
+            target_pt = target_pt * (1 / max_amp * 0.9)
             if self.return_sample_id:
                 output = target_pt, target_pt_len, text, text_len, enroll_pt, enroll_pt_len, index
             else:

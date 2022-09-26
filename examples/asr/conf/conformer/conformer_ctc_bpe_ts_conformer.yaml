@@ -47,26 +47,26 @@ model:
   skip_nan_grad: false
   train_ds:
     augmentor:
-      speaker:
-        max_snr_db: 5
-        min_snr_db: -5
-        prob: 1.0
-      impulse:
-        manifest_path: null
-        shift_impulse: False
-        prob: 0.5
-      noise:
-        manifest_path: null
-        min_snr_db: 10
-        max_snr_db: 30
-        prob: 0.3
-        orig_sr: ${model.sample_rate}
       speed:
         sr: ${model.sample_rate}
         resample_type: 'kaiser_fast'
         min_speed_rate: 0.95
         max_speed_rate: 1.05
         prob: 0.3
+      speaker:
+        max_snr_db: 5
+        min_snr_db: -5
+        prob: 0.9
+      impulse:
+        manifest_path: null
+        shift_impulse: False
+        prob: 0.3
+      noise:
+        manifest_path: null
+        min_snr_db: 10
+        max_snr_db: 30
+        prob: 0.3
+        orig_sr: ${model.sample_rate}
     num_sources: ${num_sources}
     mixing_portion: 0.7
     manifest_filepath: ???
