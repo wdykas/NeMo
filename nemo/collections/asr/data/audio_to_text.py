@@ -661,11 +661,10 @@ class DynamicTargetAudioToBPEDataset(AudioToBPEDataset):
 
 
         # target_pt *= np.random.uniform(0.125, 2.0) # volumne scaling
-        if np.random.rand() > (1/self.num_sources): # no mixing, just clean data
+        if np.random.rand() < (1/self.num_sources): # no mixing, just clean data
+            
             max_amp = torch.abs(target_pt).max().item()
             target_pt *= (1 / max_amp * 0.9)
-
-
             if self.return_sample_id:
                 output = target_pt, target_pt_len, text, text_len, enroll_pt, enroll_pt_len, index
             else:
