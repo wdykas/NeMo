@@ -639,7 +639,6 @@ class DynamicTargetAudioToBPEDataset(AudioToBPEDataset):
 
     def __getitem__(self, index):
 
-        target_pt, target_pt_len, text, text_len = super().__getitem__(index)[:4]
         sample = self.manifest_processor.collection[index]
 
         target_speaker = sample.speaker
@@ -656,15 +655,19 @@ class DynamicTargetAudioToBPEDataset(AudioToBPEDataset):
             )
             i += 1
 
+        enroll_sample  = self.manifest_processor.collection[enrollment_index]
+        enroll_pt = self.featurizer.process(
+        enroll_sample.audio_file, trim=self.trim, orig_sr=enroll_sample.orig_sr, turn_off_augmentation=True)
+        enroll_pt_len =  torch.tensor(enroll_pt.shape[0]).long()
 
-        enroll_pt, enroll_pt_len = super().__getitem__(enrollment_index)[:2]
 
 
-        # target_pt *= np.random.uniform(0.125, 2.0) # volumne scaling
+
         if np.random.rand() < (1/self.num_sources): # no mixing, just clean data
+            target_pt, target_pt_len, text, text_len = super().__getitem__(index)[:4]
             
             max_amp = torch.abs(target_pt).max().item()
-            target_pt *= (1 / max_amp * 0.9)
+            target_pt = 1 / max_amp * 0.9
             if self.return_sample_id:
                 output = target_pt, target_pt_len, text, text_len, enroll_pt, enroll_pt_len, index
             else:
@@ -672,9 +675,13 @@ class DynamicTargetAudioToBPEDataset(AudioToBPEDataset):
             return output
 
 
+
+
+        text, text_len = self.manifest_processor.process_text_by_sample(sample=sample)
+        text, text_len = torch.tensor(text).long(), torch.tensor(text_len).long()
+
+
         i = 0
-
-
         num_overlapping_sources = np.random.randint(1,self.num_sources ) # if overlap then at least one at most num_sources - 1 other sources
         overlapping_speakers = np.random.choice(
             list(self.manifest_processor.collection.speaker_mapping.keys()), num_overlapping_sources, replace=False
@@ -686,21 +693,18 @@ class DynamicTargetAudioToBPEDataset(AudioToBPEDataset):
             i += 0
         overlapping_speakers = overlapping_speakers.tolist()
 
-        overlapping_pts = []
+        overlapping_speaker_indices = []
         for overlapping_speaker in overlapping_speakers:
             overlapping_speaker_index = np.random.choice(self.manifest_processor.collection.speaker_mapping[overlapping_speaker])
-            overlapping_pt = super().__getitem__(overlapping_speaker_index)[0]
-            overlapping_pts.append(overlapping_pt)
+            overlapping_speaker_indices.append(overlapping_speaker_index)
 
-
-
-        # for i in range(len(overlapping_pts)):
-        #     scale = np.random.uniform(0.125, 2.0) # volume scaling 
-        #     overlapping_pts[i] *=scale
         
 
-
-        features_list = [target_pt] + overlapping_pts
+        audio_files = [sample.audio_file] + [self.manifest_processor.collection[x].audio_file for x in overlapping_speaker_indices]
+        features_list = self.featurizer.process(
+            audio_files, trim=self.trim, orig_sr=sample.orig_sr
+        )
+        
 
         def get_delayed_audio(audio, delay): # delay in samples
             if delay != 0:
@@ -732,7 +736,6 @@ class DynamicTargetAudioToBPEDataset(AudioToBPEDataset):
 
 
 
-        # mix = pad_audio_to_length(mix, 46 * 16000)
         
         mix = torch.tensor(mix, dtype=torch.float)
         mix_len = torch.tensor(len(mix)).long()

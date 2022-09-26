@@ -152,19 +152,25 @@ class SpeedPerturbation(Perturbation):
 
     def perturb(self, data):
         # Select speed rate either from choice or random sample
-        if self._num_rates < 0:
-            speed_rate = self._rng.uniform(self._min_rate, self._max_rate)
+        if not isinstance(data, list):
+            data_l = [data]
         else:
-            speed_rate = self._rng.choice(self._rates)
+            data_l = data
 
-        # Skip perturbation in case of identity speed rate
-        if speed_rate == 1.0:
-            return
+        for i in range(len(data_l)):
+            if self._num_rates < 0:
+                speed_rate = self._rng.uniform(self._min_rate, self._max_rate)
+            else:
+                speed_rate = self._rng.choice(self._rates)
 
-        new_sr = int(self._sr * speed_rate)
-        data._samples = librosa.core.resample(
-            data._samples, orig_sr=self._sr, target_sr=new_sr, res_type=self._res_type
-        )
+            # Skip perturbation in case of identity speed rate
+            if speed_rate == 1.0:
+                continue
+
+            new_sr = int(self._sr * speed_rate)
+            data_l[i]._samples = librosa.core.resample(
+                data_l[i]._samples, orig_sr=self._sr, target_sr=new_sr, res_type=self._res_type
+            )
 
 
 class TimeStretchPerturbation(Perturbation):
@@ -441,14 +447,21 @@ class NoisePerturbation(Perturbation):
         )
 
     def perturb(self, data):
+        if not isinstance(data, list):
+            data_l = [data]
+        else:
+            data_l = data
+        
         noise = read_one_audiosegment(
             self._manifest,
-            data.sample_rate,
+            data_l[0].sample_rate,
             self._rng,
             tarred_audio=self._tarred_audio,
             audio_dataset=self._data_iterator,
         )
-        self.perturb_with_input_noise(data, noise)
+
+        for i in range(len(data_l)):
+            self.perturb_with_input_noise(data_l[i], noise)
 
     def perturb_with_input_noise(self, data, noise, data_rms=None):
         snr_db = self._rng.uniform(self._min_snr_db, self._max_snr_db)
@@ -642,16 +655,9 @@ class RirAndNoisePerturbation(Perturbation):
         bg_perturber.perturb_with_input_noise(data, noise, data_rms=data_rms)
 
 
-class RirNoiseSpeakerPerturbation(Perturbation):
+class SpeakerPerturbation(Perturbation):
     """
-        RIR augmentation with additive foreground and background noise.
-        In this implementation audio data is augmented by first convolving the audio with a Room Impulse Response
-        and then adding foreground noise and background noise at various SNRs. RIR, foreground and background noises
-        should either be supplied with a manifest file or as tarred audio files (faster).
-
-        Different sets of noise audio files based on the original sampling rate of the noise. This is useful while
-        training a mixed sample rate model. For example, when training a mixed model with 8 kHz and 16 kHz audio with a
-        target sampling rate of 16 kHz, one would want to augment 8 kHz data with 8 kHz noise rather than 16 kHz noise.
+        Perturb all audio samples relative to first target audio sample by snr
 
     """
 
@@ -660,34 +666,24 @@ class RirNoiseSpeakerPerturbation(Perturbation):
         self._min_snr_db = min_snr_db
         self._rng = np.random.RandomState() if rng is None else rng
 
-    def perturb(self, data, second_speaker, scale_factor, scale_factor_second):
-        self.perturb_with_other_input(
-            data=data,
-            second_speaker=second_speaker,
-            scale_factor=scale_factor,
-            scale_factor_second=scale_factor_second,
-        )
+    def perturb(self, data):
 
-    def perturb_with_other_input(self, data, second_speaker, scale_factor, scale_factor_second):
-        scale_factor = float(scale_factor)
-        scale_factor_second = float(scale_factor_second)
-
-        second_speaker._samples *= scale_factor_second
-        data._samples *= scale_factor
-
-        if self._max_snr_db is not None and self._min_snr_db is not None:
-            snr_db = self._rng.uniform(self._min_snr_db, self._max_snr_db)
-            noise_gain_db = data.rms_db - second_speaker.rms_db - snr_db
-            second_speaker.gain_db(noise_gain_db)
-
-        if len(data._samples) > len(second_speaker._samples):
-            data._samples[: len(second_speaker._samples)] += second_speaker._samples
+        if not isinstance(data, list):
+            data_l = [data]
         else:
-            tmp = second_speaker._samples
-            tmp[: len(data._samples)] += data._samples
-            data._samples = tmp
+            data_l = data
+        
+        if len(data_l) == 1:
+            return
+        
+        data_rms = data_l[0].rms_db
 
-
+        for i in range(1, len(data_l) - 1):
+            
+            snr_db = self._rng.uniform(self._min_snr_db, self._max_snr_db)
+            gain_db = data_rms - data_l[i].rms_db  - snr_db
+            data_l[i].gain_db(gain_db)
+        
 class TranscodePerturbation(Perturbation):
     """
         Audio codec augmentation. This implementation uses sox to transcode audio with low rate audio codecs,
@@ -794,7 +790,7 @@ perturbation_types = {
     "white_noise": WhiteNoisePerturbation,
     "rir_noise_aug": RirAndNoisePerturbation,
     "transcode_aug": TranscodePerturbation,
-    'rir_noise_speaker': RirNoiseSpeakerPerturbation,
+    'speaker': SpeakerPerturbation,
     "random_segment": RandomSegmentPerturbation,
 }
 

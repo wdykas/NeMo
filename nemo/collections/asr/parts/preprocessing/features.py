@@ -119,8 +119,10 @@ class WaveformFeaturizer(object):
         trim_frame_length=2048,
         trim_hop_length=512,
         orig_sr=None,
+        turn_off_augmentation=False,
     ):
 
+        self.turn_off_augmentation=turn_off_augmentation
         if isinstance(file_path, str):
             audio = AudioSegment.from_file(
                 file_path,
@@ -153,7 +155,8 @@ class WaveformFeaturizer(object):
         return self.process_segment(audio)
 
     def process_segment(self, audio_segment):
-        self.augmentor.perturb(audio_segment)
+        if not self.turn_off_augmentation:
+            self.augmentor.perturb(audio_segment)
         if isinstance(audio_segment, list):
             return [torch.tensor(x.samples, dtype=torch.float) for x in audio_segment]
         return torch.tensor(audio_segment.samples, dtype=torch.float)
