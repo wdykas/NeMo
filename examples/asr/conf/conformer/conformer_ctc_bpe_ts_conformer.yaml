@@ -64,7 +64,7 @@ model:
       noise:
         manifest_path: null
         min_snr_db: 10
-        max_snr_db: 30
+        max_snr_db: 40
         prob: 0.3
         orig_sr: ${model.sample_rate}
     num_sources: ${num_sources}
