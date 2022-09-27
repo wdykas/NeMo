@@ -50,9 +50,9 @@ model:
       speed:
         sr: ${model.sample_rate}
         resample_type: 'kaiser_fast'
-        min_speed_rate: 0.95
-        max_speed_rate: 1.05
-        prob: 0.3
+        min_speed_rate: 0.9
+        max_speed_rate: 1.1
+        prob: 0.9
     num_sources: ${num_sources}
     mixing_portion: 0.7
     manifest_filepath: ???

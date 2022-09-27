@@ -660,11 +660,11 @@ class DynamicTargetAudioToBPEDataset(AudioToBPEDataset):
         enroll_pt, enroll_pt_len = super().__getitem__(enrollment_index)[:2]
 
 
-        # target_pt *= np.random.uniform(0.125, 2.0) # volumne scaling
+        target_pt *= np.random.uniform(0.125, 2.0) # volumne scaling
         if np.random.rand() < (1/self.num_sources): # no mixing, just clean data
             
-            max_amp = torch.abs(target_pt).max().item()
-            target_pt *= (1 / max_amp * 0.9)
+            # max_amp = torch.abs(target_pt).max().item()
+            # target_pt *= (1 / max_amp * 0.9)
             if self.return_sample_id:
                 output = target_pt, target_pt_len, text, text_len, enroll_pt, enroll_pt_len, index
             else:
@@ -694,9 +694,9 @@ class DynamicTargetAudioToBPEDataset(AudioToBPEDataset):
 
 
 
-        # for i in range(len(overlapping_pts)):
-        #     scale = np.random.uniform(0.125, 2.0) # volume scaling 
-        #     overlapping_pts[i] *=scale
+        for i in range(len(overlapping_pts)):
+            scale = np.random.uniform(0.125, 2.0) # volume scaling 
+            overlapping_pts[i] *=scale
         
 
 
@@ -739,8 +739,8 @@ class DynamicTargetAudioToBPEDataset(AudioToBPEDataset):
 
         max_amp = torch.abs(mix).max().item()
 
-        mix_scaling = 1 / max_amp * 0.9
-        mix = mix_scaling * mix
+        # mix_scaling = 1 / max_amp * 0.9
+        # mix = mix_scaling * mix
 
 
 
@@ -896,8 +896,8 @@ class StaticTargetAudioToBPEDataset(AudioToBPEDataset):
         # mix_len = torch.tensor(len(mix)).long()
         max_amp = torch.abs(mix).max().item()
 
-        mix_scaling = 1 / max_amp * 0.9
-        mix = mix_scaling * mix
+        # mix_scaling = 1 / max_amp * 0.9
+        # mix = mix_scaling * mix
 
 
         # for generating eval data
