@@ -225,6 +225,7 @@ class TTSDataset(Dataset):
                         self.emotions.add(file_info["emotion_id"])
 
         logging.info(f"Loaded dataset with {len(data)} files.")
+        logging.info(f"Loaded emotions: "+str(len(self.emotions)))
         if total_duration is not None:
             logging.info(f"Dataset contains {total_duration / 3600:.2f} hours.")
 
