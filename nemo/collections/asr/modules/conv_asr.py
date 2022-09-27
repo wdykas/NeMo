@@ -814,7 +814,6 @@ class SpeakerDecoder(NeuralModule, Exportable):
         super().__init__()
         self.angular = angular
         self.emb_id = 2
-        bias = False if self.angular else True
         emb_sizes = [emb_sizes] if type(emb_sizes) is int else emb_sizes
 
         self._num_classes = num_classes
@@ -837,7 +836,10 @@ class SpeakerDecoder(NeuralModule, Exportable):
 
         self.emb_layers = nn.ModuleList(emb_layers)
 
-        self.final = nn.Linear(shapes[-1], self._num_classes, bias=bias)
+        if angular:
+            self.final = nn.Parameter(torch.Tensor(self._num_classes, shapes[-1]), requires_grad=True)
+        else:
+            self.final = nn.Linear(shapes[-1], self._num_classes)
 
         self.apply(lambda x: init_weights(x, mode=init_mode))
 
@@ -869,12 +871,11 @@ class SpeakerDecoder(NeuralModule, Exportable):
             embs.append(emb)
 
         pool = pool.squeeze(-1)
-        if self.angular:
-            for W in self.final.parameters():
-                W = F.normalize(W, p=2, dim=1)
-            pool = F.normalize(pool, p=2, dim=1)
 
-        out = self.final(pool)
+        if self.angular:
+            out = F.linear(F.normalize(pool, p=2, dim=1), F.normalize(self.final, p=2, dim=1))
+        else:
+            out = self.final(pool)
 
         return out, embs[-1].squeeze(-1)
 
