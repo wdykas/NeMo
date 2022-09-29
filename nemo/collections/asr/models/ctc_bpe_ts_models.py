@@ -15,15 +15,14 @@
 import copy
 import json
 import os
-from selectors import EpollSelector
 import tempfile
 from copyreg import dispatch_table
+from selectors import EpollSelector
 from typing import Dict, List, Optional, Union
 
 import torch
 from omegaconf import DictConfig, ListConfig, OmegaConf, open_dict
 from tqdm.auto import tqdm
-import torch
 
 from nemo.collections.asr.data import audio_to_text_dataset, feature
 from nemo.collections.asr.data.audio_to_text_dali import DALIOutputs

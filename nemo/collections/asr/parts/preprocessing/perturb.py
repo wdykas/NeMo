@@ -737,6 +737,33 @@ class TranscodePerturbation(Perturbation):
         data._samples = new_data._samples[0 : data._samples.shape[0]]
         return
 
+class SpeakerPerturbation(Perturbation):
+    """
+        Perturb all audio samples relative to first target audio sample by snr
+    """
+
+    def __init__(self, max_snr_db=None, min_snr_db=None, rng=None):
+        self._max_snr_db = max_snr_db
+        self._min_snr_db = min_snr_db
+        self._rng = np.random.RandomState() if rng is None else rng
+
+    def perturb(self, data):
+        
+        if not isinstance(data, list):
+            data_l = [data]
+        else:
+            data_l = data
+        
+        if len(data_l) == 1:
+            return
+        
+        data_rms = data_l[0].rms_db
+
+        for i in range(1, len(data_l) - 1):
+            
+            snr_db = self._rng.uniform(self._min_snr_db, self._max_snr_db)
+            gain_db = data_rms - data_l[i].rms_db  - snr_db
+            data_l[i].gain_db(gain_db)
 
 class RandomSegmentPerturbation(Perturbation):
     """
@@ -787,6 +814,7 @@ perturbation_types = {
     "transcode_aug": TranscodePerturbation,
     'rir_noise_speaker': RirNoiseSpeakerPerturbation,
     "random_segment": RandomSegmentPerturbation,
+    'speaker': SpeakerPerturbation,
 }
 
 

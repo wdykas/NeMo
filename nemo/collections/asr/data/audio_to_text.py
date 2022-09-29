@@ -15,8 +15,9 @@ import io
 import json
 import math
 import os
-from typing import Callable, Dict, Iterable, List, Optional, Union
 import random
+from typing import Callable, Dict, Iterable, List, Optional, Union
+
 import braceexpand
 import numpy as np
 import soundfile as sf
@@ -831,29 +832,28 @@ class StaticTargetAudioToBPEDataset(AudioToBPEDataset):
         other_durations = sample.other_durations
         scale_factors = sample.scale_factors
         
-
-        target_pt, target_pt_len, text, text_len = super().__getitem__(index)[:4]
+        text, text_len = self.manifest_processor.process_text_by_sample(sample=sample)
+        text, text_len = torch.tensor(text).long(), torch.tensor(text_len).long()
 
         overlap_audio_files = other_audio_files[:-1]
         enrollment_audio_file = other_audio_files[-1]
         overlap_durations = other_durations[:-1]
         enrollment_duration = other_durations[-1]
 
-        overlapping_pts = [self.featurizer.process(
-            x, duration=y, trim=self.trim, orig_sr=sample.orig_sr) for x, y in zip(overlap_audio_files, overlap_durations)]
-        
+        audio_files = [sample.audio_file] + overlap_audio_files
+        features_list = self.featurizer.process(
+            audio_files, trim=self.trim, orig_sr=sample.orig_sr
+        )
+
         enroll_pt = self.featurizer.process(
-            enrollment_audio_file, duration=enrollment_duration, trim=self.trim, orig_sr=sample.orig_sr)
+            enrollment_audio_file, duration=enrollment_duration, trim=self.trim, orig_sr=sample.orig_sr, turn_off_augmentation=True)
 
         enroll_pt_len = torch.tensor(enroll_pt.shape[0]).long()
 
-        target_pt *= scale_factors[0]
-        for i in range(len(overlapping_pts)):
-            overlapping_pts[i] *= scale_factors[1:][i]
+        for i in range(len(features_list)):
+            features_list[i] *= scale_factors[i]
         
 
-
-        features_list = [target_pt] + overlapping_pts
         features_lengths = [torch.tensor(x.shape[0]).long() for x in features_list]
         ll = torch.max(torch.stack(features_lengths)).item()
         mix_len = torch.tensor(ll).long()

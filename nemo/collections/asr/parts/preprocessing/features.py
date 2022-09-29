@@ -119,24 +119,46 @@ class WaveformFeaturizer(object):
         trim_frame_length=2048,
         trim_hop_length=512,
         orig_sr=None,
+        turn_off_augmentation=False,
     ):
-        audio = AudioSegment.from_file(
-            file_path,
-            target_sr=self.sample_rate,
-            int_values=self.int_values,
-            offset=offset,
-            duration=duration,
-            trim=trim,
-            trim_ref=trim_ref,
-            trim_top_db=trim_top_db,
-            trim_frame_length=trim_frame_length,
-            trim_hop_length=trim_hop_length,
-            orig_sr=orig_sr,
-        )
+        self.turn_off_augmentation=turn_off_augmentation
+        if isinstance(file_path, str):
+            audio = AudioSegment.from_file(
+                file_path,
+                target_sr=self.sample_rate,
+                int_values=self.int_values,
+                offset=offset,
+                duration=duration,
+                trim=trim,
+                trim_ref=trim_ref,
+                trim_top_db=trim_top_db,
+                trim_frame_length=trim_frame_length,
+                trim_hop_length=trim_hop_length,
+                orig_sr=orig_sr,
+            )
+        elif isinstance(file_path, list):
+            
+            audio = [AudioSegment.from_file(
+                x,
+                target_sr=self.sample_rate,
+                int_values=self.int_values,
+                offset=offset,
+                duration=duration,
+                trim=trim,
+                trim_ref=trim_ref,
+                trim_top_db=trim_top_db,
+                trim_frame_length=trim_frame_length,
+                trim_hop_length=trim_hop_length,
+                orig_sr=orig_sr,
+            ) for x in file_path]
         return self.process_segment(audio)
+        
 
     def process_segment(self, audio_segment):
-        self.augmentor.perturb(audio_segment)
+        if not self.turn_off_augmentation:
+            self.augmentor.perturb(audio_segment)
+        if isinstance(audio_segment, list):
+            return [torch.tensor(x.samples, dtype=torch.float) for x in audio_segment]
         return torch.tensor(audio_segment.samples, dtype=torch.float)
 
     @classmethod
