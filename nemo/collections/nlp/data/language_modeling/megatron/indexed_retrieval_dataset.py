@@ -218,14 +218,23 @@ class MMapRetrievalIndexedDataset(torch.utils.data.Dataset):
                     return pointers
 
                 @staticmethod
-                def _get_chunk_id_and_address(sizes, chunk_size):
-                    dtype_size = dtype().itemsize
+                def _get_chunk_id(sizes, chunk_size):
                     chunk_ids = []
                     last_id = 0
-                    address = 0
-                    pointers = []
                     for size in sizes:
                         chunk_ids.append(last_id)
+                        num_of_chunks = size // chunk_size
+                        if size % chunk_size != 0:
+                            raise ValueError(f"the document size {size} should be the multiple of {chunk_size}")
+                        last_id += num_of_chunks
+                    return chunk_ids, last_id
+
+                @staticmethod
+                def _write_address(sizes, chunk_size, file_obj):
+                    dtype_size = dtype().itemsize
+                    address = 0
+                    for size in sizes:
+                        pointers = []
                         num_of_chunks = size // chunk_size
                         if size % chunk_size != 0:
                             raise ValueError(f"the document size {size} should be the multiple of {chunk_size}")
@@ -235,22 +244,20 @@ class MMapRetrievalIndexedDataset(torch.utils.data.Dataset):
                         if retrieval_db:
                             # if it is retrieval db, the the last chunk is reserved for padding
                             address += chunk_size * dtype_size
-                        last_id += num_of_chunks
-                    return chunk_ids, pointers
+                        chunk_address = np.array(pointers, dtype=np.int64)
+                        file_obj.write(chunk_address.tobytes(order='C'))
 
                 def write(self, sizes, chunk_size):
-                    pointers = self._get_pointers(sizes, chunk_size)
-                    chunk_ids, chunk_address = self._get_chunk_id_and_address(sizes, chunk_size)
-
+                    chunk_ids, num_of_chunk_addresses = self._get_chunk_id(sizes, chunk_size)
                     self._file.write(struct.pack('<Q', len(sizes)))
                     self._file.write(struct.pack('<Q', chunk_size))
-                    self._file.write(struct.pack('<Q', len(chunk_address)))
+                    self._file.write(struct.pack('<Q', num_of_chunk_addresses))
                     self._file.write(struct.pack('<B', int(retrieval_db)))
 
                     sizes = np.array(sizes, dtype=np.int32)
                     self._file.write(sizes.tobytes(order='C'))
-                    del sizes
 
+                    pointers = self._get_pointers(sizes, chunk_size)
                     pointers = np.array(pointers, dtype=np.int64)
                     self._file.write(pointers.tobytes(order='C'))
                     del pointers
@@ -259,8 +266,7 @@ class MMapRetrievalIndexedDataset(torch.utils.data.Dataset):
                     self._file.write(chunk_ids.tobytes(order='C'))
                     del chunk_ids
 
-                    chunk_address = np.array(chunk_address, dtype=np.int64)
-                    self._file.write(chunk_address.tobytes(order='C'))
+                    self._write_address(sizes, chunk_size, self._file)
 
                 def __exit__(self, exc_type, exc_val, exc_tb):
                     self._file.close()
