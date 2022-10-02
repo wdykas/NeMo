@@ -26,6 +26,7 @@ import soundfile as sf
 import torch
 from pyannote.core import Annotation, Segment, Timeline
 from pyannote.metrics.diarization import DiarizationErrorRate
+from pytorch_lightning.strategies import Strategy
 from tqdm import tqdm
 
 from nemo.collections.asr.parts.utils.nmesc_clustering import COSclustering, get_argmin_mat
@@ -604,7 +605,7 @@ def get_offset_and_duration(AUDIO_RTTM_MAP, uniq_id, deci=5):
     return offset, duration
 
 
-def write_overlap_segments(outfile, AUDIO_RTTM_MAP, uniq_id, overlap_range_list, include_uniq_id, deci=5):
+def write_overlap_segments(outfile, AUDIO_RTTM_MAP, uniq_id, overlap_range_list, deci=5):
     """
     Write the json dictionary into the specified manifest file.
 
@@ -627,8 +628,7 @@ def write_overlap_segments(outfile, AUDIO_RTTM_MAP, uniq_id, overlap_range_list,
             "label": 'UNK',
             "uniq_id": uniq_id,
         }
-        json.dump(meta, outfile)
-        outfile.write("\n")
+        outfile.write(json.dumps(meta) + "\n")
 
 
 def read_rttm_lines(rttm_file_path):
@@ -896,7 +896,7 @@ def write_rttm2manifest(AUDIO_RTTM_MAP: str, manifest_file: str, include_uniq_id
                 overlap_range_list = getSubRangeList(
                     source_range_list=vad_start_end_list, target_range=[offset, offset + duration]
                 )
-                write_overlap_segments(outfile, AUDIO_RTTM_MAP, uniq_id, overlap_range_list, include_uniq_id, deci)
+                write_overlap_segments(outfile, AUDIO_RTTM_MAP, uniq_id, overlap_range_list, deci)
     return manifest_file
 
 
@@ -1162,7 +1162,9 @@ def get_id_tup_dict(uniq_id_list: List[str], test_data_collection, preds_list: L
     return session_dict
 
 
-def prepare_split_data(manifest_filepath, _out_dir, multiscale_args_dict, global_rank):
+def prepare_split_data(
+    manifest_filepath: str, _out_dir: str, multiscale_args_dict: Dict, global_rank: int, resuming: bool
+):
     """
     This function is needed for preparing diarization training data for multiscale diarization decoder (MSDD).
     Prepare multiscale timestamp data for training. Oracle VAD timestamps from RTTM files are used as VAD timestamps.
@@ -1183,13 +1185,15 @@ def prepare_split_data(manifest_filepath, _out_dir, multiscale_args_dict, global
             - Each data sample is indexed by using the following naming convention: `<uniq_id>_<start time in ms>_<end time in ms>`
                 Example: `fe_03_00106_mixed_626310_642300`
     """
-    speaker_dir = os.path.join(_out_dir, 'speaker_outputs')
+    speaker_dir = os.path.join(_out_dir, f'speaker_outputs_rank_{global_rank}/')
 
-    # Only if this is for the first run of modelPT instance, remove temp folders.
-    if global_rank == 0:
-        if os.path.exists(speaker_dir):
-            shutil.rmtree(speaker_dir)
-        os.makedirs(speaker_dir)
+    # Remove temp folders.
+    if resuming:
+        logging.info(f"Using same temporary file locations as checkpoint.")
+
+    if not resuming and os.path.exists(speaker_dir):
+        shutil.rmtree(speaker_dir)
+    os.makedirs(speaker_dir, exist_ok=True)
     split_audio_rttm_map = audio_rttm_map(manifest_filepath, attach_dur=True)
 
     # Speech Activity Detection part

@@ -219,6 +219,7 @@ class EncDecDiarLabelModel(ModelPT, ExportableEncDecModel):
             emb_batch_size=config.emb_batch_size,
             pairwise_infer=False,
             global_rank=self._trainer.global_rank,
+            resuming=self.trainer.ckpt_path is not None,
         )
 
         self.data_collection = dataset.collection

@@ -192,7 +192,7 @@ class _AudioMSDDTrainDataset(Dataset):
         self,
         *,
         manifest_filepath: str,
-        multiscale_args_dict: str,
+        multiscale_args_dict: Dict,
         emb_dir: str,
         soft_label_thres: float,
         featurizer,
@@ -201,6 +201,7 @@ class _AudioMSDDTrainDataset(Dataset):
         pairwise_infer: bool,
         random_flip: bool = True,
         global_rank: int = 0,
+        resuming: bool = False,
     ):
         super().__init__()
         self.collection = DiarizationSpeechLabel(
@@ -221,9 +222,10 @@ class _AudioMSDDTrainDataset(Dataset):
         self.emb_batch_size = emb_batch_size
         self.random_flip = random_flip
         self.global_rank = global_rank
+        self.resuming = resuming
         self.manifest_filepath = manifest_filepath
         self.multiscale_timestamp_dict = prepare_split_data(
-            self.manifest_filepath, self.emb_dir, self.multiscale_args_dict, self.global_rank,
+            self.manifest_filepath, self.emb_dir, self.multiscale_args_dict, self.global_rank, self.resuming
         )
 
     def __len__(self):
@@ -756,6 +758,10 @@ class AudioToSpeechMSDDTrainDataset(_AudioMSDDTrainDataset):
             Number of embedding vectors that are trained with attached computational graphs.
         pairwise_infer (bool):
             This variable should be True if dataloader is created for an inference task.
+        global_rank (int):
+            The global rank of this process.
+        resuming (bool):
+            If we are resuming from a checkpoint. This is used to skip re-generating the temporary directories.
     """
 
     def __init__(
@@ -770,6 +776,7 @@ class AudioToSpeechMSDDTrainDataset(_AudioMSDDTrainDataset):
         emb_batch_size,
         pairwise_infer: bool,
         global_rank: int,
+        resuming: bool,
     ):
         super().__init__(
             manifest_filepath=manifest_filepath,
@@ -781,6 +788,7 @@ class AudioToSpeechMSDDTrainDataset(_AudioMSDDTrainDataset):
             emb_batch_size=emb_batch_size,
             pairwise_infer=pairwise_infer,
             global_rank=global_rank,
+            resuming=resuming,
         )
 
     def msdd_train_collate_fn(self, batch):
