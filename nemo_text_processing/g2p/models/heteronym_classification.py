@@ -146,10 +146,17 @@ class HeteronymClassificationModel(NLPModel):
         )
         logging.info(f"{split}_report: {report}")
         logging.info(f"{split}_ACCURACY: {f1:.2f}%")
+
+        f1_macro = report[report.index("macro"):].split("\n")[0].replace("macro avg", "").strip().split()[-2]
+        f1_micro = report[report.index("micro"):].split("\n")[0].replace("micro avg", "").strip().split()[-2]
+        self.log(f"{split}_f1_macro", torch.Tensor([float(f1_macro)]))
+        self.log(f"{split}_f1_micro", torch.Tensor([float(f1_micro)]))
+
         self.log(f"{split}_loss", avg_loss, prog_bar=True)
         self.log(f"{split}_precision", precision)
         self.log(f"{split}_f1", f1)
         self.log(f"{split}_recall", recall)
+
 
         self.classification_report.reset()
 
