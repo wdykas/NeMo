@@ -284,6 +284,9 @@ class MegatronRetrievalModel(MegatronBaseModel, TextGeneration):
             )
             self._reduced_loss_buffer = []
         return lm_loss
+    
+    def on_train_start(self):
+        self.init_global_step = self.trainer.global_step
 
     def on_train_batch_end(self, outputs, batch, batch_idx: int, unused: Optional[int] = 0) -> None:
         super().on_train_batch_end(outputs, batch, batch_idx)
@@ -441,7 +444,7 @@ class MegatronRetrievalModel(MegatronBaseModel, TextGeneration):
         else:
             init_consumed_samples = 0
         self.init_consumed_samples = init_consumed_samples
-        self.init_global_step = self.trainer.global_step
+#        self.init_global_step = self.trainer.global_step
 
         """A PTL method to setup the training, validation and test datasets."""
         if stage == 'predict':
