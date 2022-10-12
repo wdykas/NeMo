@@ -2,7 +2,7 @@ import argparse
 import json
 import os
 
-from examples.text_processing.g2p.utils import clean
+from nemo_text_processing.g2p.data.data_utils import remove_punctuation
 from nemo_text_processing.g2p.data.data_utils import get_wordid_to_nemo
 from tqdm import tqdm
 
@@ -21,6 +21,14 @@ parser.add_argument(
     help="Name of the field in the manifest to load grapheme input from ",
 )
 
+
+def clean(text, do_lower=True):
+    exclude_punct = "'ˈˌ-'"
+    if do_lower:
+        text = text.lower()
+    text = remove_punctuation(text, exclude=exclude_punct)
+    text = text.replace("҂", "").replace("  ", " ").replace("  ", " ").strip()
+    return text
 
 def _process_wiki_eval(graphemes):
     graphemes = graphemes.replace("says sorry for calling guest 'retard'", "says sorry for calling guest retard")
