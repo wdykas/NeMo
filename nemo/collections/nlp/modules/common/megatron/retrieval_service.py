@@ -266,6 +266,9 @@ class FaissRetrievalService(RetrievalService):
             query = sentence_list
         result = request_data(query)
         result = np.array(result)
+        # use padding as neighbor, no retrieval
+        pad_id = self.tokenizer.pad_id
+        result = np.ones_like(result) * pad_id
         return result
 
 
