@@ -56,6 +56,15 @@ class MegatronBertModel(MegatronBaseModel):
         super().__init__(cfg, trainer=trainer, no_lm_init=False)
         self.cfg = cfg
 
+        if self.trainer.precision == 32:
+            self.autocast_dtype = torch.float
+        elif self.trainer.precision == 16:
+            self.autocast_dtype = torch.half
+        elif self.trainer.precision == 'bf16':
+            self.autocast_dtype = torch.bfloat16
+        else:
+            raise ValueError('precision must be in [32, 16, "bf16"]')
+
         # used in NVIDIA NGC PyTorch containers
         # buffer used during train_step for logging average loss over gradient accumulation steps
         self._reduced_lm_loss_buffer = []
@@ -95,7 +104,8 @@ class MegatronBertModel(MegatronBaseModel):
         self.megatron_amp_o2 = False
 
     def forward(self, input_ids, attention_mask, token_type_ids, lm_labels=None):
-        output_tensor = self.model(input_ids, attention_mask, token_type_ids=token_type_ids, lm_labels=lm_labels)
+        with torch.autocast('cuda', self.autocast_dtype):
+            output_tensor = self.model(input_ids, attention_mask, token_type_ids=token_type_ids, lm_labels=lm_labels)
         return output_tensor
 
     def training_step(self, batch, batch_idx):
