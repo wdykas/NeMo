@@ -20,11 +20,15 @@ from argparse import ArgumentParser
 from collections import Counter
 from os import listdir
 
-from nemo.collections.nlp.data.text_normalization_as_tagging.utils import spoken_preprocessing
+from nemo.collections.nlp.data.text_normalization_as_tagging.utils import spoken_preprocessing, written_preprocessing
 
 parser = ArgumentParser(description="Get reference vocabulary from corpus (it will be used in testing)")
 parser.add_argument("--data_dir", type=str, required=True, help="Path to folder with data")
 parser.add_argument("--out_filename", type=str, required=True, help="Path to output file")
+parser.add_argument("--lang", required=True, type=str, help="Language, e.g. en")
+parser.add_argument(
+    "--tn_direction", action='store_true', help="Whether to run in TN direction, default is ITN",
+)
 args = parser.parse_args()
 
 if __name__ == "__main__":
@@ -44,21 +48,30 @@ if __name__ == "__main__":
                     continue
                 if len(parts) != 3:
                     raise ValueError("Expect 3 parts, got " + str(len(parts)))
-                semiotic_class, written, spoken = parts[0], parts[1].strip().casefold(), parts[2].strip().casefold()
-                spoken = spoken_preprocessing(spoken)
+                semiotic_class, written, spoken = parts[0], parts[1].strip(), parts[2].strip()
+                spoken = spoken_preprocessing(spoken, args.lang)
+                written = written_preprocessing(written, args.lang)
                 if spoken == "<self>":
                     continue
                 if spoken == "" or written == "":
                     continue
                 if len(spoken.split(" ")) >= 100:
                     continue
-                k = (semiotic_class, spoken)
+                if semiotic_class == "TELEPHONE":  # correct google corpus issue
+                    spoken = spoken.replace(" sil ", "")
+
+                src, dst = spoken, written
+                if args.tn_direction:
+                    src, dst = written, spoken
+
+                k = (semiotic_class, src)
                 if k not in vcb:
                     vcb[k] = Counter()
-                vcb[k][written] += 1
+                vcb[k][dst] += 1
 
     with open(args.out_filename, "w", encoding="utf-8") as out:
-        for sem, spoken in vcb:
-            for written in vcb[(sem, spoken)]:
-                out.write(sem + "\t" + spoken + "\t" + written + "\t" + str(vcb[(sem, spoken)][written]) + "\n")
-            out.write(sem + "\t" + spoken + "\t" + spoken + "\t1\n")
+        for sem, src in vcb:
+            for dst in vcb[(sem, src)]:
+                out.write(sem + "\t" + src + "\t" + dst + "\t" + str(vcb[(sem, src)][dst]) + "\n")
+            if not args.tn_direction:  # we regard "no change" as acceptable conversion only in ITN direction
+                out.write(sem + "\t" + src + "\t" + src + "\t1\n")
