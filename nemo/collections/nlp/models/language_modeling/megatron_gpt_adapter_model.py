@@ -18,6 +18,7 @@
 
 
 import torch
+from attr import has
 from omegaconf.dictconfig import DictConfig
 from pytorch_lightning.trainer.trainer import Trainer
 
@@ -249,6 +250,11 @@ class MegatronGPTAdapterLearningModel(MegatronGPTBaseAdapterModel):
         frozen_model_cfg = MegatronGPTModel.restore_from(
             cfg.get('language_model_path'), trainer=trainer, return_config=True
         )
+        self.layer_selections = [i + 1 for i in range(frozen_model_cfg.num_layers)]
+        if hasattr(cfg.adapter_tuning, "layer_selections"):
+            if cfg.adapter_tuning.layer_selections is not None:
+                self.layer_selections = cfg.adapter_tuning.layer_selections
+
         for _, layer in self.frozen_model.named_modules():
             if hasattr(layer, 'activations_checkpoint_method'):
                 layer.activations_checkpoint_method = (
@@ -276,7 +282,12 @@ class MegatronGPTAdapterLearningModel(MegatronGPTBaseAdapterModel):
             )
 
         self.frozen_model.freeze()
+        layer_number = None
         for _, module in self.frozen_model.named_modules():
+            if hasattr(module, "layer_number"):
+                layer_number = module.layer_number
+            if layer_number not in self.layer_selections:
+                continue
             if isinstance(module, adapter_mixins.AdapterModuleMixin):
                 for adapter_key in self.adapter_name_keys:
                     if model_utils.import_class_by_path(adapter_cfg._target_) in module.get_accepted_adapter_types():
