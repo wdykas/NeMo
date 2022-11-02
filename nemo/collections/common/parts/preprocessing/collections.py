@@ -98,15 +98,7 @@ class AudioText(_Collection):
 
     def __init__(
         self,
-        ids: List[int],
-        audio_files: List[str],
-        durations: List[float],
-        texts: List[str],
-        offsets: List[str],
-        speakers: List[Optional[int]],
-        orig_sampling_rates: List[Optional[int]],
-        token_labels: List[Optional[int]],
-        langs: List[Optional[str]],
+        manifest,
         parser: parsers.CharParser,
         min_duration: Optional[float] = None,
         max_duration: Optional[float] = None,
@@ -117,14 +109,7 @@ class AudioText(_Collection):
         """Instantiates audio-text manifest with filters and preprocessing.
 
         Args:
-            ids: List of examples positions.
-            audio_files: List of audio files.
-            durations: List of float durations.
-            texts: List of raw text transcripts.
-            offsets: List of duration offsets or None.
-            speakers: List of optional speakers ids.
-            orig_sampling_rates: List of original sampling rates of audio files.
-            langs: List of language ids, one for eadh sample, or None.
+            manifest: reference to the manifest object.
             parser: Instance of `CharParser` to convert string to tokens.
             min_duration: Minimum duration to keep entry with (default: None).
             max_duration: Maximum duration to keep entry with (default: None).
@@ -138,9 +123,19 @@ class AudioText(_Collection):
         if index_by_file_id:
             self.mapping = {}
 
-        for id_, audio_file, duration, offset, text, speaker, orig_sr, token_labels, lang in zip(
-            ids, audio_files, durations, offsets, texts, speakers, orig_sampling_rates, token_labels, langs
-        ):
+
+        for item in manifest.item_iter(manifests_files):
+            id_ = item['id']
+            audio_file = item['audio_file']
+            duration = item['duration']
+            offset = item['offset']
+            text = item['text']
+            speaker = item['speaker']
+            orig_sr = item['orig_sr'] 
+            token_labels = item['token_labels']
+            lang = item['lang']
+
+
             # Duration filters.
             if min_duration is not None and duration < min_duration:
                 duration_filtered += duration
@@ -208,27 +203,8 @@ class ASRAudioText(AudioText):
             *args: Args to pass to `AudioText` constructor.
             **kwargs: Kwargs to pass to `AudioText` constructor.
         """
-
-        ids, audio_files, durations, texts, offsets, = (
-            [],
-            [],
-            [],
-            [],
-            [],
-        )
-        speakers, orig_srs, token_labels, langs = [], [], [], []
-        for item in manifest.item_iter(manifests_files):
-            ids.append(item['id'])
-            audio_files.append(item['audio_file'])
-            durations.append(item['duration'])
-            texts.append(item['text'])
-            offsets.append(item['offset'])
-            speakers.append(item['speaker'])
-            orig_srs.append(item['orig_sr'])
-            token_labels.append(item['token_labels'])
-            langs.append(item['lang'])
         super().__init__(
-            ids, audio_files, durations, texts, offsets, speakers, orig_srs, token_labels, langs, *args, **kwargs
+            manifest, *args, **kwargs
         )
 
 
