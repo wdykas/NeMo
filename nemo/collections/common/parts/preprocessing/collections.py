@@ -98,7 +98,7 @@ class AudioText(_Collection):
 
     def __init__(
         self,
-        manifest,
+        manifests_files,
         parser: parsers.CharParser,
         min_duration: Optional[float] = None,
         max_duration: Optional[float] = None,
@@ -204,7 +204,7 @@ class ASRAudioText(AudioText):
             **kwargs: Kwargs to pass to `AudioText` constructor.
         """
         super().__init__(
-            manifest, *args, **kwargs
+            manifests_files, *args, **kwargs
         )
 
 
