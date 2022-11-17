@@ -71,6 +71,10 @@ class BlendableDataset(torch.utils.data.Dataset):
     def __len__(self):
         return self.size
 
+    def collate_fn(self, batch, tp_workers=0):
+        return self.datasets[0].collate_fn(batch,tp_workers)
+
+
     def __getitem__(self, idx):
         dataset_idx = self.dataset_index[idx]
         sample_idx = self.dataset_sample_index[idx]

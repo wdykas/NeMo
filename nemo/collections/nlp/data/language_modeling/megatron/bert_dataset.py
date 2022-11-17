@@ -20,6 +20,8 @@ from typing import Any, Optional
 import numpy as np
 import torch
 
+import math
+
 from nemo.collections.nlp.data.language_modeling.megatron.dataset_utils import (
     create_masked_lm_predictions,
     create_tokens_and_tokentypes,
@@ -29,6 +31,7 @@ from nemo.collections.nlp.data.language_modeling.megatron.dataset_utils import (
 )
 from nemo.collections.nlp.data.language_modeling.megatron.indexed_dataset import MMapIndexedDataset
 
+from torch.utils.data.dataloader import default_collate
 
 class BertDataset(torch.utils.data.Dataset):
     def __init__(
@@ -91,18 +94,32 @@ class BertDataset(torch.utils.data.Dataset):
 
     def __len__(self):
         return self.samples_mapping.shape[0]
+    
+    def collate_fn(self, batch, tp_workers=0):
+        sample_lens = []
+        # Each sample in batch is a list of numpy arrays that are sentences
+        for sample in batch:
+            sample_lens.append(sum([sentence.size for sentence in sample]))
+        # We add 3 for special tokens and an extra one because there is a bug that requires padding
+        batch_max = max(sample_lens) + 4
 
-    def __getitem__(self, idx):
-        start_idx, end_idx, seq_length = self.samples_mapping[idx]
-        sample = [self.indexed_dataset[i] for i in range(start_idx, end_idx)]
-        # Note that this rng state should be numpy and not python since
-        # python randint is inclusive whereas the numpy one is exclusive.
-        # We % 2**32 since numpy requres the seed to be between 0 and 2**32 - 1
-        np_rng = np.random.RandomState(seed=((self.seed + idx) % 2 ** 32))
-        return build_training_sample(
+        if tp_workers > 1:
+            # more sure the sequence length is multiply of number of tp_workers, needed for sequence parallel.
+            resi_padding = (tp_workers - (batch_max - 1) % tp_workers) % tp_workers
+        else:
+            resi_padding = 0
+        batch_max += resi_padding
+
+        batch_max = 32 * math.ceil(batch_max / 32)
+        
+        # Note: This is truly random, need to fix in the future
+        np_rng = np.random.RandomState()
+        final_batch = []
+        for i, sample in enumerate(batch):
+            processed_sample = build_training_sample(
             sample,
-            seq_length,
-            self.max_seq_length,  # needed for padding
+            sample_lens[i],
+            batch_max,  # needed for padding
             self.vocab_id_list,
             self.vocab_id_to_token_dict,
             self.cls_id,
@@ -112,7 +129,35 @@ class BertDataset(torch.utils.data.Dataset):
             self.masked_lm_prob,
             np_rng,
             self.binary_head,
-        )
+            )
+            final_batch.append(sample)
+        return_batch = default_collate(final_batch)
+        return return_batch
+
+        
+
+    def __getitem__(self, idx):
+        start_idx, end_idx, seq_length = self.samples_mapping[idx]
+        sample = [self.indexed_dataset[i] for i in range(start_idx, end_idx)]
+        # Note that this rng state should be numpy and not python since
+        # python randint is inclusive whereas the numpy one is exclusive.
+        # We % 2**32 since numpy requres the seed to be between 0 and 2**32 - 1
+        #np_rng = np.random.RandomState(seed=((self.seed + idx) % 2 ** 32))
+        return sample
+#         return build_training_sample(
+#             sample,
+#             seq_length,
+#             self.max_seq_length,  # needed for padding
+#             self.vocab_id_list,
+#             self.vocab_id_to_token_dict,
+#             self.cls_id,
+#             self.sep_id,
+#             self.mask_id,
+#             self.pad_id,
+#             self.masked_lm_prob,
+#             np_rng,
+#             self.binary_head,
+#         )
 
 
 def build_training_sample(

@@ -14,6 +14,8 @@
 
 from typing import Any, Dict, List, Optional, Union
 
+from functools import partial
+
 import torch
 import torch.nn.functional as F
 from omegaconf.dictconfig import DictConfig
@@ -483,7 +485,7 @@ class MegatronBertModel(MegatronBaseModel):
 
         # Torch dataloader.
         return torch.utils.data.DataLoader(
-            dataset, batch_sampler=batch_sampler, num_workers=self.cfg.data.num_workers, pin_memory=True,
+            dataset, batch_sampler=batch_sampler, num_workers=self.cfg.data.num_workers, pin_memory=True,  collate_fn=partial(dataset.collate_fn, tp_workers=0)
         )
 
     def setup(self, stage=None):
