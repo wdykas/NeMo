@@ -99,26 +99,32 @@ class BertDataset(torch.utils.data.Dataset):
         sample_lens = []
         # Each sample in batch is a list of numpy arrays that are sentences
         for sample in batch:
+            # We add the 3 for specials tokens
             sample_lens.append(sum([sentence.size for sentence in sample]))
-        # We add 3 for special tokens and an extra one because there is a bug that requires padding
-        batch_max = max(sample_lens) + 4
 
+        batch_max = max(sample_lens) + 3
         if tp_workers > 1:
             # more sure the sequence length is multiply of number of tp_workers, needed for sequence parallel.
             resi_padding = (tp_workers - (batch_max - 1) % tp_workers) % tp_workers
         else:
             resi_padding = 0
         batch_max += resi_padding
-
+        #We need to just set to the other max if we have long sequences
         batch_max = 32 * math.ceil(batch_max / 32)
+        if batch_max > self.max_seq_length:
+            batch_max = self.max_seq_length
         
+        print(batch_max)
         # Note: This is truly random, need to fix in the future
         np_rng = np.random.RandomState()
         final_batch = []
         for i, sample in enumerate(batch):
+            sample_length = sample_lens[i]
+            if sample_length >= batch_max - 3:
+                sample_length = batch_max -3
             processed_sample = build_training_sample(
             sample,
-            sample_lens[i],
+            sample_length,
             batch_max,  # needed for padding
             self.vocab_id_list,
             self.vocab_id_to_token_dict,
@@ -130,8 +136,11 @@ class BertDataset(torch.utils.data.Dataset):
             np_rng,
             self.binary_head,
             )
-            final_batch.append(sample)
+            final_batch.append(processed_sample)
+        #print("precollate shape: {} {}".format(final_batch[0]['text'].shape,final_batch[0]['text']))
+        #print("length of final batch{}".format(len(final_batch)))
         return_batch = default_collate(final_batch)
+        #print("post collate shape{} {}".format(return_batch['text'].shape,return_batch['text']))
         return return_batch
 
         
