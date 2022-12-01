@@ -386,12 +386,20 @@ class MegatronBertModel(MegatronBaseModel):
     def process_batch(self, batch):
         """Build the batch."""
         # Unpack.
-        tokens = batch['text'].long()
-        types = batch['types'].long()
-        sentence_order = batch['is_random'].long()
-        loss_mask = batch['loss_mask'].float()
-        lm_labels = batch['labels'].long()
-        padding_mask = batch['padding_mask'].long()
+        if self.cfg.data.dataloader_type == "LDDL":
+            tokens = batch['input_ids'].long()
+            types = batch['token_type_ids'].long()
+            padding_mask = batch['attention_mask'].long()
+            lm_labels = batch['labels'].long()
+            loss_mask = batch['masked_lm_positions'].long()
+            sentence_order = batch['next_sentence_labels'].long()
+        else: 
+            tokens = batch['text'].long()
+            types = batch['types'].long()
+            sentence_order = batch['is_random'].long()
+            loss_mask = batch['loss_mask'].float()
+            lm_labels = batch['labels'].long()
+            padding_mask = batch['padding_mask'].long()
         return [tokens, types, sentence_order, loss_mask, lm_labels, padding_mask]
 
     def _build_train_valid_test_datasets(self):
@@ -527,15 +535,53 @@ class MegatronBertModel(MegatronBaseModel):
         if stage == 'predict':
             return
         # TODO: consider adding a ModelPT guard to check if model is being restored.
-        # allowing restored models to optionally setup datasets
-        self._build_train_valid_test_datasets()
-        self.setup_training_data(self.cfg.data)
-        self.setup_validation_data(self.cfg.data)
-        self.setup_test_data(self.cfg.data)
+        # allowing restored models to optionally setup dataset
+        if self.cfg.data.dataloader_type == "LDDL":
+            self._build_LDDL_data(self.cfg.data)
+        else:
+            self._build_train_valid_test_datasets()
+            self.setup_training_data(self.cfg.data)
+            self.setup_validation_data(self.cfg.data)
+            self.setup_test_data(self.cfg.data)
 
         # when using pipeline model parallel the final stage need to initialize word embeddings
         if parallel_state.get_pipeline_model_parallel_world_size() > 1:
             self.model.sync_initial_word_embeddings()
+
+    def _build_LDDL_data(self, cfg):
+        from lddl.torch import get_bert_pretrain_data_loader
+        from lddl.torch.utils import barrier, get_rank
+        from lddl.utils import mkdir
+        # TODO: Should we set all these datasets to None?
+        self._train_ds = None
+        self._validation_ds = None
+        self._test_ds = None
+        
+        # We run under the assumption that the datapath is the prefix if LDDL
+        # Also this is fairly hardcoded right now
+        # IT is also gonna pull the validation dataset at the LDDL
+        # TODO: What is the concept of a rank here???
+        lddl_data_path = self.cfg.data.data_prefix[1]
+        self._train_dl = get_bert_pretrain_data_loader(
+            lddl_data_path,
+            local_rank=parallel_state.get_data_parallel_rank(),
+            shuffle_buffer_size=16384,
+            shuffle_buffer_warmup_factor=16,
+            vocab_file=self.cfg.tokenizer.vocab_file,
+            data_loader_kwargs={
+                'batch_size': self.cfg.global_batch_size,
+                'num_workers': self.cfg.data.num_workers,
+                'prefetch_factor': 2
+            },
+            mlm_probability=.15,
+            base_seed=self.cfg.seed,
+            log_dir="/tmp/log",
+            return_raw_samples=False,  # This may need to be taken a look at
+            start_epoch=0,
+            sequence_length_alignment=8,
+            ignore_index=-1,
+        )
+        print("completed building loader")
 
     def setup_training_data(self, cfg):
         if hasattr(self, '_train_ds'):
@@ -547,7 +593,7 @@ class MegatronBertModel(MegatronBaseModel):
 
     def setup_validation_data(self, cfg):
         if hasattr(self, '_validation_ds'):
-            consumed_samples = 0
+            consumed_samples = 0 
             logging.info(
                 f'Setting up validation dataloader with len(len(self._validation_ds)): {len(self._validation_ds)} and consumed samples: {consumed_samples}'
             )
