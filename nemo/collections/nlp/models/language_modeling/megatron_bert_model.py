@@ -552,15 +552,20 @@ class MegatronBertModel(MegatronBaseModel):
         from lddl.torch import get_bert_pretrain_data_loader
         from lddl.torch.utils import barrier, get_rank
         from lddl.utils import mkdir
+        # We are not using compute consumed examples because binned datasets cannot take a sampler.
+        # I think this means we have no concept of where we have iterated through in dataset which
+        # means we cannot restart reliably.
+        consumed_samples = self.compute_consumed_samples(0)
+        
         # TODO: Should we set all these datasets to None?
         self._train_ds = None
         self._validation_ds = None
         self._test_ds = None
         
+        data_parallel_size = parallel_state.get_data_parallel_world_size()
+        num_micro_batches = self.cfg.global_batch_size // (self.cfg.micro_batch_size * data_parallel_size)
+        global_batch_size_on_this_data_parallel_rank = num_micro_batches * self.cfg.micro_batch_size
         # We run under the assumption that the datapath is the prefix if LDDL
-        # Also this is fairly hardcoded right now
-        # IT is also gonna pull the validation dataset at the LDDL
-        # TODO: What is the concept of a rank here???
         lddl_data_path = self.cfg.data.data_prefix[1]
         self._train_dl = get_bert_pretrain_data_loader(
             lddl_data_path,
@@ -569,7 +574,7 @@ class MegatronBertModel(MegatronBaseModel):
             shuffle_buffer_warmup_factor=16,
             vocab_file=self.cfg.tokenizer.vocab_file,
             data_loader_kwargs={
-                'batch_size': self.cfg.global_batch_size,
+                'batch_size': global_batch_size_on_this_data_parallel_rank,
                 'num_workers': self.cfg.data.num_workers,
                 'prefetch_factor': 2
             },
