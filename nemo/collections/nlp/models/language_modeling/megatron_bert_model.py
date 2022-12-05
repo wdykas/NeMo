@@ -550,13 +550,10 @@ class MegatronBertModel(MegatronBaseModel):
 
     def _build_LDDL_data(self, cfg):
         from lddl.torch import get_bert_pretrain_data_loader
-        from lddl.torch.utils import barrier, get_rank
-        from lddl.utils import mkdir
-        # We are not using compute consumed examples because binned datasets cannot take a sampler.
-        # I think this means we have no concept of where we have iterated through in dataset which
-        # means we cannot restart reliably.
+        #from lddl.torch.utils import barrier, get_rank
+        #from lddl.utils import mkdir
         consumed_samples = self.compute_consumed_samples(0)
-        
+
         # TODO: Should we set all these datasets to None?
         self._train_ds = None
         self._validation_ds = None
@@ -581,12 +578,22 @@ class MegatronBertModel(MegatronBaseModel):
             mlm_probability=.15,
             base_seed=self.cfg.seed,
             log_dir="/tmp/log",
-            return_raw_samples=False,  # This may need to be taken a look at
+            return_raw_samples=False,
             start_epoch=0,
             sequence_length_alignment=8,
             ignore_index=-1,
         )
-        print("completed building loader")
+        
+        if consumed_samples != 0:
+            # The number of times we need to call next on each DP ranks dataloader to recover
+            wind_iters = consumed_samples / data_parallel_size / global_batch_size_on_this_data_parallel_rank
+            print("We are winding the dataloader {} times".format(wind_iters))
+            # Hack: We need to wind the dataloaders into the correct position if we are loading from a checkpoint
+            for i in range(wind_iters):
+                # TODO we may need to convert to an iter
+                next(self._train_dl)
+                
+        print("completed building LDDL loader")
 
     def setup_training_data(self, cfg):
         if hasattr(self, '_train_ds'):
