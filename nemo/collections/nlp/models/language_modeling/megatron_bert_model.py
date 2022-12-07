@@ -639,8 +639,9 @@ class MegatronBertModel(MegatronBaseModel):
             wind_iters = consumed_samples / data_parallel_size / global_batch_size_on_this_data_parallel_rank
             print("We are winding the dataloader {} times".format(wind_iters))
             # Hack: We need to wind the dataloaders into the correct position if we are loading from a checkpoint
-            for i in range(wind_iters):
-                # TODO we may need to convert to an iter
+            for i in range(int(wind_iters)):
+                # TODO: We are skipping winding of the dataloader for benchmarking purposes
+                pass
                 next(self._train_dl)
                 
         print("completed building LDDL loader")
