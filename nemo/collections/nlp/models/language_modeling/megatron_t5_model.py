@@ -39,7 +39,7 @@ class MegatronT5Model(MegatronLMEncoderDecoderModel):
 
     def __init__(self, cfg: DictConfig, trainer: Trainer):
         super().__init__(cfg, trainer=trainer)
-
+        
         # validate cfg
         self._validate_cfg()
 

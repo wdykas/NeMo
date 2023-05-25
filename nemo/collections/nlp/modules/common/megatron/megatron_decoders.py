@@ -88,6 +88,16 @@ def get_decoder_model(
     moe_dropout=0.0,
     turn_off_rop=False,  # turn off the RoP positional embedding
     version=1,
+    transformer_engine=False,
+    fp8=False,
+    fp8_e4m3=False,
+    fp8_hybrid=False,
+    fp8_margin=0,
+    fp8_interval=1,
+    fp8_amax_history_len=1,
+    fp8_amax_compute_algo='most_recent',
+    reduce_amax=True,
+    use_emha=False,
 ):
     """Build language model and return along with the key to save."""
 
@@ -145,6 +155,16 @@ def get_decoder_model(
             num_moe_experts=num_moe_experts,
             moe_frequency=moe_frequency,
             moe_dropout=moe_dropout,
+            transformer_engine=transformer_engine,
+            fp8=fp8,
+            fp8_e4m3=fp8_e4m3,
+            fp8_hybrid=fp8_hybrid,
+            fp8_margin=fp8_margin,
+            fp8_interval=fp8_interval,
+            fp8_amax_history_len=fp8_amax_history_len,
+            fp8_amax_compute_algo=fp8_amax_compute_algo,
+            reduce_amax=reduce_amax,
+            use_emha=use_emha,
         )
     elif arch == "retro":
         decoder = MegatronRetrievalTransformerDecoderModule(

@@ -893,6 +893,31 @@ class MegatronLMEncoderDecoderModel(MegatronBaseModel):
                     'position_embedding_type', 'learned_absolute'
                 ) == 'relative' and not self.cfg.decoder.get('relative_position_bias_self_attention_only', True):
                     self.enc_dec_model.sync_initial_decoder_cross_attention_relative_position_embeddings()
+        self.setup_transformer_engine_tp_groups()
+
+    def _set_tp_groups(self, module):
+        """ Helper method to set tp groups for transformer engine"""
+
+        if self.cfg.get('transformer_engine', False):
+            logging.info(f'Setting up transformer engine modules for tensor parallelism.')
+            if self.cfg.get('megatron_amp_O2', 'False'):
+                # when using O2 additional module key is added that casts the weights
+                for layer in module.module.language_model.encoder.layers:
+                    layer.set_tensor_parallel_group(parallel_state.get_tensor_model_parallel_group())
+
+            else:
+                for layer in module.language_model.encoder.layers:
+                    layer.set_tensor_parallel_group(parallel_state.get_tensor_model_parallel_group())
+
+    def setup_transformer_engine_tp_groups(self):
+        """ This should be called after model parallel groups have been initialized
+            and only needs to be called when using Transformer Engine.
+        """
+        if isinstance(self.model, list):
+            for module in self.model:
+                self._set_tp_groups(module)
+        else:
+            self._set_tp_groups(self.model)
 
     def setup_training_data(self, cfg):
         if hasattr(self, '_train_ds'):

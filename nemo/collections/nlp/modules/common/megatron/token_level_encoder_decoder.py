@@ -243,6 +243,16 @@ class MegatronTokenLevelEncoderDecoderModule(MegatronModule):
                 num_moe_experts=encoder_cfg.get('num_moe_experts', 1),
                 moe_frequency=encoder_cfg.get('moe_frequency', 1),
                 moe_dropout=encoder_cfg.get('moe_dropout', 0.0),
+                transformer_engine=encoder_cfg.get('transformer_engine', False),
+                fp8=encoder_cfg.get('fp8', False),
+                fp8_e4m3=encoder_cfg.get('fp8_e4m3', False),
+                fp8_hybrid=encoder_cfg.get('fp8_hybrid', False),
+                fp8_margin=encoder_cfg.get('fp8_margin', 0),
+                fp8_interval=encoder_cfg.get('fp8_interval', 1),
+                fp8_amax_history_len=encoder_cfg.get('fp8_amax_history_len', 1),
+                fp8_amax_compute_algo=encoder_cfg.get('fp8_amax_compute_algo', 'most_recent'),
+                reduce_amax=encoder_cfg.get('reduce_amax',True),
+                use_emha=encoder_cfg.get('use_emha', False),
             )
 
         if add_decoder:
@@ -373,6 +383,16 @@ class MegatronTokenLevelEncoderDecoderModule(MegatronModule):
                 num_moe_experts=decoder_cfg.get('num_moe_experts', 1),
                 moe_frequency=decoder_cfg.get('moe_frequency', 1),
                 moe_dropout=decoder_cfg.get('moe_dropout', 0.0),
+                transformer_engine=decoder_cfg.get('transformer_engine', False),
+                fp8=decoder_cfg.get('fp8', False),
+                fp8_e4m3=decoder_cfg.get('fp8_e4m3', False),
+                fp8_hybrid=decoder_cfg.get('fp8_hybrid', False),
+                fp8_margin=decoder_cfg.get('fp8_margin', 0),
+                fp8_interval=decoder_cfg.get('fp8_interval', 1),
+                fp8_amax_history_len=decoder_cfg.get('fp8_amax_history_len', 1),
+                fp8_amax_compute_algo=decoder_cfg.get('fp8_amax_compute_algo', 'most_recent'),
+                reduce_amax=decoder_cfg.get('reduce_amax',True),
+                use_emha=decoder_cfg.get('use_emha', False),
             )
 
         self.enc_dec_model = MegatronTransformerEncoderDecoderModule(
