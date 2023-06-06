@@ -42,6 +42,7 @@ from nemo.utils import AppState, logging
 from nemo.utils.model_utils import inject_model_parallel_rank
 
 import re
+import boto3
 
 try:
     from apex.transformer.enums import ModelType
@@ -220,7 +221,8 @@ class NLPDDPStrategy(DDPStrategy):
         torch.cuda.empty_cache()
         checkpoint_path = inject_model_parallel_rank(checkpoint_path)
         # Check if we this is an S3 file path
-        if re.match(checkpoint_path,"^s3://([^/]+)/(.*?([^/]+)/?)$"):
+        if re.match("^s3://([^/]+)/(.*?([^/]+)/?)$",checkpoint_path):
+            print("FOUND S3 PATH")
             checkpoint_path = self._read_s3(checkpoint_path)
         return self.checkpoint_io.load_checkpoint(checkpoint_path)
 
@@ -239,7 +241,7 @@ class NLPDDPStrategy(DDPStrategy):
         else:
             object_path += filename
         output_path = "/tmp/" + s3_tokens[-1]
-        s3.download_file(bucket_name, object_path, output_path)
+        s3.download_file(bucket_name, object_path, "/tmp")
         return output_path
 
 

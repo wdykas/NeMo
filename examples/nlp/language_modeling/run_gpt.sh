@@ -1,12 +1,12 @@
-NCCL_DEBUG=INFO torchrun --nnode 1 --nproc_per_node 1 megatron_gpt_pretraining.py \
-    trainer.devices=1 \
-    model.data.data_prefix=[1,/gpt-data/Wikipedia_en_ftfy_id_shuf_text_document] \
-    model.tensor_model_parallel_size=1 \
-    model.pipeline_model_parallel_size=1 \
+JOBLIB_TEMP_FOLDER=/tmp TRANSFORMERS_OFFLINE=1 HYDRA_FULL_ERROR=1 torchrun --nnode 1 --nproc_per_node 8 megatron_gpt_pretraining.py \
+    trainer.devices=8 \
+    model.data.data_prefix=[1,/workspace/gpt-data/Wikipedia_en_ftfy_id_shuf_text_document] \
+    model.tensor_model_parallel_size=2 \
+    model.pipeline_model_parallel_size=2 \
     model.micro_batch_size=8 \
     model.global_batch_size=64 \
     model.data.dataloader_type=single \
     model.seed=32345435 \
-    model.tokenizer.vocab_file=/gpt-data/gpt2-vocab.json \
-    model.tokenizer.merge_file=/gpt-data/gpt2-merges.txt
-~                                                
+    model.tokenizer.vocab_file=/workspace/gpt-data/gpt2-vocab.json \
+    model.tokenizer.merge_file=/workspace/gpt-data/gpt2-merges.txt \
+    model.resume_from_checkpoint="s3://wdykas-nemo-s3-gptcheckpoint/megatron_gpt/checkpoints/megatron_gpt--val_loss-5.26-step-800-consumed_samples-51136.0-last.ckpt"                           
