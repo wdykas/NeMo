@@ -41,6 +41,8 @@ from nemo.core.optim import MainParamsOptimizerWrapper
 from nemo.utils import AppState, logging
 from nemo.utils.model_utils import inject_model_parallel_rank
 
+import re
+
 try:
     from apex.transformer.enums import ModelType
     from apex.transformer.pipeline_parallel.schedules.common import _calc_number_of_params
@@ -217,7 +219,29 @@ class NLPDDPStrategy(DDPStrategy):
         # TODO: move to CheckpointIO
         torch.cuda.empty_cache()
         checkpoint_path = inject_model_parallel_rank(checkpoint_path)
+        # Check if we this is an S3 file path
+        if re.match(checkpoint_path,"^s3://([^/]+)/(.*?([^/]+)/?)$"):
+            checkpoint_path = self._read_s3(checkpoint_path)
         return self.checkpoint_io.load_checkpoint(checkpoint_path)
+
+    def _read_s3(self,s3path):
+        s3 = boto3.client('s3')
+
+        s3_tokens = s3path.split('/')
+        bucket_name = s3_tokens[2]
+        object_path = ""
+        filename = s3_tokens[len(s3_tokens) - 1]
+        print('Filename: ' + filename)
+        if len(s3_tokens) > 4:
+            for tokn in range(3, len(s3_tokens) - 1):
+                object_path += s3_tokens[tokn] + "/"
+            object_path += filename
+        else:
+            object_path += filename
+        output_path = "/tmp/" + s3_tokens[-1]
+        s3.download_file(bucket_name, object_path, output_path)
+        return output_path
+
 
     def remove_checkpoint(self, filepath: Union[str, Path]) -> None:
         app_state = AppState()
