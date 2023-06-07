@@ -240,8 +240,17 @@ class NLPDDPStrategy(DDPStrategy):
             object_path += filename
         else:
             object_path += filename
-        output_path = "/tmp/" + s3_tokens[-1]
-        s3.download_file(bucket_name, object_path, "/tmp")
+        output_dirs = "/tmp" + inject_model_parallel_rank("")
+        if not os.path.exists(output_dirs):
+            os.makedirs(output_dirs)
+        output_path = inject_model_parallel_rank("/tmp/" + filename)
+        print("object path " + object_path)
+        print("bucket_name " + bucket_name)
+        print("output path " + output_path)
+        app_state = AppState()
+        if app_state.data_parallel_rank == 0:
+            s3.download_file(bucket_name, object_path, output_path)
+        torch.distributed.barrier()
         return output_path
 
 
