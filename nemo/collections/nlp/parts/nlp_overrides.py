@@ -228,18 +228,11 @@ class NLPDDPStrategy(DDPStrategy):
 
     def _read_s3(self,s3path):
         s3 = boto3.client('s3')
-
-        s3_tokens = s3path.split('/')
-        bucket_name = s3_tokens[2]
-        object_path = ""
-        filename = s3_tokens[len(s3_tokens) - 1]
-        print('Filename: ' + filename)
-        if len(s3_tokens) > 4:
-            for tokn in range(3, len(s3_tokens) - 1):
-                object_path += s3_tokens[tokn] + "/"
-            object_path += filename
-        else:
-            object_path += filename
+        s3_split = s3path.split('/')
+        bucket_name = s3_split[2]
+        filename = os.path.basename(s3path)
+        object_path = os.path.join(*(s3_split[3:len(s3_split)]))
+        
         output_dirs = "/tmp" + inject_model_parallel_rank("")
         if not os.path.exists(output_dirs):
             os.makedirs(output_dirs)
