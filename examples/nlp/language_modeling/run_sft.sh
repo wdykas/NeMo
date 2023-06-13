@@ -1,8 +1,8 @@
-TRAIN="[/workspace/dolly-data/databricks-dolly-15k-output.jsonl]"
+TRAIN="[/workspace/gpt-data/databricks-dolly-15k-output.jsonl]"
 
-VALID="[/workspace/dolly-data/databricks-dolly-15k-output.jsonl]"
+VALID="[/workspace/gpt-data/databricks-dolly-15k-output.jsonl]"
 
-TEST="[/workspace/dolly-data/databricks-dolly-15k-output.jsonl]"
+TEST="[/workspace/gpt-data/databricks-dolly-15k-output.jsonl]"
 VALID_NAMES="[your-validation-dataset-name]"
 
 CONCAT_SAMPLING_PROBS="[1.0]"
@@ -11,7 +11,7 @@ TP_SIZE=1
 
 PP_SIZE=1
 
-python /workspace/sft-nemo/NeMo/examples/nlp/language_modeling/tuning/megatron_gpt_sft.py \
+python /workspace/NeMo/examples/nlp/language_modeling/tuning/megatron_gpt_sft.py \
   trainer.precision=16 \
   trainer.max_steps=1000 \
   trainer.devices=2 \
@@ -41,7 +41,7 @@ python /workspace/sft-nemo/NeMo/examples/nlp/language_modeling/tuning/megatron_g
   exp_manager.resume_ignore_no_checkpoint=True \
   exp_manager.create_checkpoint_callback=True \
   exp_manager.checkpoint_callback_params.monitor=validation_loss \
-  model.restore_from_path="/workspace/sft-nemo/NeMo/examples/nlp/language_modeling/nemo_experiments/megatron_gpt/checkpoints/megatron_gpt.nemo" \
+  model.restore_from_path="/workspace/NeMo/examples/nlp/language_modeling/nemo_experiments/megatron_gpt/checkpoints/megatron_gpt.nemo" \
   model.data.train_ds.concat_sampling_probabilities=${CONCAT_SAMPLING_PROBS}
   #model.data.validation_ds.names=${VALID_NAMES} \
 
