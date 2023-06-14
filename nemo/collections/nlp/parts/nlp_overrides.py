@@ -207,6 +207,7 @@ class NLPDDPStrategy(DDPStrategy):
         MB = 1024 ** 2 # Is this the correct megabyte calc for here?
         config = TransferConfig(multipart_chunksize=128 * MB, max_concurrency=10)
         bucket, key = self.parse_s3_url(filepath)
+        print(f"s3 save bucket {bucket}, key {key}")
         s3_client.upload_fileobj(file_stream, bucket, key, Config=config)
 
     def load_model_state_dict(self, checkpoint: Mapping[str, Any]) -> None:
@@ -264,6 +265,7 @@ class NLPDDPStrategy(DDPStrategy):
     def download_s3_file_to_stream(self, s3_path: str, s3_client, chunk_size_MB: int = 64, max_concurrency: int = 15) -> BytesIO:
         bytes_buffer = BytesIO()
         bucket, key = self.parse_s3_url(s3_path)
+        print(f"download s3 bucket {bucket}, key {key}")
         MB = 1024 ** 2 # Is this the correct megabyte calc for here?
         chunk_size = chunk_size_MB * MB
         config = TransferConfig(multipart_chunksize=chunk_size, max_concurrency=max_concurrency)
