@@ -41,7 +41,11 @@ from nemo.core.optim import MainParamsOptimizerWrapper
 from nemo.utils import AppState, logging
 from nemo.utils.model_utils import inject_model_parallel_rank
 
+# Fast S3 imports
 import re
+import boto3
+from boto3.s3.transfer import TransferConfig
+from io import BytesIO
 
 try:
     from apex.transformer.enums import ModelType
@@ -190,7 +194,20 @@ class NLPDDPStrategy(DDPStrategy):
         # PTL override to accomodate model parallel checkpoints
         filepath = inject_model_parallel_rank(filepath)
         if self.is_global_zero or app_state.data_parallel_rank == 0:
-            self.checkpoint_io.save_checkpoint(checkpoint, filepath, storage_options=storage_options)
+            if self.is_s3_path(filepath):
+                self.s3_save(checkpoint,filepath,app_state)
+            else:
+                self.checkpoint_io.save_checkpoint(checkpoint, filepath, storage_options=storage_options)
+
+    def s3_save(self,checkpoint,filepath):
+        s3_client = boto3.client('s3')
+        file_stream = BytesIO()
+        torch.save(checkpoint, file_stream)
+        file_stream.seek(0)
+        MB = 1024 ** 2 # Is this the correct megabyte calc for here?
+        config = TransferConfig(multipart_chunksize=128 * MB, max_concurrency=10)
+        bucket, key = self.parse_s3_url(filepath)
+        s3_client.upload_fileobj(file_stream, bucket, key, Config=config)
 
     def load_model_state_dict(self, checkpoint: Mapping[str, Any]) -> None:
         # Release strict state dict matching when using Megatron AMP-O2 to skip matching
@@ -214,33 +231,76 @@ class NLPDDPStrategy(DDPStrategy):
 
         self.lightning_module.load_state_dict(checkpoint["state_dict"])
 
+    def is_s3_path(self,filepath):
+        return re.match("^s3://([^/]+)/(.*?([^/]+)/?)$",filepath)
+
     def load_checkpoint(self, checkpoint_path: Union[str, Path]) -> Dict[str, Any]:
         """ PTL override to accomodate model parallel checkpoints """
         # TODO: move to CheckpointIO
         torch.cuda.empty_cache()
         checkpoint_path = inject_model_parallel_rank(checkpoint_path)
         # Check if we this is an S3 file path
-        if re.match(checkpoint_path,"^s3://([^/]+)/(.*?([^/]+)/?)$"):
-            checkpoint_path = self._read_s3(checkpoint_path)
+        if self.is_s3_path(checkpoint_path):
+            return self.load_s3_checkpoint(checkpoint_path)
         return self.checkpoint_io.load_checkpoint(checkpoint_path)
 
-    def _read_s3(self,s3path):
-        s3 = boto3.client('s3')
+    def load_s3_checkpoint(self,checkpoint_path):
+        app_state = AppState()
+        checkpoints = [None]
+        # Loading checkpoint and broadcasting to other ranks
+        if app_state.data_parallel_rank == 0:
+            s3_client = boto3.client('s3')
+            file_stream: BytesIO = self.download_s3_file_to_stream(s3_path=checkpoint_path,s3_client=s3_client, chunk_size_MB=128, max_concurrency=15)
+            checkpoint = torch.load(file_stream)
+            checkpoints = [checkpoint]
+            logging.info('Broadcasting checkpoints to other ranks')
+        # Check that this broadcast is allowed
+        dp_group = torch.distributed.get_process_group_ranks(app_state.data_parallel_group)
+        src = min(dp_group)
+        torch.distributed.broadcast_object_list(checkpoints, src=src, group=app_state.data_parallel_group)
+        return checkpoints[0]
 
-        s3_tokens = s3path.split('/')
+
+    def download_s3_file_to_stream(self, s3_path: str, s3_client, chunk_size_MB: int = 64, max_concurrency: int = 15) -> BytesIO:
+        bytes_buffer = BytesIO()
+        bucket, key = self.parse_s3_url(s3_path)
+        MB = 1024 ** 2 # Is this the correct megabyte calc for here?
+        chunk_size = chunk_size_MB * MB
+        config = TransferConfig(multipart_chunksize=chunk_size, max_concurrency=max_concurrency)
+        s3_client.download_fileobj(bucket, key, bytes_buffer, Config=config)
+        bytes_buffer.seek(0)
+        return bytes_buffer
+    
+    def parse_s3_url(self,s3_path):
+        s3_tokens = s3_path.split('/')
         bucket_name = s3_tokens[2]
-        object_path = ""
+        key = ""
         filename = s3_tokens[len(s3_tokens) - 1]
-        print('Filename: ' + filename)
         if len(s3_tokens) > 4:
             for tokn in range(3, len(s3_tokens) - 1):
-                object_path += s3_tokens[tokn] + "/"
-            object_path += filename
+                key += s3_tokens[tokn] + "/"
+            key += filename
         else:
-            object_path += filename
-        output_path = "/tmp/" + s3_tokens[-1]
-        s3.download_file(bucket_name, object_path, output_path)
-        return output_path
+            key += filename
+        return bucket_name, key
+    
+    # def _read_s3(self,s3path):
+    #     s3 = boto3.client('s3')
+
+    #     s3_tokens = s3path.split('/')
+    #     bucket_name = s3_tokens[2]
+    #     object_path = ""
+    #     filename = s3_tokens[len(s3_tokens) - 1]
+    #     print('Filename: ' + filename)
+    #     if len(s3_tokens) > 4:
+    #         for tokn in range(3, len(s3_tokens) - 1):
+    #             object_path += s3_tokens[tokn] + "/"
+    #         object_path += filename
+    #     else:
+    #         object_path += filename
+    #     output_path = "/tmp/" + s3_tokens[-1]
+    #     s3.download_file(bucket_name, object_path, output_path)
+    #     return output_path
 
 
     def remove_checkpoint(self, filepath: Union[str, Path]) -> None:
