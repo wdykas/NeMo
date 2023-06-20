@@ -197,6 +197,8 @@ class NLPDDPStrategy(DDPStrategy):
             if self.is_s3_path(filepath):
                 self.s3_save(checkpoint,filepath,app_state)
             else:
+                print("doing regular checkpoint save")
+                print(f"checkpoint save file path {filepath}")
                 self.checkpoint_io.save_checkpoint(checkpoint, filepath, storage_options=storage_options)
 
     def s3_save(self,checkpoint,filepath):
@@ -249,17 +251,26 @@ class NLPDDPStrategy(DDPStrategy):
         app_state = AppState()
         checkpoints = [None]
         # Loading checkpoint and broadcasting to other ranks
-        if app_state.data_parallel_rank == 0:
-            s3_client = boto3.client('s3')
-            file_stream: BytesIO = self.download_s3_file_to_stream(s3_path=checkpoint_path,s3_client=s3_client, chunk_size_MB=128, max_concurrency=15)
-            checkpoint = torch.load(file_stream)
-            checkpoints = [checkpoint]
-            logging.info('Broadcasting checkpoints to other ranks')
+        s3_client = boto3.client('s3')
+        file_stream: BytesIO = self.download_s3_file_to_stream(s3_path=checkpoint_path,s3_client=s3_client, chunk_size_MB=128, max_concurrency=15)
+        
+        checkpoint = torch.load(file_stream)
+        for x in checkpoint['state_dict'].items():
+            print(f"state device {x[1].get_device()}, rank {app_state.global_rank}")
+        
+        for y in checkpoint['optimizer_states']:
+            for z in y['state'].items():
+                print(f"optimizer device {z[1]['exp_avg'].get_device()}, rank {app_state.global_rank}")
+                #print(z[1]['exp_avg'])
+
+        #checkpoints = [checkpoint]
+        #logging.info('Broadcasting checkpoints to other ranks')
         # Check that this broadcast is allowed
-        dp_group = torch.distributed.get_process_group_ranks(app_state.data_parallel_group)
-        src = min(dp_group)
-        torch.distributed.broadcast_object_list(checkpoints, src=src, group=app_state.data_parallel_group)
-        return checkpoints[0]
+        #dp_group = torch.distributed.get_process_group_ranks(app_state.data_parallel_group)
+        #src = min(dp_group)
+        #torch.distributed.broadcast_object_list(checkpoints, src=src, group=app_state.data_parallel_group)
+        #return checkpoints[0]
+        return checkpoint
 
 
     def download_s3_file_to_stream(self, s3_path: str, s3_client, chunk_size_MB: int = 64, max_concurrency: int = 15) -> BytesIO:
@@ -286,25 +297,6 @@ class NLPDDPStrategy(DDPStrategy):
             key += filename
         return bucket_name, key
     
-    # def _read_s3(self,s3path):
-    #     s3 = boto3.client('s3')
-
-    #     s3_tokens = s3path.split('/')
-    #     bucket_name = s3_tokens[2]
-    #     object_path = ""
-    #     filename = s3_tokens[len(s3_tokens) - 1]
-    #     print('Filename: ' + filename)
-    #     if len(s3_tokens) > 4:
-    #         for tokn in range(3, len(s3_tokens) - 1):
-    #             object_path += s3_tokens[tokn] + "/"
-    #         object_path += filename
-    #     else:
-    #         object_path += filename
-    #     output_path = "/tmp/" + s3_tokens[-1]
-    #     s3.download_file(bucket_name, object_path, output_path)
-    #     return output_path
-
-
     def remove_checkpoint(self, filepath: Union[str, Path]) -> None:
         app_state = AppState()
         # PTL override to accomodate model parallel checkpoints

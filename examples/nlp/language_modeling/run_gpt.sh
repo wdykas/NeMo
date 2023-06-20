@@ -9,4 +9,5 @@ JOBLIB_TEMP_FOLDER=/tmp TRANSFORMERS_OFFLINE=1 HYDRA_FULL_ERROR=1 torchrun --nno
     model.seed=32345435 \
     model.tokenizer.vocab_file=/workspace/gpt-data/gpt2-vocab.json \
     model.tokenizer.merge_file=/workspace/gpt-data/gpt2-merges.txt \
-    model.resume_from_checkpoint="s3://wdykas-nemo-s3-gptcheckpoint/megatron_gpt/checkpoints/megatron_gpt--val_loss-5.26-step-800-consumed_samples-51136.0-last.ckpt"                           
+    model.resume_from_checkpoint="s3://wdykas-gpt-checkpoints-extra-s3/checkpoints/megatron_gpt--val_loss\=8.31-step\=100-consumed_samples\=6336.0.ckpt"
+    #model.resume_from_checkpoint="s3://wdykas-nemo-s3-gptcheckpoint/megatron_gpt/checkpoints/megatron_gpt--val_loss-5.26-step-800-consumed_samples-51136.0-last.ckpt" \
