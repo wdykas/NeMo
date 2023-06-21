@@ -254,7 +254,8 @@ class NLPDDPStrategy(DDPStrategy):
         s3_client = boto3.client('s3')
         file_stream: BytesIO = self.download_s3_file_to_stream(s3_path=checkpoint_path,s3_client=s3_client, chunk_size_MB=128, max_concurrency=15)
         
-        checkpoint = torch.load(file_stream)
+        #checkpoint = torch.load(file_stream)
+        checkpoint = torch.load(file_stream,map_location=torch.device(f"cuda:{app_state.local_rank}"))
         for x in checkpoint['state_dict'].items():
             print(f"state device {x[1].get_device()}, rank {app_state.global_rank}")
         
