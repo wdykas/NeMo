@@ -67,6 +67,11 @@ class LoggerMisconfigurationError(NeMoBaseException):
 class CheckpointMisconfigurationError(NeMoBaseException):
     """ Raised when a mismatch between trainer.callbacks and exp_manager occurs"""
 
+# Temporary pasta code
+import re
+from s3path import PureS3Path
+def is_s3_path(filepath):
+        return re.match("^s3://(.*)",filepath)
 
 @dataclass
 class EarlyStoppingParams:
@@ -169,6 +174,8 @@ class ExpManagerConfig:
     ema: Optional[EMAParams] = EMAParams()
     # Wall clock time limit
     max_time_per_run: Optional[str] = None
+    # Whether our checkpointing is in S3
+    s3_checkpointing: Optional[bool] = False 
 
 
 class TimingCallback(Callback):
@@ -329,6 +336,8 @@ def exp_manager(trainer: 'pytorch_lightning.Trainer', cfg: Optional[Union[DictCo
         use_datetime_version=cfg.use_datetime_version,
         resume_if_exists=cfg.resume_if_exists,
     )
+    print(f"logdir {log_dir}")
+    print(f"exp_dir {exp_dir}")
 
     if cfg.resume_if_exists:
         # Check for existing checkpoints in `dirpath` if it's specified, use <log_dir>/checkpoints otherwise
@@ -370,9 +379,15 @@ def exp_manager(trainer: 'pytorch_lightning.Trainer', cfg: Optional[Union[DictCo
     app_state.checkpoint_callback_params = cfg.checkpoint_callback_params
 
     # Create the logging directory if it does not exist
-    os.makedirs(log_dir, exist_ok=True)  # Cannot limit creation to global zero as all ranks write to own log file
-    logging.info(f'Experiments will be logged at {log_dir}')
-    trainer._default_root_dir = log_dir
+    if cfg.get("s3_checkpointing",False):
+        print("config check for s3 worked")
+        trainer._default_root_dir = log_dir.as_uri()
+        logging.info(f'Experiments will be logged at {log_dir.as_uri()}')
+        # TODO: Can we skip creating buckets in S3 since there is not concept of folders?
+    else:
+        os.makedirs(log_dir, exist_ok=True)  # Cannot limit creation to global zero as all ranks write to own log file
+        logging.info(f'Experiments will be logged at {log_dir}')
+        trainer._default_root_dir = log_dir
 
     if cfg.log_local_rank_0_only is True and cfg.log_global_rank_0_only is True:
         raise ValueError(
@@ -383,7 +398,10 @@ def exp_manager(trainer: 'pytorch_lightning.Trainer', cfg: Optional[Union[DictCo
     nemo_testing = get_envbool(NEMO_ENV_VARNAME_TESTING, False)
 
     # Handle logging to file
-    log_file = log_dir / f'nemo_log_globalrank-{global_rank}_localrank-{local_rank}.txt'
+    if cfg.get("s3_checkpointing",False):
+        log_file = log_dir / f'nemo_log_globalrank-{global_rank}_localrank-{local_rank}.txt'
+    else:
+        log_file = log_dir / f'nemo_log_globalrank-{global_rank}_localrank-{local_rank}.txt'
     if cfg.log_local_rank_0_only is True and not nemo_testing:
         if local_rank == 0:
             logging.add_file_handler(log_file)
@@ -649,6 +667,11 @@ def check_explicit_log_dir(
         )
     if is_global_rank_zero() and Path(explicit_log_dir).exists():
         logging.warning(f"Exp_manager is logging to {explicit_log_dir}, but it already exists.")
+    
+    # If it an S3 path, Path(explicit_log_dir) will strip needed /
+    if is_s3_path(explicit_log_dir):
+        print("got into s3 explicit short circuit")
+        return PureS3Path.from_uri(explicit_log_dir), str(explicit_log_dir), "", ""
     return Path(explicit_log_dir), str(explicit_log_dir), "", ""
 
 
@@ -964,6 +987,7 @@ def clean_exp_ckpt(exp_log_dir: Union[str, Path], remove_ckpt: bool = True, remo
         remove_ckpt: bool, whether to remove all *.ckpt files in the checkpoints directory.
         remove_nemo: bool, whether to remove all *.nemo files in the checkpoints directory.
     """
+    # TODO: Handle checkpoint clean up with S3
     exp_log_dir = str(exp_log_dir)
 
     if remove_ckpt:

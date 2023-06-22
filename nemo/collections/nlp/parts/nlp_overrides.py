@@ -256,13 +256,13 @@ class NLPDDPStrategy(DDPStrategy):
         
         #checkpoint = torch.load(file_stream)
         checkpoint = torch.load(file_stream,map_location=torch.device(f"cuda:{app_state.local_rank}"))
-        for x in checkpoint['state_dict'].items():
-            print(f"state device {x[1].get_device()}, rank {app_state.global_rank}")
-        
-        for y in checkpoint['optimizer_states']:
-            for z in y['state'].items():
-                print(f"optimizer device {z[1]['exp_avg'].get_device()}, rank {app_state.global_rank}")
-                #print(z[1]['exp_avg'])
+        #for x in checkpoint['state_dict'].items():
+        #    print(f"state device {x[1].get_device()}, rank {app_state.global_rank}")
+        #
+        #for y in checkpoint['optimizer_states']:
+        #    for z in y['state'].items():
+        #        print(f"optimizer device {z[1]['exp_avg'].get_device()}, rank {app_state.global_rank}")
+        #        #print(z[1]['exp_avg'])
 
         #checkpoints = [checkpoint]
         #logging.info('Broadcasting checkpoints to other ranks')
