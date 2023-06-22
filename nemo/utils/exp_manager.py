@@ -47,7 +47,7 @@ from nemo.utils.get_rank import is_global_rank_zero
 from nemo.utils.lightning_logger_patch import add_filehandlers_to_pl_logger
 from nemo.utils.loggers import ClearMLLogger, ClearMLParams, DLLogger, DLLoggerParams, MLFlowParams
 from nemo.utils.model_utils import uninject_model_parallel_rank
-
+from nemo.utils.aws_utils import is_s3_path, get_s3_file_names
 
 class NotFoundError(NeMoBaseException):
     """ Raised when a file or folder is not found"""
@@ -67,11 +67,6 @@ class LoggerMisconfigurationError(NeMoBaseException):
 class CheckpointMisconfigurationError(NeMoBaseException):
     """ Raised when a mismatch between trainer.callbacks and exp_manager occurs"""
 
-# Temporary pasta code
-import re
-from s3path import PureS3Path
-def is_s3_path(filepath):
-        return re.match("^s3://(.*)",filepath)
 
 @dataclass
 class EarlyStoppingParams:
@@ -174,8 +169,6 @@ class ExpManagerConfig:
     ema: Optional[EMAParams] = EMAParams()
     # Wall clock time limit
     max_time_per_run: Optional[str] = None
-    # Whether our checkpointing is in S3
-    s3_checkpointing: Optional[bool] = False 
 
 
 class TimingCallback(Callback):
@@ -336,8 +329,6 @@ def exp_manager(trainer: 'pytorch_lightning.Trainer', cfg: Optional[Union[DictCo
         use_datetime_version=cfg.use_datetime_version,
         resume_if_exists=cfg.resume_if_exists,
     )
-    print(f"logdir {log_dir}")
-    print(f"exp_dir {exp_dir}")
 
     if cfg.resume_if_exists:
         # Check for existing checkpoints in `dirpath` if it's specified, use <log_dir>/checkpoints otherwise
@@ -379,15 +370,9 @@ def exp_manager(trainer: 'pytorch_lightning.Trainer', cfg: Optional[Union[DictCo
     app_state.checkpoint_callback_params = cfg.checkpoint_callback_params
 
     # Create the logging directory if it does not exist
-    if cfg.get("s3_checkpointing",False):
-        print("config check for s3 worked")
-        trainer._default_root_dir = log_dir.as_uri()
-        logging.info(f'Experiments will be logged at {log_dir.as_uri()}')
-        # TODO: Can we skip creating buckets in S3 since there is not concept of folders?
-    else:
-        os.makedirs(log_dir, exist_ok=True)  # Cannot limit creation to global zero as all ranks write to own log file
-        logging.info(f'Experiments will be logged at {log_dir}')
-        trainer._default_root_dir = log_dir
+    os.makedirs(log_dir, exist_ok=True)  # Cannot limit creation to global zero as all ranks write to own log file
+    logging.info(f'Experiments will be logged at {log_dir}')
+    trainer._default_root_dir = log_dir
 
     if cfg.log_local_rank_0_only is True and cfg.log_global_rank_0_only is True:
         raise ValueError(
@@ -398,10 +383,7 @@ def exp_manager(trainer: 'pytorch_lightning.Trainer', cfg: Optional[Union[DictCo
     nemo_testing = get_envbool(NEMO_ENV_VARNAME_TESTING, False)
 
     # Handle logging to file
-    if cfg.get("s3_checkpointing",False):
-        log_file = log_dir / f'nemo_log_globalrank-{global_rank}_localrank-{local_rank}.txt'
-    else:
-        log_file = log_dir / f'nemo_log_globalrank-{global_rank}_localrank-{local_rank}.txt'
+    log_file = log_dir / f'nemo_log_globalrank-{global_rank}_localrank-{local_rank}.txt'
     if cfg.log_local_rank_0_only is True and not nemo_testing:
         if local_rank == 0:
             logging.add_file_handler(log_file)
@@ -571,17 +553,28 @@ def check_resume(
         NotFoundError: If resume is True, resume_ignore_no_checkpoint is False, and checkpoints could not be found.
         ValueError: If resume is True, and there were more than 1 checkpoint could found.
     """
-
     if not log_dir:
         raise ValueError(f"Resuming requires the log_dir {log_dir} to be passed to exp_manager")
 
+    s3_checkpointing = False
     # Use <log_dir>/checkpoints/ unless `dirpath` is set
-    checkpoint_dir = Path(dirpath) if dirpath else Path(Path(log_dir) / "checkpoints")
+    if dirpath and is_s3_path(dirpath):
+        print("got into resume override")
+        checkpoint_dir = dirpath
+        s3_checkpointing = True
+    else:
+        checkpoint_dir = Path(dirpath) if dirpath else Path(Path(log_dir) / "checkpoints")
 
     checkpoint = None
-    end_checkpoints = list(checkpoint_dir.rglob("*end.ckpt"))
-    last_checkpoints = list(checkpoint_dir.rglob("*last.ckpt"))
-    if not checkpoint_dir.exists():
+    if s3_checkpointing:
+        end_checkpoints = get_s3_file_names(checkpoint_dir,"end.ckpt")
+        last_checkpoints = get_s3_file_names(checkpoint_dir,"last.ckpt")
+        print(f"end_checkpoints {end_checkpoints}")
+        print(f"last_checkpoints {last_checkpoints}")
+    else:
+        end_checkpoints = list(checkpoint_dir.rglob("*end.ckpt"))
+        last_checkpoints = list(checkpoint_dir.rglob("*last.ckpt"))
+    if not (s3_checkpointing and len(end_checkpoints) == 0 and len(last_checkpoints) == 0) or not checkpoint_dir.exists():
         if resume_ignore_no_checkpoint:
             logging.warning(
                 f"There was no checkpoint folder at checkpoint_dir :{checkpoint_dir}. Training from scratch."
@@ -619,7 +612,7 @@ def check_resume(
 
     trainer._checkpoint_connector.resume_from_checkpoint_fit_path = str(checkpoint)
 
-    if is_global_rank_zero():
+    if not s3_checkpointing and is_global_rank_zero():
         # Check to see if any files exist that need to be moved
         files_to_move = []
         for child in Path(log_dir).iterdir():
@@ -668,10 +661,6 @@ def check_explicit_log_dir(
     if is_global_rank_zero() and Path(explicit_log_dir).exists():
         logging.warning(f"Exp_manager is logging to {explicit_log_dir}, but it already exists.")
     
-    # If it an S3 path, Path(explicit_log_dir) will strip needed /
-    if is_s3_path(explicit_log_dir):
-        print("got into s3 explicit short circuit")
-        return PureS3Path.from_uri(explicit_log_dir), str(explicit_log_dir), "", ""
     return Path(explicit_log_dir), str(explicit_log_dir), "", ""
 
 
@@ -987,7 +976,7 @@ def clean_exp_ckpt(exp_log_dir: Union[str, Path], remove_ckpt: bool = True, remo
         remove_ckpt: bool, whether to remove all *.ckpt files in the checkpoints directory.
         remove_nemo: bool, whether to remove all *.nemo files in the checkpoints directory.
     """
-    # TODO: Handle checkpoint clean up with S3
+    #TODO: S3 checkpoint cleaning
     exp_log_dir = str(exp_log_dir)
 
     if remove_ckpt:
