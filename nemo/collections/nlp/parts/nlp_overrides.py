@@ -39,7 +39,7 @@ from nemo.collections.nlp.modules.common.megatron.module import Float16Module
 from nemo.core.connectors.save_restore_connector import SaveRestoreConnector
 from nemo.core.optim import MainParamsOptimizerWrapper
 from nemo.utils import AppState, logging
-from nemo.utils.model_utils import inject_model_parallel_rank
+from nemo.utils.model_utils import inject_model_parallel_rank, convert_to_te_keys
 
 try:
     from apex.transformer.enums import ModelType
@@ -80,6 +80,7 @@ class NLPDDPStrategy(DDPStrategy):
         cluster_environment: ClusterEnvironment = None,
         checkpoint_io: Optional[CheckpointIO] = None,
         no_ddp_communication_hook: bool = False,
+        transformer_engine: bool = False,
         **kwargs: Union[Any, Dict[str, Any]],
     ) -> None:
         if not HAVE_APEX:
@@ -94,6 +95,7 @@ class NLPDDPStrategy(DDPStrategy):
         super().__init__(parallel_devices, cluster_environment, checkpoint_io, **kwargs)
 
         self.no_ddp_communication_hook = no_ddp_communication_hook
+        self.transformer_engine = transformer_engine
 
     def setup_distributed(self, global_rank: int = None, world_size: int = None) -> None:
         # call PTL init ddp
@@ -209,16 +211,21 @@ class NLPDDPStrategy(DDPStrategy):
                     new_key = key.replace(f'{model_key}.', f'{model_key}.module.', 1)
                     new_state_dict[new_key] = checkpoint['state_dict'][key]
                 checkpoint['state_dict'] = new_state_dict
+        # Hack to check if we need to convert weights to TE weights
+        converted_weights = False
+        if self.transformer_engine:
+            checkpoint['state_dict'], converted_weights = convert_to_te_keys(checkpoint['state_dict'])
 
-        self.lightning_module.load_state_dict(checkpoint["state_dict"])
+        self.lightning_module.load_state_dict(checkpoint["state_dict"],strict=False if converted_weights else True)
 
     def load_checkpoint(self, checkpoint_path: Union[str, Path]) -> Dict[str, Any]:
         """ PTL override to accomodate model parallel checkpoints """
         # TODO: move to CheckpointIO
         torch.cuda.empty_cache()
         checkpoint_path = inject_model_parallel_rank(checkpoint_path)
-        return self.checkpoint_io.load_checkpoint(checkpoint_path)
-
+        tmp_check = self.checkpoint_io.load_checkpoint(checkpoint_path)
+        print(f"param groups {tmp_check['optimizer_states'][0]['param_groups']} state_dicts {tmp_check['optimizer_states'][0]['state'].keys()}")
+        return tmp_check
     def remove_checkpoint(self, filepath: Union[str, Path]) -> None:
         app_state = AppState()
         # PTL override to accomodate model parallel checkpoints
@@ -349,7 +356,10 @@ class NLPSaveRestoreConnector(SaveRestoreConnector):
                 new_key = key.replace('model.', 'model.module.', 1)
                 new_state_dict[new_key] = state_dict[key]
             state_dict = new_state_dict
-
+        
+        # Convert non TE weights to TE weights
+        if conf.get("transformer_engine", False):
+            state_dict, _ = convert_to_te_keys(state_dict)
         return state_dict
 
     def restore_from(

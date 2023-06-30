@@ -19,6 +19,7 @@ from enum import Enum
 from functools import lru_cache
 from pathlib import Path
 from typing import List, Optional, Tuple, Union
+import re
 
 import wrapt
 
@@ -613,3 +614,35 @@ def inject_model_parallel_rank(filepath):
         return filepath
     else:
         return filepath
+
+
+def convert_to_te_keys(state_dict):
+    # Hack to check if its a non_te_checkpoint
+    prog = re.compile(r'.*(self_attention\.dense\.bias)')
+    non_te_checkpoint = any((match := prog.match(item)) for item in state_dict.keys())
+    # Return original checkpoint if its already the right format
+    if not non_te_checkpoint:
+        return state_dict, False
+    logging.info("Warning: non transformer engine weights detected and automatically converted")
+    TE_CONVERION_DICT = {
+    "input_layernorm.weight": "self_attention.layernorm_qkv.layer_norm_weight",
+    "input_layernorm.bias": "self_attention.layernorm_qkv.layer_norm_bias",
+    "self_attention.query_key_value.weight": "self_attention.layernorm_qkv.weight",
+    "self_attention.query_key_value.bias": "self_attention.layernorm_qkv.bias",
+    "self_attention.dense.weight": "self_attention.proj.weight",
+    "self_attention.dense.bias": "self_attention.proj.bias",
+    "post_attention_layernorm.weight": "layernorm_mlp.layer_norm_weight",
+    "post_attention_layernorm.bias": "layernorm_mlp.layer_norm_bias",
+    "mlp.dense_h_to_4h.weight": "layernorm_mlp.fc1_weight",
+    "mlp.dense_h_to_4h.bias": "layernorm_mlp.fc1_bias",
+    "mlp.dense_4h_to_h.weight": "layernorm_mlp.fc2_weight",
+    "mlp.dense_4h_to_h.bias": "layernorm_mlp.fc2_bias",
+    }
+    def swap_keys(key):
+        for source, target in TE_CONVERION_DICT.items():
+            key = key.replace(source, target)
+        return key
+    
+    te_state_dict = {swap_keys(k): v for k, v in state_dict.items()}
+    print(f"preconversion dict: {state_dict.keys()} len:{len(state_dict.keys())} \n post conversion dict: {te_state_dict.keys()} len:{len(te_state_dict.keys())}")
+    return te_state_dict, True

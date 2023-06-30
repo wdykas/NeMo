@@ -46,6 +46,7 @@ def main(cfg) -> None:
         no_ddp_communication_hook=True,  # we don't use DDP for async grad allreduce
         gradient_as_bucket_view=cfg.model.gradient_as_bucket_view,
         find_unused_parameters=False,
+        transformer_engine=cfg.model.get("transformer_engine", False)
     )
     if cfg.trainer.precision in [16, 'bf16']:
         scaler = None
