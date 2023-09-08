@@ -196,6 +196,7 @@ class NLPDDPStrategy(DDPStrategy):
                     pipeline_model_parallel_size=app_state.pipeline_model_parallel_size,
                     virtual_pipeline_model_parallel_size=app_state.virtual_pipeline_model_parallel_size,
                     pipeline_model_parallel_split_rank=app_state.pipeline_model_parallel_split_rank,
+                    use_sharp=app_state.use_sharp,
                 )
 
                 # assert that fake tp and pp rank match after model parallel init
