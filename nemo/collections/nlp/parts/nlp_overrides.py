@@ -82,6 +82,7 @@ class NLPDDPStrategy(DDPStrategy):
         no_ddp_communication_hook: Disable DDP communication hook when using AMP-O2
         with FP32 gradient accumulation.
         nccl_communicator_config_path: Path to the yaml file with NCCL communicator options
+        sharp: Apply SHARP to data-parallel proc groups.
     """
 
     def __init__(
@@ -91,6 +92,7 @@ class NLPDDPStrategy(DDPStrategy):
         checkpoint_io: Optional[CheckpointIO] = None,
         no_ddp_communication_hook: bool = False,
         nccl_communicator_config_path: Optional[str] = None,
+        sharp: bool = False,
         **kwargs: Union[Any, Dict[str, Any]],
     ) -> None:
         if not HAVE_APEX:
@@ -106,6 +108,7 @@ class NLPDDPStrategy(DDPStrategy):
 
         self.no_ddp_communication_hook = no_ddp_communication_hook
         self.nccl_communicator_config_path = nccl_communicator_config_path
+        self.sharp = sharp
 
     def setup(self, trainer: "pl.Trainer") -> None:
         """
@@ -199,6 +202,7 @@ class NLPDDPStrategy(DDPStrategy):
                     virtual_pipeline_model_parallel_size=app_state.virtual_pipeline_model_parallel_size,
                     pipeline_model_parallel_split_rank=app_state.pipeline_model_parallel_split_rank,
                     nccl_communicator_config_path=self.nccl_communicator_config_path,
+                    use_sharp=self.sharp,
                 )
 
                 # assert that fake tp and pp rank match after model parallel init
