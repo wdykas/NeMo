@@ -43,12 +43,7 @@ RUN apt-get update && \
   rm -rf /var/lib/apt/lists/*
 
 WORKDIR /workspace/
-# Install megatron core, this can be removed once 0.3 pip package is released
-# We leave it here in case we need to work off of a specific commit in main
-RUN git clone https://github.com/NVIDIA/Megatron-LM.git && \
-  cd Megatron-LM && \
-  git checkout 973330e9c3681604703bf1eb6b5a265d1b9b9b38 && \
-  pip install .
+
 
 # Distributed Adam support for multiple dtypes
 RUN git clone https://github.com/NVIDIA/apex.git && \
@@ -86,7 +81,7 @@ COPY requirements .
 RUN for f in $(ls requirements*.txt); do pip3 install --disable-pip-version-check --no-cache-dir -r $f; done
 
 # install flash attention
-RUN pip install flash-attn
+#RUN pip install flash-attn
 # install numba for latest containers
 RUN pip install numba>=0.57.1
 
@@ -101,7 +96,6 @@ RUN INSTALL_MSG=$(/bin/bash /tmp/nemo/scripts/installers/install_k2.sh); INSTALL
   else echo "Skipping failed k2 installation"; fi \
   else echo "k2 installed successfully"; fi
 
-# copy nemo source into a scratch image
 FROM scratch as nemo-src
 COPY . .
 
@@ -144,3 +138,11 @@ RUN if [ "${REQUIRE_AIS_CLI}" = true ]; then \
   exit ${INSTALL_CODE}; \
   else echo "AIS CLI installed successfully"; fi \
   else echo "Skipping AIS CLI installation"; fi
+
+
+# Install megatron core, this can be removed once 0.3 pip package is released
+# We leave it here in case we need to work off of a specific commit in main
+RUN git clone https://github.com/NVIDIA/Megatron-LM.git && \
+  cd Megatron-LM && \
+  git checkout 973330e9c3681604703bf1eb6b5a265d1b9b9b38 && \
+  pip install .
