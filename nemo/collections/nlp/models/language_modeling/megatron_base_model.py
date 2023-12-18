@@ -791,23 +791,13 @@ class MegatronBaseModel(NLPModel):
                     self.cfg.num_layers // self.cfg.pipeline_model_parallel_size
                 ) % vp_size == 0, 'Make sure the number of model chunks is the same across all pipeline stages.'
 
-        if self.cfg.get('ub_tp_comm_overlap', False):
-            if not self.cfg.get('transformer_engine', False) or not self.cfg.get('sequence_parallel', False):
-                logging.info(
-                    "Userbuffer tensor-parallel communication overlap is available with both Transformer Engine and sequence-parallelism."
-                )
-                with open_dict(self.cfg):
-                    self.cfg.ub_tp_comm_overlap = False
-            if self.cfg.get('fsdp', False):
-                logging.info(
-                    "Userbuffer tensor-parallel communication overlap is not available with FSDP."
-                    "Setting `ub_tp_comm_overlap` to False."
-                )
-                with open_dict(self.cfg):
-                    self.cfg.ub_tp_comm_overlap = False
-
-        if self.cfg.get('fsdp', False) and self.cfg.get('fp8', False):
-            raise ValueError('Torch FSDP does not support FP8.')
+        if self.cfg.get('ub_tp_comm_overlap', False) and not self.cfg.get('sequence_parallel', False):
+            logging.info(
+                "Pipelined tensor-parallel communication overlap is available with sequence-parallelism."
+                "Setting `ub_tp_comm_overlap` to False."
+            )
+            with open_dict(self.cfg):
+                self.cfg.ub_tp_comm_overlap = False
 
     def is_data_parallel_rank_zero(self):
         if is_global_rank_zero():
